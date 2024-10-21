@@ -91,33 +91,53 @@ pub struct Note {
     admin_rank: String,
     note_category: i32,
     round_id: Option<i32>,
+
+    #[sqlx(skip)]
+    noted_player_ckey: Option<String>,
+
+    #[sqlx(skip)]
+    noting_admin_ckey: Option<String>,
 }
 
 async fn get_player_notes(db: &mut MySqlConnection, id: i64) -> Option<Vec<Note>> {
     let user_notes_result: Result<Vec<Note>, sqlx::Error> =
         query_as("SELECT * FROM player_notes WHERE player_id = ?")
             .bind(id)
-            .fetch_all(db)
+            .fetch_all(&mut *db)
             .await;
 
-    match user_notes_result {
-        Ok(notes) => Some(notes),
-        Err(_) => None,
+    let mut user_notes = match user_notes_result {
+        Ok(notes) => notes,
+        Err(_) => return None,
+    };
+
+    for note in &mut user_notes {
+        note.noting_admin_ckey = get_player_ckey(db, note.admin_id).await;
+        note.noted_player_ckey = get_player_ckey(db, note.player_id).await;
     }
+
+    Some(user_notes)
 }
 
 #[get("/<id>/AppliedNotes")]
 pub async fn applied_notes(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Note>> {
     let user_notes_result: Result<Vec<Note>, sqlx::Error> =
-        query_as("SELECT * FROM player_notes WHERE player_id = ?")
+        query_as("SELECT * FROM player_notes WHERE admin_id = ?")
             .bind(id)
             .fetch_all(&mut **db)
             .await;
 
-    match user_notes_result {
-        Ok(notes) => Json(notes),
-        Err(_) => Json(Vec::new()),
+    let mut user_notes = match user_notes_result {
+        Ok(notes) => notes,
+        Err(_) => return Json(Vec::new()),
+    };
+
+    for note in &mut user_notes {
+        note.noting_admin_ckey = get_player_ckey(&mut **db, note.admin_id).await;
+        note.noted_player_ckey = get_player_ckey(&mut **db, note.player_id).await;
     }
+
+    Json(user_notes)
 }
 
 #[derive(Serialize, FromRow)]

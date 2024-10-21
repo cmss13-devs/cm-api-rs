@@ -1,3 +1,5 @@
+use rocket::fairing::{Fairing, Info, Kind};
+use rocket::http::Header;
 use rocket::{
     fairing::AdHoc,
     figment::{
@@ -5,11 +7,34 @@ use rocket::{
         Figment,
     },
 };
+use rocket::{Request, Response};
 use rocket_db_pools::{sqlx::MySqlPool, Database};
 use serde::{Deserialize, Serialize};
 
 #[macro_use]
 extern crate rocket;
+
+pub struct CORS;
+
+#[rocket::async_trait]
+impl Fairing for CORS {
+    fn info(&self) -> Info {
+        Info {
+            name: "Add CORS headers to responses",
+            kind: Kind::Response,
+        }
+    }
+
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
+        response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
+        response.set_header(Header::new(
+            "Access-Control-Allow-Methods",
+            "POST, GET, PATCH, OPTIONS",
+        ));
+        response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
+        response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
+    }
+}
 
 mod admin;
 mod byond;
@@ -17,6 +42,7 @@ mod connections;
 mod logging;
 mod player;
 mod stickyban;
+mod ticket;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct TopicConfig {
@@ -60,6 +86,7 @@ fn rocket() -> _ {
         .manage(byond::ByondTopic::default())
         .attach(Cmdb::init())
         .attach(AdHoc::config::<Config>())
+        .attach(CORS)
         .mount(
             "/User",
             routes![
@@ -92,5 +119,9 @@ fn rocket() -> _ {
                 stickyban::get_all_ckey,
                 stickyban::get_all_ip
             ],
+        )
+        .mount(
+            "/Ticket",
+            routes![ticket::get_tickets_by_round_id, ticket::get_tickets_by_user],
         )
 }

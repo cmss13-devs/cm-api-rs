@@ -6,11 +6,12 @@ use sqlx::{prelude::FromRow, query, query_as};
 use crate::{
     admin::Admin,
     logging::log_external,
-    player::{create_note, get_player_id},
+    player::{create_note, get_player_ckey, get_player_id},
     Cmdb, Config,
 };
 
 #[derive(Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
 pub struct Stickyban {
     id: i32,
     identifier: String,
@@ -19,23 +20,31 @@ pub struct Stickyban {
     date: String,
     active: i32,
 
-    admin_id: i32,
+    #[sqlx(rename = "adminid")]
+    admin_id: Option<i64>,
 
     #[sqlx(skip)]
-    admin_ckey: String,
+    admin_ckey: Option<String>,
 }
 
 #[get("/")]
 pub async fn all_stickybans(mut db: Connection<Cmdb>) -> Json<Vec<Stickyban>> {
-    let query_result: Result<Vec<Stickyban>, sqlx::Error> =
-        query_as("SELECT * FROM player_sticky_bans")
-            .fetch_all(&mut **db)
-            .await;
+    let query_result: Result<Vec<Stickyban>, sqlx::Error> = query_as("SELECT * FROM stickyban")
+        .fetch_all(&mut **db)
+        .await;
 
-    match query_result {
-        Ok(result) => Json(result),
-        Err(_) => Json(Vec::new()),
+    let mut query = match query_result {
+        Ok(result) => result,
+        Err(err) => panic!("{}", err),
+    };
+
+    for stickyban in &mut query {
+        if stickyban.admin_id.is_some() {
+            stickyban.admin_ckey = get_player_ckey(&mut **db, stickyban.admin_id.unwrap()).await;
+        }
     }
+
+    Json(query)
 }
 
 #[post("/Whitelist?<ckey>")]
@@ -102,7 +111,7 @@ pub struct StickybanMatchedCid {
     linked_stickyban: i64,
 }
 
-#[get("/Stickyban/<id>/Match/Cid")]
+#[get("/<id>/Match/Cid")]
 pub async fn get_matched_cids(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<StickybanMatchedCid>> {
     let query_result: Result<Vec<StickybanMatchedCid>, sqlx::Error> =
         query_as("SELECT * FROM stickyban_matched_cid WHERE linked_stickyban = ?")
@@ -116,7 +125,7 @@ pub async fn get_matched_cids(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Sti
     }
 }
 
-#[get("/Stickyban/Cid?<cid>")]
+#[get("/Cid?<cid>")]
 pub async fn get_all_cid(mut db: Connection<Cmdb>, cid: String) -> Json<Vec<StickybanMatchedIp>> {
     let query_result: Result<Vec<StickybanMatchedIp>, sqlx::Error> =
         query_as("SELECT * FROM stickyban_matched_cid WHERE cid = ?")
@@ -138,7 +147,7 @@ pub struct StickybanMatchedCkey {
     whitelisted: i32,
 }
 
-#[get("/Stickyban/<id>/Match/Ckey")]
+#[get("/<id>/Match/Ckey")]
 pub async fn get_matched_ckey(
     mut db: Connection<Cmdb>,
     id: i64,
@@ -155,7 +164,7 @@ pub async fn get_matched_ckey(
     }
 }
 
-#[get("/Stickyban/Ckey?<ckey>")]
+#[get("/Ckey?<ckey>")]
 pub async fn get_all_ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<Vec<StickybanMatchedIp>> {
     let query_result: Result<Vec<StickybanMatchedIp>, sqlx::Error> =
         query_as("SELECT * FROM stickyban_matched_ckey WHERE ckey = ?")
@@ -176,7 +185,7 @@ pub struct StickybanMatchedIp {
     linked_stickyban: i64,
 }
 
-#[get("/Stickyban/<id>/Match/Ip")]
+#[get("/<id>/Match/Ip")]
 pub async fn get_matched_ip(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<StickybanMatchedIp>> {
     let query_result: Result<Vec<StickybanMatchedIp>, sqlx::Error> =
         query_as("SELECT * FROM stickyban_matched_ip WHERE linked_stickyban = ?")
@@ -190,7 +199,7 @@ pub async fn get_matched_ip(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Stick
     }
 }
 
-#[get("/Stickyban/Ip?<ip>")]
+#[get("/Ip?<ip>")]
 pub async fn get_all_ip(mut db: Connection<Cmdb>, ip: String) -> Json<Vec<StickybanMatchedIp>> {
     let query_result: Result<Vec<StickybanMatchedIp>, sqlx::Error> =
         query_as("SELECT * FROM stickyban_matched_ip WHERE ip = ?")

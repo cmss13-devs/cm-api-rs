@@ -155,7 +155,7 @@ pub async fn connection_history_by_cid(
     Json(ConnectionHistory::annotate(query))
 }
 
-#[get("/FullByAllIp?<ckey>")]
+#[get("/FullByAllIps?<ckey>")]
 pub async fn connection_history_by_ip(
     mut db: Connection<Cmdb>,
     ckey: String,

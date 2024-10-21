@@ -12,7 +12,7 @@ use crate::{Cmdb, Config};
 
 #[derive(Default)]
 pub struct ByondTopic {
-    cached_status: Mutex<Option<GameStatus>>,
+    cached_status: Mutex<Option<GameResponse>>,
     cache_time: Mutex<Option<DateTime<Utc>>>,
 }
 
@@ -23,8 +23,8 @@ struct GameRequest {
     source: String,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
-struct GameResponse {
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+pub struct GameResponse {
     statuscode: i32,
     response: String,
     data: GameStatus,
@@ -54,7 +54,10 @@ pub struct GameStatus {
 }
 
 #[get("/")]
-pub async fn round(cache: &State<ByondTopic>, config: &State<Config>) -> Option<Json<GameStatus>> {
+pub async fn round(
+    cache: &State<ByondTopic>,
+    config: &State<Config>,
+) -> Option<Json<GameResponse>> {
     let mut locked = cache.cache_time.lock().unwrap();
 
     if locked.is_some() {
@@ -109,10 +112,10 @@ pub async fn round(cache: &State<ByondTopic>, config: &State<Config>) -> Option<
         Err(error) => panic!("{error:?} {byond_string}"),
     };
 
-    *cache.cached_status.lock().unwrap() = Some(byond_json.data.clone());
+    *cache.cached_status.lock().unwrap() = Some(byond_json.clone());
     *locked = Some(chrono::Utc::now());
 
-    Some(Json(byond_json.data))
+    Some(Json(byond_json))
 }
 
 #[derive(serde::Serialize, FromRow)]
