@@ -2,11 +2,12 @@ use rocket::{
     form::Form,
     http::Status,
     serde::{json::Json, Serialize},
+    State,
 };
 use rocket_db_pools::Connection;
 use sqlx::{prelude::FromRow, query, query_as, MySqlConnection, Row};
 
-use crate::{admin::Admin, Cmdb};
+use crate::{admin::Admin, logging::log_external, Cmdb, Config};
 
 #[derive(Serialize, FromRow)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
@@ -226,44 +227,89 @@ pub struct NewNote {
 pub async fn new_note(
     mut db: Connection<Cmdb>,
     admin: Admin,
-    id: i32,
+    id: i64,
     input: Form<NewNote>,
+    config: &State<Config>,
 ) -> Status {
     let executor = &mut **db;
 
-    let admin_id_option = get_player_id(executor, admin.username).await;
+    let admin_id_option = get_player_id(executor, &admin.username).await;
 
     let admin_id = match admin_id_option {
         Some(admin_id) => admin_id,
         None => return Status::Unauthorized,
     };
 
+    let ckey_option = get_player_ckey(executor, id).await;
+
+    let ckey = match ckey_option {
+        Some(ckey) => ckey,
+        None => return Status::BadRequest,
+    };
+
+    match create_note(
+        executor,
+        id,
+        admin_id,
+        &input.message,
+        input.confidential > 0,
+        input.category,
+    )
+    .await
+    {
+        true => {
+            let _ = log_external(
+                &config,
+                "Note Added".to_string(),
+                format!(
+                    "{} added a note to {}: {}",
+                    &admin.username, ckey, &input.message
+                ),
+            )
+            .await;
+            Status::Accepted
+        }
+        false => Status::NotAcceptable,
+    }
+}
+
+pub async fn create_note(
+    db: &mut MySqlConnection,
+    id: i64,
+    admin_id: i64,
+    message: &String,
+    confidential: bool,
+    category: i32,
+) -> bool {
     let now = chrono::Utc::now();
     let date = format!("{}", now.format("%Y-%m-%d %H:%M:%S"));
 
-    let _ = query("
+    let executed = query("
         INSERT INTO player_notes (player_id, admin_id, text, date, is_ban, is_confidential, admin_rank, note_category)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
         .bind(id)
         .bind(admin_id)
-        .bind(input.message.clone())
+        .bind(message)
         .bind(date)
         .bind(0)
-        .bind(if input.confidential > 0 {1} else {0})
+        .bind(if confidential {1} else {0})
         .bind("[cmdb]".to_string())
-        .bind(input.category.clone())
-        .execute(executor).await;
+        .bind(category)
+        .execute(db).await;
 
-    Status::Accepted
+    match executed {
+        Ok(query) => query.rows_affected() > 0,
+        Err(_) => false,
+    }
 }
 
-async fn get_player_id(db: &mut MySqlConnection, ckey: String) -> Option<i32> {
+pub async fn get_player_id(db: &mut MySqlConnection, ckey: &String) -> Option<i64> {
     let player_search = query("SELECT id FROM players WHERE ckey = ?")
         .bind(ckey)
         .fetch_one(db)
         .await;
 
-    let player_id: i32 = match player_search {
+    let player_id: i64 = match player_search {
         Ok(search) => search.get("id"),
         Err(_) => return None,
     };
@@ -271,8 +317,8 @@ async fn get_player_id(db: &mut MySqlConnection, ckey: String) -> Option<i32> {
     Some(player_id)
 }
 
-async fn get_player_ckey(db: &mut MySqlConnection, id: i64) -> Option<String> {
-    let player_search = query("SELECT ckeyd FROM players WHERE id = ?")
+pub async fn get_player_ckey(db: &mut MySqlConnection, id: i64) -> Option<String> {
+    let player_search = query("SELECT ckey FROM players WHERE id = ?")
         .bind(id)
         .fetch_one(db)
         .await;

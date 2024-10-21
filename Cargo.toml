@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 chrono = { version = "0.4.38", features = ["serde"] }
 http2byond = "0.1.0"
+reqwest = "0.12.8"
 rocket_db_pools = { version = "0.2.0", features = ["sqlx_mysql"] }
 serde = "1.0.210"
 serde_json = "1.0.132"

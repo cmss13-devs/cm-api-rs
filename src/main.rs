@@ -14,7 +14,9 @@ extern crate rocket;
 mod admin;
 mod byond;
 mod connections;
+mod logging;
 mod player;
+mod stickyban;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct TopicConfig {
@@ -23,14 +25,23 @@ struct TopicConfig {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
+struct LoggingConfig {
+    webhook: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(crate = "rocket::serde")]
 struct Config {
     topic: Option<TopicConfig>,
+    logging: Option<LoggingConfig>,
 }
 
 impl Default for Config {
     fn default() -> Config {
-        Config { topic: None }
+        Config {
+            topic: None,
+            logging: None,
+        }
     }
 }
 
@@ -67,6 +78,19 @@ fn rocket() -> _ {
                 connections::ckey,
                 connections::connection_history_by_cid,
                 connections::connection_history_by_ip
+            ],
+        )
+        .mount(
+            "/Stickyban",
+            routes![
+                stickyban::all_stickybans,
+                stickyban::whitelist,
+                stickyban::get_matched_cids,
+                stickyban::get_matched_ckey,
+                stickyban::get_matched_ip,
+                stickyban::get_all_cid,
+                stickyban::get_all_ckey,
+                stickyban::get_all_ip
             ],
         )
 }
