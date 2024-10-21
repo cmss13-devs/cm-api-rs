@@ -396,6 +396,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-targets 0.52.6",
 ]
@@ -2130,6 +2131,7 @@ dependencies = [
  "atoi",
  "byteorder",
  "bytes 1.7.2",
+ "chrono",
  "crc",
  "crossbeam-queue",
  "either",
@@ -2194,6 +2196,7 @@ dependencies = [
  "sha2",
  "sqlx-core",
  "sqlx-mysql",
+ "sqlx-postgres",
  "sqlx-sqlite",
  "syn 1.0.109",
  "tempfile",
@@ -2212,6 +2215,7 @@ dependencies = [
  "bitflags 2.6.0",
  "byteorder",
  "bytes 1.7.2",
+ "chrono",
  "crc",
  "digest",
  "dotenvy",
@@ -2253,6 +2257,7 @@ dependencies = [
  "base64",
  "bitflags 2.6.0",
  "byteorder",
+ "chrono",
  "crc",
  "dotenvy",
  "etcetera",
@@ -2288,6 +2293,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b244ef0a8414da0bed4bb1910426e890b19e5e9bccc27ada6b797d05c55ae0aa"
 dependencies = [
  "atoi",
+ "chrono",
  "flume",
  "futures-channel",
  "futures-core",

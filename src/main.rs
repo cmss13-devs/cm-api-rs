@@ -13,6 +13,7 @@ extern crate rocket;
 
 mod admin;
 mod byond;
+mod connections;
 mod player;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -58,4 +59,14 @@ fn rocket() -> _ {
             ],
         )
         .mount("/Round", routes![byond::round, byond::recent])
+        .mount(
+            "/Connections",
+            routes![
+                connections::ip,
+                connections::cid,
+                connections::ckey,
+                connections::connection_history_by_cid,
+                connections::connection_history_by_ip
+            ],
+        )
 }
