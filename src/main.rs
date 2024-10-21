@@ -82,11 +82,10 @@ fn rocket() -> _ {
         .merge(Toml::file("Rocket.toml").nested())
         .merge(Toml::file("Api.toml"));
 
-    #[cfg(debug_assertions)]
-    let base_url = "/api";
-
-    #[cfg(not(debug_assertions))]
-    let base_url = "";
+    let mut base_url = "/api";
+    if cfg!(debug_assertions) {
+        base_url = "";
+    }
 
     rocket::custom(figment)
         .manage(byond::ByondTopic::default())
