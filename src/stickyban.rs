@@ -126,8 +126,8 @@ pub async fn get_matched_cids(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Sti
 }
 
 #[get("/Cid?<cid>")]
-pub async fn get_all_cid(mut db: Connection<Cmdb>, cid: String) -> Json<Vec<StickybanMatchedIp>> {
-    let query_result: Result<Vec<StickybanMatchedIp>, sqlx::Error> =
+pub async fn get_all_cid(mut db: Connection<Cmdb>, cid: String) -> Json<Vec<StickybanMatchedCid>> {
+    let query_result: Result<Vec<StickybanMatchedCid>, sqlx::Error> =
         query_as("SELECT * FROM stickyban_matched_cid WHERE cid = ?")
             .bind(cid)
             .fetch_all(&mut **db)
@@ -165,8 +165,11 @@ pub async fn get_matched_ckey(
 }
 
 #[get("/Ckey?<ckey>")]
-pub async fn get_all_ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<Vec<StickybanMatchedIp>> {
-    let query_result: Result<Vec<StickybanMatchedIp>, sqlx::Error> =
+pub async fn get_all_ckey(
+    mut db: Connection<Cmdb>,
+    ckey: String,
+) -> Json<Vec<StickybanMatchedCkey>> {
+    let query_result: Result<Vec<StickybanMatchedCkey>, sqlx::Error> =
         query_as("SELECT * FROM stickyban_matched_ckey WHERE ckey = ?")
             .bind(ckey)
             .fetch_all(&mut **db)
@@ -174,7 +177,7 @@ pub async fn get_all_ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<Vec<St
 
     match query_result {
         Ok(result) => Json(result),
-        Err(_) => return Json(Vec::new()),
+        Err(err) => panic!("{}", err),
     }
 }
 

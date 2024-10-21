@@ -89,7 +89,7 @@ pub struct Note {
     ban_time: Option<i64>,
     is_confidential: i32,
     admin_rank: String,
-    note_category: i32,
+    note_category: Option<i32>,
     round_id: Option<i32>,
 
     #[sqlx(skip)]
@@ -108,7 +108,7 @@ async fn get_player_notes(db: &mut MySqlConnection, id: i64) -> Option<Vec<Note>
 
     let mut user_notes = match user_notes_result {
         Ok(notes) => notes,
-        Err(_) => return None,
+        Err(err) => panic!("{}", err),
     };
 
     for note in &mut user_notes {
