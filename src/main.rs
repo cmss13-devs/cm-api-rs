@@ -82,13 +82,19 @@ fn rocket() -> _ {
         .merge(Toml::file("Rocket.toml").nested())
         .merge(Toml::file("Api.toml"));
 
+    #[cfg(debug_assertions)]
+    let base_url = "/api";
+
+    #[cfg(not(debug_assertions))]
+    let base_url = "";
+
     rocket::custom(figment)
         .manage(byond::ByondTopic::default())
         .attach(Cmdb::init())
         .attach(AdHoc::config::<Config>())
         .attach(CORS)
         .mount(
-            "/User",
+            format!("{}/User", base_url),
             routes![
                 player::index,
                 player::id,
@@ -96,9 +102,12 @@ fn rocket() -> _ {
                 player::applied_notes
             ],
         )
-        .mount("/Round", routes![byond::round, byond::recent])
         .mount(
-            "/Connections",
+            format!("{}/Round", base_url),
+            routes![byond::round, byond::recent],
+        )
+        .mount(
+            format!("{}/Connections", base_url),
             routes![
                 connections::ip,
                 connections::cid,
@@ -108,7 +117,7 @@ fn rocket() -> _ {
             ],
         )
         .mount(
-            "/Stickyban",
+            format!("{}/Stickyban", base_url),
             routes![
                 stickyban::all_stickybans,
                 stickyban::whitelist,
@@ -121,7 +130,7 @@ fn rocket() -> _ {
             ],
         )
         .mount(
-            "/Ticket",
+            format!("{}/Ticket", base_url),
             routes![ticket::get_tickets_by_round_id, ticket::get_tickets_by_user],
         )
 }
