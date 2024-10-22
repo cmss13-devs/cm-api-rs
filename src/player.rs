@@ -243,7 +243,7 @@ pub struct NewNote {
     confidential: i32,
 }
 
-#[post("/<id>", data = "<input>")]
+#[post("/<id>/Note", data = "<input>")]
 pub async fn new_note(
     mut db: Connection<Cmdb>,
     admin: Admin,
