@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{

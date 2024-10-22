@@ -107,11 +107,21 @@ pub async fn whitelist(
     Status::Accepted
 }
 
+trait StickybanMatch: Send + Sync {
+    fn get_parent_id(&self) -> i64;
+}
+
 #[derive(FromRow, Serialize)]
 pub struct StickybanMatchedCid {
     id: i64,
     cid: String,
     linked_stickyban: i64,
+}
+
+impl StickybanMatch for StickybanMatchedCid {
+    fn get_parent_id(&self) -> i64 {
+        self.linked_stickyban
+    }
 }
 
 #[get("/<id>/Match/Cid")]
@@ -147,7 +157,13 @@ pub async fn get_all_cid(mut db: Connection<Cmdb>, cid: String) -> Json<Vec<Stic
         unique_sticky.insert(sticky.linked_stickyban.to_string());
     }
 
-    Json(get_stickybans_by_ids(&mut **db, unique_sticky.into_iter().collect()).await)
+    Json(
+        get_stickybans_by_ids(
+            &mut **db,
+            &query.into_iter().map(|s| Box::new(s) as _).collect(),
+        )
+        .await,
+    )
 }
 
 #[derive(FromRow, Serialize)]
@@ -156,6 +172,12 @@ pub struct StickybanMatchedCkey {
     ckey: Option<String>, // somehow?
     linked_stickyban: i64,
     whitelisted: i32,
+}
+
+impl StickybanMatch for StickybanMatchedCkey {
+    fn get_parent_id(&self) -> i64 {
+        self.linked_stickyban
+    }
 }
 
 #[get("/<id>/Match/Ckey")]
@@ -189,13 +211,13 @@ pub async fn get_all_ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<Vec<St
         Err(err) => panic!("{}", err),
     };
 
-    let mut unique_sticky: HashSet<String> = HashSet::new();
-
-    for sticky in &query {
-        unique_sticky.insert(sticky.linked_stickyban.to_string());
-    }
-
-    Json(get_stickybans_by_ids(&mut **db, unique_sticky.into_iter().collect()).await)
+    Json(
+        get_stickybans_by_ids(
+            &mut **db,
+            &query.into_iter().map(|s| Box::new(s) as _).collect(),
+        )
+        .await,
+    )
 }
 
 #[derive(FromRow, Serialize)]
@@ -203,6 +225,12 @@ pub struct StickybanMatchedIp {
     id: i64,
     ip: String,
     linked_stickyban: i64,
+}
+
+impl StickybanMatch for StickybanMatchedIp {
+    fn get_parent_id(&self) -> i64 {
+        self.linked_stickyban
+    }
 }
 
 #[get("/<id>/Match/Ip")]
@@ -232,19 +260,30 @@ pub async fn get_all_ip(mut db: Connection<Cmdb>, ip: String) -> Json<Vec<Sticky
         Err(err) => panic!("{}", err),
     };
 
-    let mut unique_sticky: HashSet<String> = HashSet::new();
-
-    for sticky in &query {
-        unique_sticky.insert(sticky.linked_stickyban.to_string());
-    }
-
-    Json(get_stickybans_by_ids(&mut **db, unique_sticky.into_iter().collect()).await)
+    Json(
+        get_stickybans_by_ids(
+            &mut **db,
+            &query.into_iter().map(|s| Box::new(s) as _).collect(),
+        )
+        .await,
+    )
 }
 
-async fn get_stickybans_by_ids(db: &mut MySqlConnection, ids: Vec<String>) -> Vec<Stickyban> {
+async fn get_stickybans_by_ids(
+    db: &mut MySqlConnection,
+    ids: &Vec<Box<dyn StickybanMatch>>,
+) -> Vec<Stickyban> {
+    let mut unique_sticky: HashSet<String> = HashSet::new();
+
+    for sticky in ids {
+        unique_sticky.insert(sticky.get_parent_id().to_string());
+    }
+
+    let string = unique_sticky.into_iter().collect::<Vec<String>>().join(",");
+
     let query_result: Result<Vec<Stickyban>, sqlx::Error> =
         query_as("SELECT * FROM stickyban WHERE FIND_IN_SET(id, ?) AND active = 1")
-            .bind(ids.join(","))
+            .bind(string)
             .fetch_all(db)
             .await;
 
