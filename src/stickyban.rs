@@ -1,7 +1,10 @@
+use core::panic;
+use std::collections::HashSet;
+
 use rocket::{http::Status, serde::json::Json, State};
 use rocket_db_pools::Connection;
 use serde::Serialize;
-use sqlx::{prelude::FromRow, query, query_as};
+use sqlx::{prelude::FromRow, query, query_as, MySqlConnection};
 
 use crate::{
     admin::Admin,
@@ -126,23 +129,31 @@ pub async fn get_matched_cids(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Sti
 }
 
 #[get("/Cid?<cid>")]
-pub async fn get_all_cid(mut db: Connection<Cmdb>, cid: String) -> Json<Vec<StickybanMatchedCid>> {
+pub async fn get_all_cid(mut db: Connection<Cmdb>, cid: String) -> Json<Vec<Stickyban>> {
     let query_result: Result<Vec<StickybanMatchedCid>, sqlx::Error> =
         query_as("SELECT * FROM stickyban_matched_cid WHERE cid = ?")
             .bind(cid)
             .fetch_all(&mut **db)
             .await;
 
-    match query_result {
-        Ok(result) => Json(result),
-        Err(_) => return Json(Vec::new()),
+    let query = match query_result {
+        Ok(result) => result,
+        Err(err) => panic!("{}", err),
+    };
+
+    let mut unique_sticky: HashSet<String> = HashSet::new();
+
+    for sticky in &query {
+        unique_sticky.insert(sticky.linked_stickyban.to_string());
     }
+
+    Json(get_stickybans_by_ids(&mut **db, unique_sticky.into_iter().collect()).await)
 }
 
 #[derive(FromRow, Serialize)]
 pub struct StickybanMatchedCkey {
     id: i64,
-    ckey: String,
+    ckey: Option<String>, // somehow?
     linked_stickyban: i64,
     whitelisted: i32,
 }
@@ -152,33 +163,39 @@ pub async fn get_matched_ckey(
     mut db: Connection<Cmdb>,
     id: i64,
 ) -> Json<Vec<StickybanMatchedCkey>> {
-    let query_result: Result<Vec<StickybanMatchedCkey>, sqlx::Error> =
-        query_as("SELECT * FROM stickyban_matched_ckey WHERE linked_stickyban = ?")
-            .bind(id)
-            .fetch_all(&mut **db)
-            .await;
-
-    match query_result {
-        Ok(result) => Json(result),
-        Err(_) => return Json(Vec::new()),
-    }
-}
-
-#[get("/Ckey?<ckey>")]
-pub async fn get_all_ckey(
-    mut db: Connection<Cmdb>,
-    ckey: String,
-) -> Json<Vec<StickybanMatchedCkey>> {
-    let query_result: Result<Vec<StickybanMatchedCkey>, sqlx::Error> =
-        query_as("SELECT * FROM stickyban_matched_ckey WHERE ckey = ?")
-            .bind(ckey)
-            .fetch_all(&mut **db)
-            .await;
+    let query_result: Result<Vec<StickybanMatchedCkey>, sqlx::Error> = query_as(
+        "SELECT * FROM stickyban_matched_ckey WHERE linked_stickyban = ? AND whitelisted = 0",
+    )
+    .bind(id)
+    .fetch_all(&mut **db)
+    .await;
 
     match query_result {
         Ok(result) => Json(result),
         Err(err) => panic!("{}", err),
     }
+}
+
+#[get("/Ckey?<ckey>")]
+pub async fn get_all_ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<Vec<Stickyban>> {
+    let query_result: Result<Vec<StickybanMatchedCkey>, sqlx::Error> =
+        query_as("SELECT * FROM stickyban_matched_ckey WHERE ckey = ? AND whitelisted = 0")
+            .bind(ckey)
+            .fetch_all(&mut **db)
+            .await;
+
+    let query = match query_result {
+        Ok(result) => result,
+        Err(err) => panic!("{}", err),
+    };
+
+    let mut unique_sticky: HashSet<String> = HashSet::new();
+
+    for sticky in &query {
+        unique_sticky.insert(sticky.linked_stickyban.to_string());
+    }
+
+    Json(get_stickybans_by_ids(&mut **db, unique_sticky.into_iter().collect()).await)
 }
 
 #[derive(FromRow, Serialize)]
@@ -203,15 +220,36 @@ pub async fn get_matched_ip(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Stick
 }
 
 #[get("/Ip?<ip>")]
-pub async fn get_all_ip(mut db: Connection<Cmdb>, ip: String) -> Json<Vec<StickybanMatchedIp>> {
+pub async fn get_all_ip(mut db: Connection<Cmdb>, ip: String) -> Json<Vec<Stickyban>> {
     let query_result: Result<Vec<StickybanMatchedIp>, sqlx::Error> =
         query_as("SELECT * FROM stickyban_matched_ip WHERE ip = ?")
             .bind(ip)
             .fetch_all(&mut **db)
             .await;
 
+    let query = match query_result {
+        Ok(result) => result,
+        Err(err) => panic!("{}", err),
+    };
+
+    let mut unique_sticky: HashSet<String> = HashSet::new();
+
+    for sticky in &query {
+        unique_sticky.insert(sticky.linked_stickyban.to_string());
+    }
+
+    Json(get_stickybans_by_ids(&mut **db, unique_sticky.into_iter().collect()).await)
+}
+
+async fn get_stickybans_by_ids(db: &mut MySqlConnection, ids: Vec<String>) -> Vec<Stickyban> {
+    let query_result: Result<Vec<Stickyban>, sqlx::Error> =
+        query_as("SELECT * FROM stickyban WHERE FIND_IN_SET(id, ?) AND active = 1")
+            .bind(ids.join(","))
+            .fetch_all(db)
+            .await;
+
     match query_result {
-        Ok(result) => Json(result),
-        Err(_) => return Json(Vec::new()),
+        Ok(result) => result,
+        Err(_) => Vec::new(),
     }
 }
