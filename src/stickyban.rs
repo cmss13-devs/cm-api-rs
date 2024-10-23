@@ -191,7 +191,7 @@ pub async fn get_matched_ckey(
 
 #[get("/Ckey?<ckey>")]
 pub async fn get_all_ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<Vec<Stickyban>> {
-    let query: Vec<StickybanMatchedCid> =
+    let query: Vec<StickybanMatchedCkey> =
         match query_as("SELECT * FROM stickyban_matched_ckey WHERE ckey = ? AND whitelisted = 0")
             .bind(ckey)
             .fetch_all(&mut **db)

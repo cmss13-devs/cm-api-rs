@@ -228,7 +228,7 @@ pub async fn id(mut db: Connection<Cmdb>, id: i32) -> Option<Json<Player>> {
 pub struct NewNote {
     message: String,
     category: i32,
-    confidential: i32,
+    confidential: bool,
 }
 
 #[post("/<id>/Note", data = "<input>")]
@@ -254,7 +254,7 @@ pub async fn new_note(
         id,
         admin_id,
         &input.message,
-        input.confidential > 0,
+        input.confidential,
         input.category,
     )
     .await
