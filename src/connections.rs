@@ -55,7 +55,7 @@ impl ConnectionHistory {
         }
 
         Self {
-            triplets: triplets,
+            triplets,
             all_cids: unique_cids,
             all_ckeys: unique_ckeys,
             all_ips: unique_ips,
@@ -67,16 +67,16 @@ impl ConnectionHistory {
 pub async fn ip(mut db: Connection<Cmdb>, ip: String) -> Json<ConnectionHistory> {
     let parts: Vec<&str> = ip.split('.').collect();
 
-    let query_result: Result<Vec<LoginTriplet>, sqlx::Error> =
-        query_as("SELECT * FROM login_triplets WHERE ip1 = ? AND ip2 = ? AND ip3 = ? AND ip4 = ?")
-            .bind(parts[0])
-            .bind(parts[1])
-            .bind(parts[2])
-            .bind(parts[3])
-            .fetch_all(&mut **db)
-            .await;
-
-    let query = match query_result {
+    let query = match query_as(
+        "SELECT * FROM login_triplets WHERE ip1 = ? AND ip2 = ? AND ip3 = ? AND ip4 = ?",
+    )
+    .bind(parts[0])
+    .bind(parts[1])
+    .bind(parts[2])
+    .bind(parts[3])
+    .fetch_all(&mut **db)
+    .await
+    {
         Ok(query) => query,
         Err(_) => return Json(ConnectionHistory::default()),
     };
@@ -115,12 +115,12 @@ async fn get_triplets_by_ckey(db: &mut MySqlConnection, ckey: String) -> Option<
 
 #[get("/Ckey?<ckey>")]
 pub async fn ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<ConnectionHistory> {
-    let query = match get_triplets_by_ckey(&mut **db, ckey).await {
-        Some(query) => query,
-        None => return Json(ConnectionHistory::default()),
-    };
-
-    Json(ConnectionHistory::annotate(query))
+    Json(ConnectionHistory::annotate(
+        match get_triplets_by_ckey(&mut **db, ckey).await {
+            Some(query) => query,
+            None => return Json(ConnectionHistory::default()),
+        },
+    ))
 }
 
 #[get("/FullByAllCid?<ckey>")]

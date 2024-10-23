@@ -57,28 +57,23 @@ pub async fn whitelist(
     admin: Admin,
     config: &State<Config>,
 ) -> Status {
-    let admin_id_option = get_player_id(&mut **db, &admin.username).await;
-
-    let admin_id = match admin_id_option {
+    let admin_id = match get_player_id(&mut **db, &admin.username).await {
         Some(admin_id) => admin_id,
         None => return Status::Unauthorized,
     };
 
-    let player_id_option = get_player_id(&mut **db, &ckey).await;
-
-    let player_id = match player_id_option {
+    let player_id = match get_player_id(&mut **db, &ckey).await {
         Some(player_id) => player_id,
         None => return Status::BadRequest,
     };
 
-    let query_result = query(
+    let query = match query(
         "UPDATE stickyban_matched_ckey SET whitelisted = 1 WHERE ckey = ? AND whitelisted = 0",
     )
     .bind(&ckey)
     .execute(&mut **db)
-    .await;
-
-    let query = match query_result {
+    .await
+    {
         Ok(query) => query,
         Err(_) => return Status::Forbidden,
     };
@@ -126,13 +121,11 @@ impl StickybanMatch for StickybanMatchedCid {
 
 #[get("/<id>/Match/Cid")]
 pub async fn get_matched_cids(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<StickybanMatchedCid>> {
-    let query_result: Result<Vec<StickybanMatchedCid>, sqlx::Error> =
-        query_as("SELECT * FROM stickyban_matched_cid WHERE linked_stickyban = ?")
-            .bind(id)
-            .fetch_all(&mut **db)
-            .await;
-
-    match query_result {
+    match query_as("SELECT * FROM stickyban_matched_cid WHERE linked_stickyban = ?")
+        .bind(id)
+        .fetch_all(&mut **db)
+        .await
+    {
         Ok(result) => Json(result),
         Err(_) => return Json(Vec::new()),
     }
@@ -140,16 +133,15 @@ pub async fn get_matched_cids(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Sti
 
 #[get("/Cid?<cid>")]
 pub async fn get_all_cid(mut db: Connection<Cmdb>, cid: String) -> Json<Vec<Stickyban>> {
-    let query_result: Result<Vec<StickybanMatchedCid>, sqlx::Error> =
-        query_as("SELECT * FROM stickyban_matched_cid WHERE cid = ?")
+    let query: Vec<StickybanMatchedCid> =
+        match query_as("SELECT * FROM stickyban_matched_cid WHERE cid = ?")
             .bind(cid)
             .fetch_all(&mut **db)
-            .await;
-
-    let query = match query_result {
-        Ok(result) => result,
-        Err(err) => panic!("{}", err),
-    };
+            .await
+        {
+            Ok(result) => result,
+            Err(err) => panic!("{}", err),
+        };
 
     let mut unique_sticky: HashSet<String> = HashSet::new();
 
@@ -185,14 +177,13 @@ pub async fn get_matched_ckey(
     mut db: Connection<Cmdb>,
     id: i64,
 ) -> Json<Vec<StickybanMatchedCkey>> {
-    let query_result: Result<Vec<StickybanMatchedCkey>, sqlx::Error> = query_as(
+    match query_as(
         "SELECT * FROM stickyban_matched_ckey WHERE linked_stickyban = ? AND whitelisted = 0",
     )
     .bind(id)
     .fetch_all(&mut **db)
-    .await;
-
-    match query_result {
+    .await
+    {
         Ok(result) => Json(result),
         Err(err) => panic!("{}", err),
     }
@@ -200,16 +191,15 @@ pub async fn get_matched_ckey(
 
 #[get("/Ckey?<ckey>")]
 pub async fn get_all_ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<Vec<Stickyban>> {
-    let query_result: Result<Vec<StickybanMatchedCkey>, sqlx::Error> =
-        query_as("SELECT * FROM stickyban_matched_ckey WHERE ckey = ? AND whitelisted = 0")
+    let query: Vec<StickybanMatchedCid> =
+        match query_as("SELECT * FROM stickyban_matched_ckey WHERE ckey = ? AND whitelisted = 0")
             .bind(ckey)
             .fetch_all(&mut **db)
-            .await;
-
-    let query = match query_result {
-        Ok(result) => result,
-        Err(err) => panic!("{}", err),
-    };
+            .await
+        {
+            Ok(result) => result,
+            Err(err) => panic!("{}", err),
+        };
 
     Json(
         get_stickybans_by_ids(
@@ -235,13 +225,11 @@ impl StickybanMatch for StickybanMatchedIp {
 
 #[get("/<id>/Match/Ip")]
 pub async fn get_matched_ip(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<StickybanMatchedIp>> {
-    let query_result: Result<Vec<StickybanMatchedIp>, sqlx::Error> =
-        query_as("SELECT * FROM stickyban_matched_ip WHERE linked_stickyban = ?")
-            .bind(id)
-            .fetch_all(&mut **db)
-            .await;
-
-    match query_result {
+    match query_as("SELECT * FROM stickyban_matched_ip WHERE linked_stickyban = ?")
+        .bind(id)
+        .fetch_all(&mut **db)
+        .await
+    {
         Ok(result) => Json(result),
         Err(_) => return Json(Vec::new()),
     }
@@ -249,16 +237,15 @@ pub async fn get_matched_ip(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Stick
 
 #[get("/Ip?<ip>")]
 pub async fn get_all_ip(mut db: Connection<Cmdb>, ip: String) -> Json<Vec<Stickyban>> {
-    let query_result: Result<Vec<StickybanMatchedIp>, sqlx::Error> =
-        query_as("SELECT * FROM stickyban_matched_ip WHERE ip = ?")
+    let query: Vec<StickybanMatchedIp> =
+        match query_as("SELECT * FROM stickyban_matched_ip WHERE ip = ?")
             .bind(ip)
             .fetch_all(&mut **db)
-            .await;
-
-    let query = match query_result {
-        Ok(result) => result,
-        Err(err) => panic!("{}", err),
-    };
+            .await
+        {
+            Ok(result) => result,
+            Err(err) => panic!("{}", err),
+        };
 
     Json(
         get_stickybans_by_ids(
@@ -279,15 +266,11 @@ async fn get_stickybans_by_ids(
         unique_sticky.insert(sticky.get_parent_id().to_string());
     }
 
-    let string = unique_sticky.into_iter().collect::<Vec<String>>().join(",");
-
-    let query_result: Result<Vec<Stickyban>, sqlx::Error> =
-        query_as("SELECT * FROM stickyban WHERE FIND_IN_SET(id, ?) AND active = 1")
-            .bind(string)
-            .fetch_all(db)
-            .await;
-
-    match query_result {
+    match query_as("SELECT * FROM stickyban WHERE FIND_IN_SET(id, ?) AND active = 1")
+        .bind(unique_sticky.into_iter().collect::<Vec<String>>().join(","))
+        .fetch_all(db)
+        .await
+    {
         Ok(result) => result,
         Err(_) => Vec::new(),
     }

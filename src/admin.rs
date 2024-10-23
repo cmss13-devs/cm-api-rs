@@ -18,10 +18,7 @@ impl<'r> FromRequest<'r> for Admin {
     type Error = AdminError;
 
     async fn from_request(req: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
-        let mut is_admin = req.headers().get("X-Forwarded-Preferred-Username");
-        let username_option = is_admin.next();
-
-        let username = match username_option {
+        let username = match req.headers().get("X-Forwarded-Preferred-Username").next() {
             Some(username) => username,
             None => return request::Outcome::Error((Status::BadRequest, AdminError::Missing)),
         };

@@ -100,13 +100,11 @@ pub struct Note {
 }
 
 async fn get_player_notes(db: &mut MySqlConnection, id: i64) -> Option<Vec<Note>> {
-    let user_notes_result: Result<Vec<Note>, sqlx::Error> =
-        query_as("SELECT * FROM player_notes WHERE player_id = ?")
-            .bind(id)
-            .fetch_all(&mut *db)
-            .await;
-
-    let mut user_notes = match user_notes_result {
+    let mut user_notes: Vec<Note> = match query_as("SELECT * FROM player_notes WHERE player_id = ?")
+        .bind(id)
+        .fetch_all(&mut *db)
+        .await
+    {
         Ok(notes) => notes,
         Err(err) => panic!("{}", err),
     };
@@ -121,13 +119,11 @@ async fn get_player_notes(db: &mut MySqlConnection, id: i64) -> Option<Vec<Note>
 
 #[get("/<id>/AppliedNotes")]
 pub async fn applied_notes(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Note>> {
-    let user_notes_result: Result<Vec<Note>, sqlx::Error> =
-        query_as("SELECT * FROM player_notes WHERE admin_id = ?")
-            .bind(id)
-            .fetch_all(&mut **db)
-            .await;
-
-    let mut user_notes = match user_notes_result {
+    let mut user_notes: Vec<Note> = match query_as("SELECT * FROM player_notes WHERE admin_id = ?")
+        .bind(id)
+        .fetch_all(&mut **db)
+        .await
+    {
         Ok(notes) => notes,
         Err(_) => return Json(Vec::new()),
     };
@@ -154,25 +150,22 @@ pub struct JobBan {
 }
 
 async fn get_player_jobbans(db: &mut MySqlConnection, id: i64) -> Option<Vec<JobBan>> {
-    let user_jobbans_result: Result<Vec<JobBan>, sqlx::Error> =
-        query_as("SELECT * FROM player_job_bans WHERE player_id = ?")
-            .bind(id)
-            .fetch_all(db)
-            .await;
-
-    match user_jobbans_result {
+    match query_as("SELECT * FROM player_job_bans WHERE player_id = ?")
+        .bind(id)
+        .fetch_all(db)
+        .await
+    {
         Ok(jobbans) => Some(jobbans),
         Err(_) => None,
     }
 }
 
 async fn get_discord_id_from_player_id(db: &mut MySqlConnection, id: i64) -> Option<String> {
-    let discord_search = query("SELECT discord_id FROM discord_links WHERE player_id = ?")
+    match query("SELECT discord_id FROM discord_links WHERE player_id = ?")
         .bind(id)
         .fetch_one(db)
-        .await;
-
-    match discord_search {
+        .await
+    {
         Ok(search) => Some(search.get("discord_id")),
         Err(_) => None,
     }
@@ -187,20 +180,16 @@ pub async fn index(
     let user_result: Result<Player, sqlx::Error>;
 
     if ckey.is_some() {
-        let unwrapped_ckey = ckey.unwrap();
         user_result = query_as("SELECT * FROM players WHERE ckey = ?")
-            .bind(unwrapped_ckey)
+            .bind(ckey.unwrap())
             .fetch_one(&mut **db)
             .await;
     } else if discord_id.is_some() {
-        let unwrapped_discord_id = discord_id.unwrap();
-
-        let discord_search = query("SELECT player_id FROM discord_links WHERE discord_id = ?")
-            .bind(unwrapped_discord_id)
+        let player_id: i64 = match query("SELECT player_id FROM discord_links WHERE discord_id = ?")
+            .bind(discord_id.unwrap())
             .fetch_one(&mut **db)
-            .await;
-
-        let player_id: i64 = match discord_search {
+            .await
+        {
             Ok(search) => search.get("player_id"),
             Err(_) => return None,
         };
@@ -223,12 +212,11 @@ pub async fn index(
 
 #[get("/<id>")]
 pub async fn id(mut db: Connection<Cmdb>, id: i32) -> Option<Json<Player>> {
-    let user_result = query_as("SELECT * FROM players WHERE id = ?")
+    let user: Player = match query_as("SELECT * FROM players WHERE id = ?")
         .bind(id)
         .fetch_one(&mut **db)
-        .await;
-
-    let user: Player = match user_result {
+        .await
+    {
         Ok(user) => user,
         Err(error) => panic!("Error retrieving data: {error:?}"),
     };
@@ -251,24 +239,18 @@ pub async fn new_note(
     input: Form<NewNote>,
     config: &State<Config>,
 ) -> Status {
-    let executor = &mut **db;
-
-    let admin_id_option = get_player_id(executor, &admin.username).await;
-
-    let admin_id = match admin_id_option {
+    let admin_id = match get_player_id(&mut **db, &admin.username).await {
         Some(admin_id) => admin_id,
         None => return Status::Unauthorized,
     };
 
-    let ckey_option = get_player_ckey(executor, id).await;
-
-    let ckey = match ckey_option {
+    let ckey = match get_player_ckey(&mut **db, id).await {
         Some(ckey) => ckey,
         None => return Status::BadRequest,
     };
 
     match create_note(
-        executor,
+        &mut **db,
         id,
         admin_id,
         &input.message,
@@ -301,35 +283,29 @@ pub async fn create_note(
     confidential: bool,
     category: i32,
 ) -> bool {
-    let now = chrono::Utc::now();
-    let date = format!("{}", now.format("%Y-%m-%d %H:%M:%S"));
-
-    let executed = query("
-        INSERT INTO player_notes (player_id, admin_id, text, date, is_ban, is_confidential, admin_rank, note_category)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(id)
-        .bind(admin_id)
-        .bind(message)
-        .bind(date)
-        .bind(0)
-        .bind(if confidential {1} else {0})
-        .bind("[cmdb]".to_string())
-        .bind(category)
-        .execute(db).await;
-
-    match executed {
+    match query("
+    INSERT INTO player_notes (player_id, admin_id, text, date, is_ban, is_confidential, admin_rank, note_category)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind(id)
+    .bind(admin_id)
+    .bind(message)
+    .bind(chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string())
+    .bind(0)
+    .bind(if confidential {1} else {0})
+    .bind("[cmdb]".to_string())
+    .bind(category)
+    .execute(db).await {
         Ok(query) => query.rows_affected() > 0,
         Err(_) => false,
     }
 }
 
 pub async fn get_player_id(db: &mut MySqlConnection, ckey: &String) -> Option<i64> {
-    let player_search = query("SELECT id FROM players WHERE ckey = ?")
+    let player_id: i64 = match query("SELECT id FROM players WHERE ckey = ?")
         .bind(ckey)
         .fetch_one(db)
-        .await;
-
-    let player_id: i64 = match player_search {
+        .await
+    {
         Ok(search) => search.get("id"),
         Err(_) => return None,
     };
@@ -338,12 +314,11 @@ pub async fn get_player_id(db: &mut MySqlConnection, ckey: &String) -> Option<i6
 }
 
 pub async fn get_player_ckey(db: &mut MySqlConnection, id: i64) -> Option<String> {
-    let player_search = query("SELECT ckey FROM players WHERE id = ?")
+    let player_ckey: String = match query("SELECT ckey FROM players WHERE id = ?")
         .bind(id)
         .fetch_one(db)
-        .await;
-
-    let player_ckey: String = match player_search {
+        .await
+    {
         Ok(search) => search.get("ckey"),
         Err(_) => return None,
     };

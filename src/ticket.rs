@@ -23,13 +23,11 @@ pub struct Ticket {
 
 #[get("/<round_id>")]
 pub async fn get_tickets_by_round_id(mut db: Connection<Cmdb>, round_id: i64) -> Json<Vec<Ticket>> {
-    let ticket_result: Result<Vec<Ticket>, sqlx::Error> =
-        query_as("SELECT * FROM ticket WHERE round_id = ?")
-            .bind(round_id)
-            .fetch_all(&mut **db)
-            .await;
-
-    match ticket_result {
+    match query_as("SELECT * FROM ticket WHERE round_id = ?")
+        .bind(round_id)
+        .fetch_all(&mut **db)
+        .await
+    {
         Ok(ticket) => Json(ticket),
         Err(val) => panic!("{}", val),
     }

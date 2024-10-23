@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use rocket::fairing::{Fairing, Info, Kind};
+use rocket::figment::value::Value;
 use rocket::http::Header;
 use rocket::{
     fairing::AdHoc,
@@ -84,10 +85,13 @@ fn rocket() -> _ {
         .merge(Toml::file("Rocket.toml").nested())
         .merge(Toml::file("Api.toml"));
 
-    let mut base_url = "/api";
-    if cfg!(debug_assertions) {
-        base_url = "";
-    }
+    let base_url: String = match figment.find_value("host.base_url") {
+        Ok(value) => match value {
+            Value::String(_, val) => val,
+            _ => panic!("base_url must be a string."),
+        },
+        Err(_) => "/".to_string(),
+    };
 
     rocket::custom(figment)
         .manage(byond::ByondTopic::default())

@@ -56,15 +56,9 @@ pub async fn log_external(
         username: "[cmdb]".to_string(),
     };
 
-    let body = serde_json::to_string(&json)?;
-
-    let webhook = &logging_config.webhook;
-
-    let client = reqwest::Client::new();
-
-    let _ = client
-        .post(webhook)
-        .body(body)
+    let _ = reqwest::Client::new()
+        .post(&logging_config.webhook)
+        .body(serde_json::to_string(&json)?)
         .header("Content-Type", "application/json")
         .send()
         .await?;
