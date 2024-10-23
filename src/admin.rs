@@ -24,13 +24,12 @@ impl<'r> FromRequest<'r> for Admin {
             });
         }
 
-        let username = match req.headers().get("X-Forwarded-Preferred-Username").next() {
-            Some(username) => username,
-            None => return request::Outcome::Error((Status::BadRequest, AdminError::Missing)),
-        };
-
         request::Outcome::Success(Admin {
-            username: username.to_string(),
+            username: match req.headers().get("X-Forwarded-Preferred-Username").next() {
+                Some(username) => username,
+                None => return request::Outcome::Error((Status::BadRequest, AdminError::Missing)),
+            }
+            .to_string(),
         })
     }
 }
