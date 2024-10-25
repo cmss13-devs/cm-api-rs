@@ -83,7 +83,7 @@ pub struct Note {
     id: i64,
     player_id: i64,
     admin_id: i64,
-    text: String,
+    text: Option<String>,
     date: String,
     is_ban: i32,
     ban_time: Option<i64>,
