@@ -19,6 +19,14 @@ extern crate rocket;
 
 pub struct CORS;
 
+mod admin;
+mod byond;
+mod connections;
+mod logging;
+mod player;
+mod stickyban;
+mod ticket;
+
 #[rocket::async_trait]
 impl Fairing for CORS {
     fn info(&self) -> Info {
@@ -38,14 +46,6 @@ impl Fairing for CORS {
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
     }
 }
-
-mod admin;
-mod byond;
-mod connections;
-mod logging;
-mod player;
-mod stickyban;
-mod ticket;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct TopicConfig {
@@ -104,7 +104,8 @@ fn rocket() -> _ {
                 player::index,
                 player::id,
                 player::new_note,
-                player::applied_notes
+                player::applied_notes,
+                player::get_playtime
             ],
         )
         .mount(

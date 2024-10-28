@@ -300,6 +300,27 @@ pub async fn create_note(
     }
 }
 
+#[derive(Serialize, FromRow)]
+#[serde(rename_all = "camelCase")]
+pub struct Playtime {
+    id: i64,
+    player_id: i64,
+    role_id: String,
+    total_minutes: i32,
+}
+
+#[get("/<id>/Playtime")]
+pub async fn get_playtime(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Playtime>> {
+    match query_as("SELECT * FROM player_playtime WHERE player_id = ?")
+        .bind(id)
+        .fetch_all(&mut **db)
+        .await
+    {
+        Ok(some) => Json(some),
+        Err(_) => return Json(Vec::new()),
+    }
+}
+
 pub async fn get_player_id(db: &mut MySqlConnection, ckey: &String) -> Option<i64> {
     let player_id: i64 = match query("SELECT id FROM players WHERE ckey = ?")
         .bind(ckey)
