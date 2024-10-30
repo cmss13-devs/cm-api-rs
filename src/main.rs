@@ -26,6 +26,7 @@ mod logging;
 mod player;
 mod stickyban;
 mod ticket;
+mod whitelist;
 
 #[rocket::async_trait]
 impl Fairing for CORS {
@@ -138,5 +139,9 @@ fn rocket() -> _ {
         .mount(
             format!("{}/Ticket", base_url),
             routes![ticket::get_tickets_by_round_id, ticket::get_tickets_by_user],
+        )
+        .mount(
+            format!("{base_url}/Whitelist"),
+            routes![whitelist::get_all_whitelistees],
         )
 }
