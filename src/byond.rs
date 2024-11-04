@@ -1,6 +1,6 @@
 use sqlx::{prelude::FromRow, Error};
-use std::net::ToSocketAddrs;
 use std::sync::Mutex;
+use std::{net::ToSocketAddrs, sync::MutexGuard};
 
 use chrono::{DateTime, Duration, Utc};
 use http2byond::ByondTopicValue;
@@ -59,19 +59,19 @@ pub async fn round(
     config: &State<Config>,
 ) -> Option<Json<GameResponse>> {
     {
-        match cache.cache_time.lock() {
-            Ok(real) => {
-                if real.is_some() {
-                    let cache_time = real.unwrap();
-                    let five_minutes_ago = chrono::Utc::now() - Duration::seconds(60);
-
-                    if cache_time > five_minutes_ago {
-                        return Some(Json(cache.cached_status.lock().unwrap().clone().unwrap()));
-                    }
-                }
-            }
-            Err(_) => {}
+        let mutexed: MutexGuard<'_, Option<DateTime<Utc>>> = match cache.cache_time.lock() {
+            Ok(real) => real,
+            Err(poisoned) => poisoned.into_inner(),
         };
+
+        if mutexed.is_some() {
+            let cache_time = mutexed.unwrap();
+            let five_minutes_ago = chrono::Utc::now() - Duration::seconds(60);
+
+            if cache_time > five_minutes_ago {
+                return Some(Json(cache.cached_status.lock().unwrap().clone().unwrap()));
+            }
+        }
     }
 
     let topic_config_option = config.topic.clone();
