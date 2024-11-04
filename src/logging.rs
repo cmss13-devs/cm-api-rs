@@ -43,6 +43,8 @@ pub async fn log_external(
         None => return Err(Box::new(LogError {})),
     };
 
+    println!("here");
+
     let json = ExternalLog {
         embeds: vec![ExternalLogEmbed {
             title: title,
@@ -56,12 +58,14 @@ pub async fn log_external(
         username: "[cmdb]".to_string(),
     };
 
-    let _ = reqwest::Client::new()
+    match reqwest::Client::new()
         .post(&logging_config.webhook)
         .body(serde_json::to_string(&json)?)
         .header("Content-Type", "application/json")
         .send()
-        .await?;
-
-    Ok(())
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(err) => panic!("{err:?}"),
+    }
 }
