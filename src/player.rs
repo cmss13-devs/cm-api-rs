@@ -39,7 +39,7 @@ pub struct Player {
     notes: Vec<Note>,
 
     #[sqlx(skip)]
-    jobbans: Vec<JobBan>,
+    job_bans: Vec<JobBan>,
 
     #[sqlx(skip)]
     permaban_admin_ckey: Option<String>,
@@ -59,7 +59,7 @@ impl Player {
         }
 
         match get_player_jobbans(db, self.id).await {
-            Some(jobbans) => self.jobbans = jobbans,
+            Some(jobbans) => self.job_bans = jobbans,
             None => (),
         }
 
@@ -144,8 +144,8 @@ pub struct JobBan {
     admin_id: i64,
     text: String,
     date: String,
-    ban_time: i64,
-    expiration: i64,
+    ban_time: Option<i64>,
+    expiration: Option<i64>,
     role: String,
 }
 
@@ -156,7 +156,7 @@ async fn get_player_jobbans(db: &mut MySqlConnection, id: i64) -> Option<Vec<Job
         .await
     {
         Ok(jobbans) => Some(jobbans),
-        Err(_) => None,
+        Err(err) => panic!("{err:?}"),
     }
 }
 
