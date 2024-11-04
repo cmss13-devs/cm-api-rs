@@ -43,8 +43,6 @@ pub async fn log_external(
         None => return Err(Box::new(LogError {})),
     };
 
-    println!("here");
-
     let json = ExternalLog {
         embeds: vec![ExternalLogEmbed {
             title: title,
