@@ -41,10 +41,10 @@ pub async fn get_tickets_by_user(
 ) -> Json<Vec<Ticket>> {
     let mut ridsticks: Vec<(i32, i32)> = Vec::new();
 
-    let offset = (page.unwrap_or(1) - 1) * 20;
+    let offset = (page.unwrap_or(1) - 1) * 15;
 
     {
-        let mut rows = query("SELECT DISTINCT round_id, ticket FROM ticket WHERE (sender = ? OR recipient = ?) ORDER BY round_id DESC LIMIT 20 OFFSET ?")
+        let mut rows = query("SELECT DISTINCT round_id, ticket FROM ticket WHERE (sender = ? OR recipient = ?) ORDER BY round_id DESC LIMIT 15 OFFSET ?")
         .bind(&ckey)
         .bind(&ckey)
         .bind(offset)
