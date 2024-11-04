@@ -58,15 +58,20 @@ pub async fn round(
     cache: &State<ByondTopic>,
     config: &State<Config>,
 ) -> Option<Json<GameResponse>> {
-    let mut locked = cache.cache_time.lock().unwrap();
+    {
+        match cache.cache_time.lock() {
+            Ok(real) => {
+                if real.is_some() {
+                    let cache_time = real.unwrap();
+                    let five_minutes_ago = chrono::Utc::now() - Duration::seconds(60);
 
-    if locked.is_some() {
-        let cache_time = locked.unwrap();
-        let five_minutes_ago = chrono::Utc::now() - Duration::seconds(60);
-
-        if cache_time > five_minutes_ago {
-            return Some(Json(cache.cached_status.lock().unwrap().clone().unwrap()));
-        }
+                    if cache_time > five_minutes_ago {
+                        return Some(Json(cache.cached_status.lock().unwrap().clone().unwrap()));
+                    }
+                }
+            }
+            Err(_) => {}
+        };
     }
 
     let topic_config_option = config.topic.clone();
@@ -113,7 +118,7 @@ pub async fn round(
     };
 
     *cache.cached_status.lock().unwrap() = Some(byond_json.clone());
-    *locked = Some(chrono::Utc::now());
+    *cache.cache_time.lock().unwrap() = Some(chrono::Utc::now());
 
     Some(Json(byond_json))
 }
