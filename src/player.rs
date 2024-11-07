@@ -204,7 +204,7 @@ pub async fn index(
 
     let user = match user_result {
         Ok(user) => user,
-        Err(error) => panic!("Error retrieving data: {error:?}"),
+        Err(_) => return None,
     };
 
     Some(Json(user.add_metadata(&mut **db).await))
