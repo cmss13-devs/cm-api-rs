@@ -57,14 +57,12 @@ pub struct Player {
 
 impl Player {
     async fn add_metadata(mut self, db: &mut MySqlConnection) -> Player {
-        match get_player_notes(db, self.id).await {
-            Some(notes) => self.notes = notes,
-            None => (),
+        if let Some(notes) = get_player_notes(db, self.id).await {
+            self.notes = notes
         }
 
-        match get_player_jobbans(db, self.id).await {
-            Some(jobbans) => self.job_bans = jobbans,
-            None => (),
+        if let Some(jobbans) = get_player_jobbans(db, self.id).await {
+            self.job_bans = jobbans
         }
 
         if self.is_permabanned.is_some() && self.is_permabanned.unwrap() != 0 {
@@ -332,7 +330,7 @@ pub async fn get_recent_playtime(
     days: i64,
 ) -> Json<Vec<Playtime>> {
     let time_since = chrono::Utc
-        .with_ymd_and_hms(2000, 01, 01, 00, 00, 00)
+        .with_ymd_and_hms(2000, 1, 1, 0, 0, 0)
         .unwrap()
         .timestamp_millis();
 
