@@ -43,7 +43,7 @@ pub async fn all_stickybans(mut db: Connection<Cmdb>) -> Json<Vec<Stickyban>> {
 
     for stickyban in &mut query {
         if stickyban.admin_id.is_some() {
-            stickyban.admin_ckey = get_player_ckey(&mut **db, stickyban.admin_id.unwrap()).await;
+            stickyban.admin_ckey = get_player_ckey(&mut db, stickyban.admin_id.unwrap()).await;
         }
     }
 
@@ -57,12 +57,12 @@ pub async fn whitelist(
     admin: Admin,
     config: &State<Config>,
 ) -> Status {
-    let admin_id = match get_player_id(&mut **db, &admin.username).await {
+    let admin_id = match get_player_id(&mut db, &admin.username).await {
         Some(admin_id) => admin_id,
         None => return Status::Unauthorized,
     };
 
-    let player_id = match get_player_id(&mut **db, &ckey).await {
+    let player_id = match get_player_id(&mut db, &ckey).await {
         Some(player_id) => player_id,
         None => return Status::BadRequest,
     };
@@ -80,7 +80,7 @@ pub async fn whitelist(
 
     if query.rows_affected() > 0 {
         create_note(
-            &mut **db,
+            &mut db,
             player_id,
             admin_id,
             &"User was whitelisted against all stickybans.".to_string(),
@@ -89,7 +89,7 @@ pub async fn whitelist(
         )
         .await;
         let _ = log_external(
-            &config,
+            config,
             "Player Whitelisted".to_string(),
             format!(
                 "{} whitelisted {} against all matching stickybans.",
@@ -127,7 +127,7 @@ pub async fn get_matched_cids(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Sti
         .await
     {
         Ok(result) => Json(result),
-        Err(_) => return Json(Vec::new()),
+        Err(_) => Json(Vec::new()),
     }
 }
 
@@ -151,7 +151,7 @@ pub async fn get_all_cid(mut db: Connection<Cmdb>, cid: String) -> Json<Vec<Stic
 
     Json(
         get_stickybans_by_ids(
-            &mut **db,
+            &mut db,
             &query.into_iter().map(|s| Box::new(s) as _).collect(),
         )
         .await,
@@ -203,7 +203,7 @@ pub async fn get_all_ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<Vec<St
 
     Json(
         get_stickybans_by_ids(
-            &mut **db,
+            &mut db,
             &query.into_iter().map(|s| Box::new(s) as _).collect(),
         )
         .await,
@@ -231,7 +231,7 @@ pub async fn get_matched_ip(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Stick
         .await
     {
         Ok(result) => Json(result),
-        Err(_) => return Json(Vec::new()),
+        Err(_) => Json(Vec::new()),
     }
 }
 
@@ -249,7 +249,7 @@ pub async fn get_all_ip(mut db: Connection<Cmdb>, ip: String) -> Json<Vec<Sticky
 
     Json(
         get_stickybans_by_ids(
-            &mut **db,
+            &mut db,
             &query.into_iter().map(|s| Box::new(s) as _).collect(),
         )
         .await,

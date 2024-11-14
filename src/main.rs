@@ -61,19 +61,12 @@ struct LoggingConfig {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(crate = "rocket::serde")]
+#[derive(Default)]
 struct Config {
     topic: Option<TopicConfig>,
     logging: Option<LoggingConfig>,
 }
 
-impl Default for Config {
-    fn default() -> Config {
-        Config {
-            topic: None,
-            logging: None,
-        }
-    }
-}
 
 #[derive(Database)]
 #[database("cmdb")]
@@ -106,7 +99,8 @@ fn rocket() -> _ {
                 player::id,
                 player::new_note,
                 player::applied_notes,
-                player::get_playtime
+                player::get_playtime,
+                player::get_recent_playtime
             ],
         )
         .mount(

@@ -45,8 +45,8 @@ pub async fn get_tickets_by_user(
 
     {
         let mut rows = query("SELECT DISTINCT round_id, ticket FROM ticket WHERE (sender = ? OR recipient = ?) ORDER BY round_id DESC LIMIT 15 OFFSET ?")
-        .bind(&ckey)
-        .bind(&ckey)
+        .bind(ckey)
+        .bind(ckey)
         .bind(offset)
         .fetch(&mut **db);
 

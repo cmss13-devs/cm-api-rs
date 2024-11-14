@@ -1,5 +1,9 @@
+use std::collections::HashMap;
+
+use chrono::TimeZone;
 use rocket::{
     form::Form,
+    futures::TryStreamExt,
     http::Status,
     serde::{json::Json, Serialize},
     State,
@@ -129,8 +133,8 @@ pub async fn applied_notes(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Note>>
     };
 
     for note in &mut user_notes {
-        note.noting_admin_ckey = get_player_ckey(&mut **db, note.admin_id).await;
-        note.noted_player_ckey = get_player_ckey(&mut **db, note.player_id).await;
+        note.noting_admin_ckey = get_player_ckey(&mut db, note.admin_id).await;
+        note.noted_player_ckey = get_player_ckey(&mut db, note.player_id).await;
     }
 
     Json(user_notes)
@@ -207,7 +211,7 @@ pub async fn index(
         Err(_) => return None,
     };
 
-    Some(Json(user.add_metadata(&mut **db).await))
+    Some(Json(user.add_metadata(&mut db).await))
 }
 
 #[get("/<id>")]
@@ -221,7 +225,7 @@ pub async fn id(mut db: Connection<Cmdb>, id: i32) -> Option<Json<Player>> {
         Err(error) => panic!("Error retrieving data: {error:?}"),
     };
 
-    Some(Json(user.add_metadata(&mut **db).await))
+    Some(Json(user.add_metadata(&mut db).await))
 }
 
 #[derive(FromForm)]
@@ -239,18 +243,18 @@ pub async fn new_note(
     input: Form<NewNote>,
     config: &State<Config>,
 ) -> Status {
-    let admin_id = match get_player_id(&mut **db, &admin.username).await {
+    let admin_id = match get_player_id(&mut db, &admin.username).await {
         Some(admin_id) => admin_id,
         None => return Status::Unauthorized,
     };
 
-    let ckey = match get_player_ckey(&mut **db, id).await {
+    let ckey = match get_player_ckey(&mut db, id).await {
         Some(ckey) => ckey,
         None => return Status::BadRequest,
     };
 
     match create_note(
-        &mut **db,
+        &mut db,
         id,
         admin_id,
         &input.message,
@@ -261,7 +265,7 @@ pub async fn new_note(
     {
         true => {
             let _ = log_external(
-                &config,
+                config,
                 "Note Added".to_string(),
                 format!(
                     "{} added a note to {}: {}",
@@ -317,8 +321,66 @@ pub async fn get_playtime(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Playtim
         .await
     {
         Ok(some) => Json(some),
-        Err(_) => return Json(Vec::new()),
+        Err(_) => Json(Vec::new()),
     }
+}
+
+#[get("/<id>/Playtime/<days>")]
+pub async fn get_recent_playtime(
+    mut db: Connection<Cmdb>,
+    id: i64,
+    days: i64,
+) -> Json<Vec<Playtime>> {
+    let time_since = chrono::Utc
+        .with_ymd_and_hms(2000, 01, 01, 00, 00, 00)
+        .unwrap()
+        .timestamp_millis();
+
+    let time_ago = chrono::Utc::now() - chrono::Duration::days(days);
+    let time_millis = time_ago.timestamp_millis();
+    let time_since = (time_millis - time_since) / 100;
+
+    let mut rows =
+        query("SELECT * FROM log_player_playtime WHERE player_id = ? AND real_time_recorded > ?")
+            .bind(id)
+            .bind(time_since)
+            .fetch(&mut **db);
+
+    let mut playtimes: HashMap<String, i64> = HashMap::new();
+
+    let mut row_result = rows.try_next().await;
+    while row_result.is_ok() {
+        match row_result.as_mut().unwrap() {
+            Some(value) => {
+                let role: String = value.get("role_id");
+                let mut deciseconds: i64 = value.get("total_deciseconds");
+
+                if let Some(existing) = playtimes.get(&role) {
+                    deciseconds += existing;
+                }
+
+                playtimes.insert(role, deciseconds);
+            }
+            None => break,
+        };
+
+        row_result = rows.try_next().await;
+    }
+
+    let mut playtime_structs = Vec::new();
+
+    for playtime in playtimes.iter().enumerate() {
+        let minutes = playtime.1 .1 / 600;
+
+        playtime_structs.push(Playtime {
+            id: playtime.0 as i64,
+            player_id: id,
+            role_id: playtime.1 .0.to_string(),
+            total_minutes: minutes as i32,
+        });
+    }
+
+    Json(playtime_structs)
 }
 
 pub async fn get_player_id(db: &mut MySqlConnection, ckey: &String) -> Option<i64> {

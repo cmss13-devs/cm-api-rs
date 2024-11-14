@@ -45,7 +45,7 @@ pub async fn log_external(
 
     let json = ExternalLog {
         embeds: vec![ExternalLogEmbed {
-            title: title,
+            title,
             description: message,
             color: 8359053,
             author: ExternalLogAuthor {

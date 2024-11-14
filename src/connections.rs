@@ -116,7 +116,7 @@ async fn get_triplets_by_ckey(db: &mut MySqlConnection, ckey: String) -> Option<
 #[get("/Ckey?<ckey>")]
 pub async fn ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<ConnectionHistory> {
     Json(ConnectionHistory::annotate(
-        match get_triplets_by_ckey(&mut **db, ckey).await {
+        match get_triplets_by_ckey(&mut db, ckey).await {
             Some(query) => query,
             None => return Json(ConnectionHistory::default()),
         },
@@ -128,7 +128,7 @@ pub async fn connection_history_by_cid(
     mut db: Connection<Cmdb>,
     ckey: String,
 ) -> Json<ConnectionHistory> {
-    let triplets = match get_triplets_by_ckey(&mut **db, ckey).await {
+    let triplets = match get_triplets_by_ckey(&mut db, ckey).await {
         Some(query) => query,
         None => return Json(ConnectionHistory::default()),
     };
@@ -160,7 +160,7 @@ pub async fn connection_history_by_ip(
     mut db: Connection<Cmdb>,
     ckey: String,
 ) -> Json<ConnectionHistory> {
-    let triplets = match get_triplets_by_ckey(&mut **db, ckey).await {
+    let triplets = match get_triplets_by_ckey(&mut db, ckey).await {
         Some(query) => query,
         None => return Json(ConnectionHistory::default()),
     };
