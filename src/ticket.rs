@@ -1,4 +1,5 @@
 use chrono::Utc;
+use rocket::futures::Stream;
 use rocket::{futures::TryStreamExt, serde::json::Json};
 use rocket_db_pools::Connection;
 use serde::Serialize;
@@ -33,22 +34,38 @@ pub async fn get_tickets_by_round_id(mut db: Connection<Cmdb>, round_id: i64) ->
     }
 }
 
-#[get("/User/<ckey>?<page>")]
+#[get("/User/<ckey>?<page>&<from>&<to>")]
 pub async fn get_tickets_by_user(
     mut db: Connection<Cmdb>,
     ckey: &str,
     page: Option<i64>,
+    from: Option<String>,
+    to: Option<String>,
 ) -> Json<Vec<Ticket>> {
     let mut ridsticks: Vec<(i32, i32)> = Vec::new();
 
     let offset = (page.unwrap_or(1) - 1) * 15;
 
     {
-        let mut rows = query("SELECT DISTINCT round_id, ticket FROM ticket WHERE (sender = ? OR recipient = ?) ORDER BY round_id DESC LIMIT 15 OFFSET ?")
-        .bind(ckey)
-        .bind(ckey)
-        .bind(offset)
-        .fetch(&mut **db);
+        let mut rows: std::pin::Pin<
+            Box<dyn Stream<Item = Result<sqlx::mysql::MySqlRow, sqlx::Error>> + Send>,
+        >;
+
+        if from.is_some() && to.is_some() {
+            rows = query("SELECT DISTINCT round_id, ticket FROM ticket WHERE (sender = ? OR recipient = ?) AND (time >= ? AND time <= ?) ORDER BY round_id DESC LIMIT 15 OFFSET ?")
+                .bind(&ckey)
+                .bind(&ckey)
+                .bind(from.unwrap())
+                .bind(to.unwrap())
+                .bind(offset)
+                .fetch(&mut **db)
+        } else {
+            rows = query("SELECT DISTINCT round_id, ticket FROM ticket WHERE (sender = ? OR recipient = ?) ORDER BY round_id DESC LIMIT 15 OFFSET ?")
+            .bind(ckey)
+            .bind(ckey)
+            .bind(offset)
+            .fetch(&mut **db);
+        }
 
         let mut row_result = rows.try_next().await;
         while row_result.is_ok() {

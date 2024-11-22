@@ -67,7 +67,6 @@ struct Config {
     logging: Option<LoggingConfig>,
 }
 
-
 #[derive(Database)]
 #[database("cmdb")]
 pub struct Cmdb(MySqlPool);
