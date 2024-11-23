@@ -65,11 +65,17 @@ impl Player {
             self.job_bans = jobbans
         }
 
-        if self.is_permabanned.is_some() && self.is_permabanned.unwrap() != 0 {
+        if self.is_permabanned.is_some()
+            && self.is_permabanned.unwrap() != 0
+            && self.permaban_admin_id.is_some()
+        {
             self.permaban_admin_ckey = get_player_ckey(db, self.permaban_admin_id.unwrap()).await;
         }
 
-        if self.is_time_banned.is_some() && self.is_time_banned.unwrap() != 0 {
+        if self.is_time_banned.is_some()
+            && self.is_time_banned.unwrap() != 0
+            && self.time_ban_admin_id.is_some()
+        {
             self.time_ban_admin_ckey = get_player_ckey(db, self.time_ban_admin_id.unwrap()).await;
         }
 
