@@ -149,7 +149,7 @@ pub async fn applied_notes(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Note>>
 pub struct JobBan {
     id: i64,
     player_id: i64,
-    admin_id: i64,
+    admin_id: Option<i64>,
     text: String,
     date: String,
     ban_time: Option<i64>,
