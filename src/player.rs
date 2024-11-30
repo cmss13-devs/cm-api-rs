@@ -151,7 +151,7 @@ pub struct JobBan {
     player_id: i64,
     admin_id: Option<i64>,
     text: String,
-    date: String,
+    date: Option<String>,
     ban_time: Option<i64>,
     expiration: Option<i64>,
     role: String,
