@@ -53,8 +53,8 @@ pub async fn get_tickets_by_user(
 
         if from.is_some() && to.is_some() {
             rows = query("SELECT DISTINCT round_id, ticket FROM ticket WHERE (sender = ? OR recipient = ?) AND (time >= ? AND time <= ?) ORDER BY round_id DESC LIMIT 15 OFFSET ?")
-                .bind(&ckey)
-                .bind(&ckey)
+                .bind(ckey)
+                .bind(ckey)
                 .bind(from.unwrap())
                 .bind(to.unwrap())
                 .bind(offset)

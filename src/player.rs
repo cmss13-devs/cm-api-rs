@@ -155,17 +155,29 @@ pub struct JobBan {
     ban_time: Option<i64>,
     expiration: Option<i64>,
     role: String,
+
+    #[sqlx(skip)]
+    banning_admin_ckey: Option<String>,
 }
 
 async fn get_player_jobbans(db: &mut MySqlConnection, id: i64) -> Option<Vec<JobBan>> {
-    match query_as("SELECT * FROM player_job_bans WHERE player_id = ?")
-        .bind(id)
-        .fetch_all(db)
-        .await
-    {
-        Ok(jobbans) => Some(jobbans),
-        Err(err) => panic!("{err:?}"),
+    let mut jobbans: Vec<JobBan> =
+        match query_as("SELECT * FROM player_job_bans WHERE player_id = ?")
+            .bind(id)
+            .fetch_all(&mut *db)
+            .await
+        {
+            Ok(jobbans) => jobbans,
+            Err(err) => panic!("{err:?}"),
+        };
+
+    for jobban in &mut jobbans.iter_mut() {
+        if jobban.admin_id.is_some() {
+            jobban.banning_admin_ckey = get_player_ckey(&mut *db, jobban.admin_id.unwrap()).await;
+        }
     }
+
+    Some(jobbans)
 }
 
 async fn get_discord_id_from_player_id(db: &mut MySqlConnection, id: i64) -> Option<String> {
