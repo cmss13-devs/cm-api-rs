@@ -23,6 +23,7 @@ mod admin;
 mod byond;
 mod connections;
 mod logging;
+mod new_players;
 mod player;
 mod stickyban;
 mod ticket;
@@ -99,7 +100,7 @@ fn rocket() -> _ {
                 player::new_note,
                 player::applied_notes,
                 player::get_playtime,
-                player::get_recent_playtime
+                player::get_recent_playtime,
             ],
         )
         .mount(
@@ -136,5 +137,9 @@ fn rocket() -> _ {
         .mount(
             format!("{base_url}/Whitelist"),
             routes![whitelist::get_all_whitelistees],
+        )
+        .mount(
+            format!{"{}/NewPlayers", base_url},
+            routes![new_players::get_new_players],
         )
 }
