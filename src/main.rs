@@ -27,6 +27,7 @@ mod new_players;
 mod player;
 mod stickyban;
 mod ticket;
+mod twofactor;
 mod whitelist;
 
 #[rocket::async_trait]
@@ -139,7 +140,11 @@ fn rocket() -> _ {
             routes![whitelist::get_all_whitelistees],
         )
         .mount(
-            format!{"{}/NewPlayers", base_url},
+            format! {"{}/NewPlayers", base_url},
             routes![new_players::get_new_players],
+        )
+        .mount(
+            format!("{}/TwoFactor", base_url),
+            routes![twofactor::twofactor_validate],
         )
 }
