@@ -102,6 +102,7 @@ fn rocket() -> _ {
                 player::applied_notes,
                 player::get_playtime,
                 player::get_recent_playtime,
+                player::get_total_playtime,
             ],
         )
         .mount(
