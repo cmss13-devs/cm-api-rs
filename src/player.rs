@@ -342,7 +342,7 @@ pub async fn get_playtime(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Playtim
 }
 
 #[get("/TotalPlaytime?<ckey>")]
-pub async fn get_total_playtime(mut db: Connection<Cmdb>, ckey: String) -> Json<i64> {
+pub async fn get_total_playtime(mut db: Connection<Cmdb>, ckey: String) -> Json<u64> {
     match query("SELECT SUM(player_playtime.total_minutes) AS playtime FROM players INNER JOIN player_playtime ON players.id = player_playtime.player_id WHERE players.ckey = ?")
         .bind(ckey)
         .fetch_one(&mut **db)
