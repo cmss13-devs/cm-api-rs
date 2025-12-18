@@ -8,9 +8,10 @@ chrono = { version = "0.4.38", features = ["serde"] }
 http2byond = "0.1.0"
 reqwest = "0.12.8"
 rocket_db_pools = { version = "0.2.0", features = ["sqlx_mysql"] }
+rust_decimal = "1.39.0"
 serde = "1.0.210"
 serde_json = "1.0.132"
-sqlx = { version = "0.7", features = ["mysql", "runtime-async-std", "chrono"] }
+sqlx = { version = "0.7", features = ["mysql", "runtime-async-std", "chrono", "bigdecimal"] }
 
 [dependencies.rocket]
 version = "0.5.1"

@@ -9,7 +9,7 @@ use rocket::{
     State,
 };
 use rocket_db_pools::Connection;
-use sqlx::{prelude::FromRow, query, query_as, MySqlConnection, Row};
+use sqlx::{MySqlConnection, Row, prelude::FromRow, query, query_as, types::BigDecimal};
 
 use crate::{admin::Admin, logging::log_external, Cmdb, Config};
 
@@ -342,14 +342,14 @@ pub async fn get_playtime(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Playtim
 }
 
 #[get("/TotalPlaytime?<ckey>")]
-pub async fn get_total_playtime(mut db: Connection<Cmdb>, ckey: String) -> Json<u64> {
+pub async fn get_total_playtime(mut db: Connection<Cmdb>, ckey: String) -> Json<String> {
     match query("SELECT SUM(player_playtime.total_minutes) AS playtime FROM players INNER JOIN player_playtime ON players.id = player_playtime.player_id WHERE players.ckey = ?")
         .bind(ckey)
         .fetch_one(&mut **db)
         .await 
     {
-        Ok(some) => Json(some.get("playtime")),
-        Err(_) => Json(0)
+        Ok(some) => Json(some.get::<BigDecimal, _>("playtime").to_string()),
+        Err(_) => Json("0".to_string())
     }
 }
 
