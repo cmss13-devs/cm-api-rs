@@ -397,6 +397,8 @@ pub async fn callback(
         .await
         .unwrap_or_default();
 
+    eprintln!("Groups: {:?}", &groups);
+
     // Check if user has required admin group
     if !groups.contains(&oidc.config.admin_group) {
         return Err((
