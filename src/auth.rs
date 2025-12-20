@@ -391,7 +391,7 @@ pub async fn callback(
     // For Authentik, groups are in the access token or userinfo
     let userinfo_endpoint = oidc.config.userinfo_endpoint.clone().unwrap_or_else(|| {
         // Derive from issuer URL if not explicitly configured
-        format!("{}/userinfo", oidc.config.issuer_url.trim_end_matches('/'))
+        format!("{}/userinfo/", oidc.config.issuer_url.trim_end_matches('/'))
     });
     let groups = fetch_user_groups(&userinfo_endpoint, token_response.access_token())
         .await
