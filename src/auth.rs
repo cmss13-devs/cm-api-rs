@@ -479,6 +479,8 @@ async fn fetch_user_groups(
     userinfo_endpoint: &str,
     access_token: &openidconnect::AccessToken,
 ) -> Result<Vec<String>, String> {
+    eprintln!("Curling: {}", &userinfo_endpoint);
+
     // Make raw HTTP request to get all claims including custom ones
     let http_client = reqwest::Client::new();
     let response = http_client
