@@ -8,7 +8,7 @@ use rocket::{serde::json::Json, State};
 use rocket_db_pools::Connection;
 use sqlx::query_as;
 
-use crate::{Cmdb, Config};
+use crate::{admin::Admin, Cmdb, Config};
 
 #[derive(Default)]
 pub struct ByondTopic {
@@ -57,6 +57,7 @@ pub struct GameStatus {
 pub async fn round(
     cache: &State<ByondTopic>,
     config: &State<Config>,
+    _admin: Admin,
 ) -> Option<Json<GameResponse>> {
     {
         let mutexed: MutexGuard<'_, Option<DateTime<Utc>>> = match cache.cache_time.lock() {
@@ -129,7 +130,7 @@ pub struct Round {
 }
 
 #[get("/Recent")]
-pub async fn recent(mut db: Connection<Cmdb>) -> Json<Vec<Round>> {
+pub async fn recent(mut db: Connection<Cmdb>, _admin: Admin) -> Json<Vec<Round>> {
     let rounds: Result<Vec<Round>, Error> =
         query_as("SELECT * FROM mc_round ORDER BY id DESC LIMIT ?")
             .bind(10)

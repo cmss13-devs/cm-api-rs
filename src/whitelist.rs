@@ -3,7 +3,7 @@ use rocket_db_pools::Connection;
 use serde::Serialize;
 use sqlx::{prelude::FromRow, query_as};
 
-use crate::Cmdb;
+use crate::{admin::Admin, Cmdb};
 
 #[derive(Serialize, FromRow)]
 #[serde(rename_all = "camelCase")]
@@ -14,7 +14,7 @@ pub struct WhitelistPlayer {
 }
 
 #[get("/")]
-pub async fn get_all_whitelistees(mut db: Connection<Cmdb>) -> Json<Vec<WhitelistPlayer>> {
+pub async fn get_all_whitelistees(mut db: Connection<Cmdb>, _admin: Admin) -> Json<Vec<WhitelistPlayer>> {
     match query_as(
         "SELECT id, ckey, whitelist_status FROM players WHERE (whitelist_status is not null AND LENGTH(whitelist_status) > 0)",
     )

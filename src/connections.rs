@@ -5,7 +5,7 @@ use rocket::serde::json::Json;
 use rocket_db_pools::Connection;
 use sqlx::{prelude::FromRow, query_as, MySqlConnection};
 
-use crate::Cmdb;
+use crate::{admin::Admin, Cmdb};
 
 #[derive(serde::Serialize, FromRow, Hash, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -64,7 +64,7 @@ impl ConnectionHistory {
 }
 
 #[get("/Ip?<ip>")]
-pub async fn ip(mut db: Connection<Cmdb>, ip: String) -> Json<ConnectionHistory> {
+pub async fn ip(mut db: Connection<Cmdb>, _admin: Admin, ip: String) -> Json<ConnectionHistory> {
     let parts: Vec<&str> = ip.split('.').collect();
 
     let query = match query_as(
@@ -85,7 +85,7 @@ pub async fn ip(mut db: Connection<Cmdb>, ip: String) -> Json<ConnectionHistory>
 }
 
 #[get("/Cid?<cid>")]
-pub async fn cid(mut db: Connection<Cmdb>, cid: String) -> Json<ConnectionHistory> {
+pub async fn cid(mut db: Connection<Cmdb>, _admin: Admin, cid: String) -> Json<ConnectionHistory> {
     let query_result: Result<Vec<LoginTriplet>, sqlx::Error> =
         query_as("SELECT * FROM login_triplets WHERE last_known_cid = ?")
             .bind(cid)
@@ -114,7 +114,7 @@ async fn get_triplets_by_ckey(db: &mut MySqlConnection, ckey: String) -> Option<
 }
 
 #[get("/Ckey?<ckey>")]
-pub async fn ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<ConnectionHistory> {
+pub async fn ckey(mut db: Connection<Cmdb>, _admin: Admin, ckey: String) -> Json<ConnectionHistory> {
     Json(ConnectionHistory::annotate(
         match get_triplets_by_ckey(&mut db, ckey).await {
             Some(query) => query,
@@ -126,6 +126,7 @@ pub async fn ckey(mut db: Connection<Cmdb>, ckey: String) -> Json<ConnectionHist
 #[get("/FullByAllCid?<ckey>")]
 pub async fn connection_history_by_cid(
     mut db: Connection<Cmdb>,
+    _admin: Admin,
     ckey: String,
 ) -> Json<ConnectionHistory> {
     let triplets = match get_triplets_by_ckey(&mut db, ckey).await {
@@ -158,6 +159,7 @@ pub async fn connection_history_by_cid(
 #[get("/FullByAllIps?<ckey>")]
 pub async fn connection_history_by_ip(
     mut db: Connection<Cmdb>,
+    _admin: Admin,
     ckey: String,
 ) -> Json<ConnectionHistory> {
     let triplets = match get_triplets_by_ckey(&mut db, ckey).await {

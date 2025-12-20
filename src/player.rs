@@ -126,7 +126,7 @@ async fn get_player_notes(db: &mut MySqlConnection, id: i64) -> Option<Vec<Note>
 }
 
 #[get("/<id>/AppliedNotes")]
-pub async fn applied_notes(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Note>> {
+pub async fn applied_notes(mut db: Connection<Cmdb>, _admin: Admin, id: i64) -> Json<Vec<Note>> {
     let mut user_notes: Vec<Note> = match query_as("SELECT * FROM player_notes WHERE admin_id = ?")
         .bind(id)
         .fetch_all(&mut **db)
@@ -194,6 +194,7 @@ async fn get_discord_id_from_player_id(db: &mut MySqlConnection, id: i64) -> Opt
 #[get("/?<ckey>&<discord_id>")]
 pub async fn index(
     mut db: Connection<Cmdb>,
+    _admin: Admin,
     ckey: Option<String>,
     discord_id: Option<String>,
 ) -> Option<Json<Player>> {
@@ -231,7 +232,7 @@ pub async fn index(
 }
 
 #[get("/<id>")]
-pub async fn id(mut db: Connection<Cmdb>, id: i32) -> Option<Json<Player>> {
+pub async fn id(mut db: Connection<Cmdb>, _admin: Admin, id: i32) -> Option<Json<Player>> {
     let user: Player = match query_as("SELECT * FROM players WHERE id = ?")
         .bind(id)
         .fetch_one(&mut **db)
@@ -330,7 +331,7 @@ pub struct Playtime {
 }
 
 #[get("/<id>/Playtime")]
-pub async fn get_playtime(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Playtime>> {
+pub async fn get_playtime(mut db: Connection<Cmdb>, _admin: Admin, id: i64) -> Json<Vec<Playtime>> {
     match query_as("SELECT * FROM player_playtime WHERE player_id = ?")
         .bind(id)
         .fetch_all(&mut **db)
@@ -342,7 +343,7 @@ pub async fn get_playtime(mut db: Connection<Cmdb>, id: i64) -> Json<Vec<Playtim
 }
 
 #[get("/TotalPlaytime?<ckey>")]
-pub async fn get_total_playtime(mut db: Connection<Cmdb>, ckey: String) -> Json<String> {
+pub async fn get_total_playtime(mut db: Connection<Cmdb>, _admin: Admin, ckey: String) -> Json<String> {
     match query(r"SELECT SUM(player_playtime.total_minutes) AS playtime FROM players INNER JOIN player_playtime ON players.id = player_playtime.player_id WHERE players.ckey = ? AND player_playtime.role_id != 'Observer'")
         .bind(ckey)
         .fetch_one(&mut **db)
@@ -363,6 +364,7 @@ pub async fn get_total_playtime(mut db: Connection<Cmdb>, ckey: String) -> Json<
 #[get("/<id>/Playtime/<days>")]
 pub async fn get_recent_playtime(
     mut db: Connection<Cmdb>,
+    _admin: Admin,
     id: i64,
     days: i64,
 ) -> Json<Vec<Playtime>> {
