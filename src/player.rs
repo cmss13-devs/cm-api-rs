@@ -348,7 +348,14 @@ pub async fn get_total_playtime(mut db: Connection<Cmdb>, ckey: String) -> Json<
         .fetch_one(&mut **db)
         .await 
     {
-        Ok(some) => Json(some.get::<BigDecimal, _>("playtime").to_string()),
+        Ok(some) => {
+            if let Ok(decimal) = some.try_get::<BigDecimal, _>("playtime") {
+                Json(decimal.to_string())
+            } else {
+                Json("0".to_string())
+            }
+
+        },
         Err(_) => Json("0".to_string())
     }
 }

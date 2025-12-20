@@ -21,7 +21,10 @@ pub async fn twofactor_validate(
             if res.rows_affected() > 0 {
                 "Two factor request updated.".to_string()
             } else {
-                format!("An error occured: could not find match for ckey: {}, cid: {}, ip: {}.", &cid, &admin.username, &ip)
+                format!(
+                    "An error occured: could not find match for ckey: {}, cid: {}, ip: {}.",
+                    &cid, &admin.username, &ip
+                )
             }
         }
         Err(err) => format!("An error occured: {:?}", err).to_string(),
