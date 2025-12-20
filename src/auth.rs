@@ -500,6 +500,8 @@ async fn fetch_user_groups(
         .await
         .map_err(|e| format!("Failed to parse userinfo JSON: {}", e))?;
 
+    eprintln!("JSON response: {:?}", &json);
+
     // Extract groups from the JSON response
     // Authentik typically returns groups as an array of strings
     if let Some(groups) = json.get("groups") {
