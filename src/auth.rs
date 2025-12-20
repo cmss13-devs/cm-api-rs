@@ -395,7 +395,7 @@ pub async fn callback(
     });
     let groups = fetch_user_groups(&userinfo_endpoint, token_response.access_token())
         .await
-        .unwrap_or_default();
+        .unwrap();
 
     eprintln!("Groups: {:?}", &groups);
 
