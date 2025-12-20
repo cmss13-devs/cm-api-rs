@@ -1,36 +1,91 @@
+use std::sync::Arc;
+
 use rocket::{
     http::Status,
     request::{self, FromRequest},
     Request,
 };
 
-pub struct Admin {
+use crate::auth::{validate_session_jwt, OidcClient};
+
+/// Authenticated user extracted from session JWT
+#[allow(dead_code)]
+pub struct AuthenticatedUser {
     pub username: String,
+    pub email: String,
+    pub groups: Vec<String>,
 }
 
+/// Errors that can occur during authentication
 #[derive(Debug)]
-pub enum AdminError {
+#[allow(dead_code)]
+pub enum AuthError {
+    /// No session cookie present
     Missing,
+    /// Session JWT is invalid or malformed
+    Invalid(String),
+    /// Session has expired
+    Expired,
+    /// User lacks required group membership
+    Forbidden,
+    /// OIDC client not configured
+    NotConfigured,
 }
+
+const SESSION_COOKIE_NAME: &str = "session";
 
 #[rocket::async_trait]
-impl<'r> FromRequest<'r> for Admin {
-    type Error = AdminError;
+impl<'r> FromRequest<'r> for AuthenticatedUser {
+    type Error = AuthError;
 
     async fn from_request(req: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
+        // Debug mode: return fake admin user
         if cfg!(debug_assertions) {
-            return request::Outcome::Success(Admin {
+            return request::Outcome::Success(AuthenticatedUser {
                 username: "AdminBot".to_string(),
+                email: "admin@debug.local".to_string(),
+                groups: vec!["admin".to_string()],
             });
         }
 
-        let username = match req.headers().get("X-Forwarded-Preferred-Username").next() {
-            Some(username) => username,
-            None => return request::Outcome::Error((Status::BadRequest, AdminError::Missing)),
+        // Get OIDC client from managed state
+        let oidc = match req.rocket().state::<Arc<OidcClient>>() {
+            Some(oidc) => oidc,
+            None => {
+                return request::Outcome::Error((Status::InternalServerError, AuthError::NotConfigured))
+            }
         };
 
-        request::Outcome::Success(Admin {
-            username: username.to_string(),
+        // Get session cookie
+        let session_cookie = match req.cookies().get(SESSION_COOKIE_NAME) {
+            Some(cookie) => cookie,
+            None => return request::Outcome::Error((Status::Unauthorized, AuthError::Missing)),
+        };
+
+        // Validate session JWT
+        let claims = match validate_session_jwt(session_cookie.value(), &oidc.config.session_secret)
+        {
+            Ok(claims) => claims,
+            Err(e) => {
+                if e.contains("ExpiredSignature") {
+                    return request::Outcome::Error((Status::Unauthorized, AuthError::Expired));
+                }
+                return request::Outcome::Error((Status::Unauthorized, AuthError::Invalid(e)));
+            }
+        };
+
+        // Check if user has required admin group
+        if !claims.groups.contains(&oidc.config.admin_group) {
+            return request::Outcome::Error((Status::Forbidden, AuthError::Forbidden));
+        }
+
+        request::Outcome::Success(AuthenticatedUser {
+            username: claims.username,
+            email: claims.email,
+            groups: claims.groups,
         })
     }
 }
+
+// Keep the old Admin type as an alias for backward compatibility
+pub type Admin = AuthenticatedUser;

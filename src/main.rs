@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use auth::{CorsConfig, OidcConfig};
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::figment::value::Value;
 use rocket::http::Header;
@@ -13,13 +14,13 @@ use rocket::{
 use rocket::{Request, Response};
 use rocket_db_pools::{sqlx::MySqlPool, Database};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[macro_use]
 extern crate rocket;
 
-pub struct CORS;
-
 mod admin;
+mod auth;
 mod byond;
 mod connections;
 mod logging;
@@ -30,8 +31,19 @@ mod ticket;
 mod twofactor;
 mod whitelist;
 
+/// CORS fairing with configurable allowed origin
+pub struct Cors {
+    allowed_origin: String,
+}
+
+impl Cors {
+    pub fn new(allowed_origin: String) -> Self {
+        Self { allowed_origin }
+    }
+}
+
 #[rocket::async_trait]
-impl Fairing for CORS {
+impl Fairing for Cors {
     fn info(&self) -> Info {
         Info {
             name: "Add CORS headers to responses",
@@ -40,10 +52,13 @@ impl Fairing for CORS {
     }
 
     async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
-        response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
+        response.set_header(Header::new(
+            "Access-Control-Allow-Origin",
+            self.allowed_origin.clone(),
+        ));
         response.set_header(Header::new(
             "Access-Control-Allow-Methods",
-            "POST, GET, PATCH, OPTIONS",
+            "POST, GET, PATCH, DELETE, OPTIONS",
         ));
         response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
@@ -56,17 +71,19 @@ struct TopicConfig {
     auth: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct LoggingConfig {
     webhook: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(crate = "rocket::serde")]
 #[derive(Default)]
 struct Config {
     topic: Option<TopicConfig>,
     logging: Option<LoggingConfig>,
+    oidc: Option<OidcConfig>,
+    cors: Option<CorsConfig>,
 }
 
 #[derive(Database)]
@@ -74,7 +91,7 @@ struct Config {
 pub struct Cmdb(MySqlPool);
 
 #[launch]
-fn rocket() -> _ {
+async fn rocket() -> _ {
     let figment = Figment::from(rocket::Config::default())
         .merge(Serialized::defaults(Config::default()))
         .merge(Toml::file("Rocket.toml").nested())
@@ -88,11 +105,65 @@ fn rocket() -> _ {
         Err(_) => "/".to_string(),
     };
 
-    rocket::custom(figment)
+    // Extract configuration
+    let config: Config = figment.extract().expect("Failed to extract configuration");
+
+    // Get CORS allowed origin (default to * in debug mode)
+    let allowed_origin = config
+        .cors
+        .as_ref()
+        .map(|c| c.allowed_origin.clone())
+        .unwrap_or_else(|| {
+            if cfg!(debug_assertions) {
+                "*".to_string()
+            } else {
+                panic!("CORS allowed_origin must be configured in Api.toml for production")
+            }
+        });
+
+    // Initialize OIDC client if configured (not required in debug mode)
+    let oidc_client = if let Some(oidc_config) = config.oidc.clone() {
+        match auth::init_oidc_client(oidc_config).await {
+            Ok(client) => Some(Arc::new(client)),
+            Err(e) => {
+                if cfg!(debug_assertions) {
+                    eprintln!("Warning: Failed to initialize OIDC client: {}", e);
+                    eprintln!("Continuing in debug mode without OIDC...");
+                    None
+                } else {
+                    panic!("Failed to initialize OIDC client: {}", e);
+                }
+            }
+        }
+    } else if cfg!(debug_assertions) {
+        eprintln!("Warning: OIDC not configured, running in debug mode");
+        None
+    } else {
+        panic!("OIDC configuration required in Api.toml for production");
+    };
+
+    let mut rocket_builder = rocket::custom(figment)
         .manage(byond::ByondTopic::default())
         .attach(Cmdb::init())
         .attach(AdHoc::config::<Config>())
-        .attach(CORS)
+        .attach(Cors::new(allowed_origin));
+
+    // Add OIDC client to managed state if available
+    if let Some(client) = oidc_client {
+        rocket_builder = rocket_builder.manage(client);
+    }
+
+    rocket_builder
+        .mount(
+            "/auth",
+            routes![
+                auth::login,
+                auth::callback,
+                auth::logout,
+                auth::refresh,
+                auth::userinfo,
+            ],
+        )
         .mount(
             format!("{}/User", base_url),
             routes![
