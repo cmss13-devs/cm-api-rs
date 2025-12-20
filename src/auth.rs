@@ -117,64 +117,63 @@ pub async fn init_oidc_client(config: OidcConfig) -> Result<OidcClient, String> 
         .map_err(|e| format!("Invalid issuer URL: {}", e))?;
 
     // Try standard discovery first
-    let provider_metadata = match CoreProviderMetadata::discover_async(
-        issuer_url.clone(),
-        async_http_client,
-    )
-    .await
-    {
-        Ok(metadata) => metadata,
-        Err(e) => {
-            // If standard discovery fails, try manual discovery with more details
-            eprintln!("Standard OIDC discovery failed: {:?}", e);
-            eprintln!("Attempting manual discovery...");
+    let provider_metadata =
+        match CoreProviderMetadata::discover_async(issuer_url.clone(), async_http_client).await {
+            Ok(metadata) => metadata,
+            Err(e) => {
+                // If standard discovery fails, try manual discovery with more details
+                eprintln!("Standard OIDC discovery failed: {:?}", e);
+                eprintln!("Attempting manual discovery...");
 
-            // Fetch the discovery document manually to get more error details
-            let discovery_url = format!(
-                "{}/.well-known/openid-configuration",
-                config.issuer_url.trim_end_matches('/')
-            );
+                // Fetch the discovery document manually to get more error details
+                let discovery_url = format!(
+                    "{}/.well-known/openid-configuration",
+                    config.issuer_url.trim_end_matches('/')
+                );
 
-            let http_client = reqwest::Client::new();
-            let response = http_client
-                .get(&discovery_url)
-                .send()
-                .await
-                .map_err(|e| format!("Failed to fetch discovery document: {}", e))?;
+                let http_client = reqwest::Client::new();
+                let response = http_client
+                    .get(&discovery_url)
+                    .send()
+                    .await
+                    .map_err(|e| format!("Failed to fetch discovery document: {}", e))?;
 
-            let status = response.status();
-            let body = response
-                .text()
-                .await
-                .map_err(|e| format!("Failed to read discovery response body: {}", e))?;
+                let status = response.status();
+                let body = response
+                    .text()
+                    .await
+                    .map_err(|e| format!("Failed to read discovery response body: {}", e))?;
 
-            if !status.is_success() {
-                return Err(format!(
-                    "Discovery endpoint returned status {}: {}",
-                    status, body
-                ));
+                if !status.is_success() {
+                    return Err(format!(
+                        "Discovery endpoint returned status {}: {}",
+                        status, body
+                    ));
+                }
+
+                eprintln!("Discovery document fetched successfully, attempting to parse...");
+
+                // Try to parse as JSON to see what fields are there
+                let json: serde_json::Value = serde_json::from_str(&body)
+                    .map_err(|e| format!("Discovery document is not valid JSON: {}", e))?;
+
+                eprintln!(
+                    "Discovery JSON keys: {:?}",
+                    json.as_object().map(|o| o.keys().collect::<Vec<_>>())
+                );
+
+                // Try to deserialize into CoreProviderMetadata
+                let metadata: CoreProviderMetadata = serde_json::from_str(&body).map_err(|e| {
+                    format!(
+                        "Failed to parse discovery document as OIDC metadata: {}. Raw JSON: {}",
+                        e,
+                        &body[..body.len().min(500)]
+                    )
+                })?;
+
+                metadata
             }
-
-            eprintln!("Discovery document fetched successfully, attempting to parse...");
-
-            // Try to parse as JSON to see what fields are there
-            let json: serde_json::Value = serde_json::from_str(&body)
-                .map_err(|e| format!("Discovery document is not valid JSON: {}", e))?;
-
-            eprintln!("Discovery JSON keys: {:?}", json.as_object().map(|o| o.keys().collect::<Vec<_>>()));
-
-            // Try to deserialize into CoreProviderMetadata
-            let metadata: CoreProviderMetadata = serde_json::from_str(&body).map_err(|e| {
-                format!(
-                    "Failed to parse discovery document as OIDC metadata: {}. Raw JSON: {}",
-                    e,
-                    &body[..body.len().min(500)]
-                )
-            })?;
-
-            metadata
-        }
-    };
+        };
 
     let client = CoreClient::from_provider_metadata(
         provider_metadata,
@@ -229,9 +228,13 @@ pub fn validate_session_jwt(token: &str, secret: &str) -> Result<SessionClaims, 
     let mut validation = Validation::default();
     validation.validate_exp = true;
 
-    decode::<SessionClaims>(token, &DecodingKey::from_secret(secret.as_bytes()), &validation)
-        .map(|data| data.claims)
-        .map_err(|e| format!("Failed to validate session JWT: {}", e))
+    decode::<SessionClaims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )
+    .map(|data| data.claims)
+    .map_err(|e| format!("Failed to validate session JWT: {}", e))
 }
 
 /// GET /auth/login - Initiates OIDC authentication flow
@@ -277,12 +280,15 @@ pub fn login(
         redirect_after_login: redirect,
     };
 
-    let pkce_cookie = Cookie::build((PKCE_COOKIE_NAME, serde_json::to_string(&pkce_state).unwrap()))
-        .path("/")
-        .http_only(true)
-        .same_site(SameSite::Lax)
-        .max_age(rocket::time::Duration::minutes(5))
-        .secure(!cfg!(debug_assertions));
+    let pkce_cookie = Cookie::build((
+        PKCE_COOKIE_NAME,
+        serde_json::to_string(&pkce_state).unwrap(),
+    ))
+    .path("/")
+    .http_only(true)
+    .same_site(SameSite::Lax)
+    .max_age(rocket::time::Duration::minutes(5))
+    .secure(!cfg!(debug_assertions));
 
     cookies.add(pkce_cookie);
 
@@ -341,7 +347,7 @@ pub async fn callback(
                 Status::InternalServerError,
                 Json(AuthError {
                     error: "token_exchange_failed".to_string(),
-                    message: format!("Failed to exchange authorization code: {}", e),
+                    message: format!("Failed to exchange authorization code: {:?}", e),
                 }),
             )
         })?;
@@ -359,7 +365,10 @@ pub async fn callback(
 
     // Verify ID token
     let claims = id_token
-        .claims(&oidc.client.id_token_verifier(), &Nonce::new(pkce_state.nonce))
+        .claims(
+            &oidc.client.id_token_verifier(),
+            &Nonce::new(pkce_state.nonce),
+        )
         .map_err(|e| {
             (
                 Status::InternalServerError,
@@ -372,10 +381,7 @@ pub async fn callback(
 
     // Extract user info from claims
     let subject = claims.subject().to_string();
-    let email = claims
-        .email()
-        .map(|e| e.to_string())
-        .unwrap_or_default();
+    let email = claims.email().map(|e| e.to_string()).unwrap_or_default();
     let username = claims
         .preferred_username()
         .map(|u| u.to_string())
@@ -431,8 +437,8 @@ pub async fn callback(
     };
 
     // Create session JWT
-    let session_jwt = create_session_jwt(&session_claims, &oidc.config.session_secret)
-        .map_err(|e| {
+    let session_jwt =
+        create_session_jwt(&session_claims, &oidc.config.session_secret).map_err(|e| {
             (
                 Status::InternalServerError,
                 Json(AuthError {
@@ -553,18 +559,16 @@ pub async fn refresh(
     .claims;
 
     // Decrypt refresh token
-    let refresh_token =
-        decrypt_refresh_token(&claims.refresh_token, &oidc.config.session_secret).map_err(
-            |e| {
-                (
-                    Status::Unauthorized,
-                    Json(AuthError {
-                        error: "invalid_refresh_token".to_string(),
-                        message: e,
-                    }),
-                )
-            },
-        )?;
+    let refresh_token = decrypt_refresh_token(&claims.refresh_token, &oidc.config.session_secret)
+        .map_err(|e| {
+        (
+            Status::Unauthorized,
+            Json(AuthError {
+                error: "invalid_refresh_token".to_string(),
+                message: e,
+            }),
+        )
+    })?;
 
     if refresh_token.is_empty() {
         return Err((
@@ -621,15 +625,16 @@ pub async fn refresh(
     };
 
     // Create new session JWT
-    let session_jwt = create_session_jwt(&new_claims, &oidc.config.session_secret).map_err(|e| {
-        (
-            Status::InternalServerError,
-            Json(AuthError {
-                error: "session_creation_failed".to_string(),
-                message: e,
-            }),
-        )
-    })?;
+    let session_jwt =
+        create_session_jwt(&new_claims, &oidc.config.session_secret).map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthError {
+                    error: "session_creation_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
 
     // Set new session cookie
     let session_cookie = Cookie::build((SESSION_COOKIE_NAME, session_jwt))
@@ -673,8 +678,8 @@ pub fn userinfo(
     })?;
 
     // Validate session JWT
-    let claims =
-        validate_session_jwt(session_cookie.value(), &oidc.config.session_secret).map_err(|e| {
+    let claims = validate_session_jwt(session_cookie.value(), &oidc.config.session_secret)
+        .map_err(|e| {
             (
                 Status::Unauthorized,
                 Json(AuthError {
