@@ -103,6 +103,9 @@ fn rocket() -> _ {
                 player::get_playtime,
                 player::get_recent_playtime,
                 player::get_total_playtime,
+                player::get_vpn_whitelist,
+                player::add_vpn_whitelist,
+                player::remove_vpn_whitelist,
             ],
         )
         .mount(

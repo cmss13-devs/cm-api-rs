@@ -443,3 +443,59 @@ pub async fn get_player_ckey(db: &mut MySqlConnection, id: i64) -> Option<String
 
     Some(player_ckey)
 }
+
+#[post("/VpnWhitelist?<ckey>")]
+pub async fn add_vpn_whitelist(
+    mut db: Connection<Cmdb>,
+    admin: Admin,
+    ckey: String,
+) -> Status {
+    match query("INSERT INTO vpn_whitelist (ckey, admin_ckey) VALUES (?, ?)")
+        .bind(&ckey)
+        .bind(&admin.username)
+        .execute(&mut **db)
+        .await
+    {
+        Ok(_) => Status::Created,
+        Err(_) => Status::InternalServerError,
+    }
+}
+
+#[delete("/VpnWhitelist?<ckey>")]
+pub async fn remove_vpn_whitelist(
+    mut db: Connection<Cmdb>,
+    _admin: Admin,
+    ckey: String,
+) -> Status {
+    match query("DELETE FROM vpn_whitelist WHERE ckey = ?")
+        .bind(&ckey)
+        .execute(&mut **db)
+        .await
+    {
+        Ok(_) => Status::Ok,
+        Err(_) => Status::InternalServerError,
+    }
+}
+
+#[derive(Serialize, FromRow)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct VpnWhitelist {
+    ckey: String,
+    admin_ckey: String,
+}
+
+#[get("/VpnWhitelist?<ckey>")]
+pub async fn get_vpn_whitelist(
+    mut db: Connection<Cmdb>,
+    _admin: Admin,
+    ckey: String,
+) -> Option<Json<VpnWhitelist>> {
+    match query_as("SELECT ckey, admin_ckey FROM vpn_whitelist WHERE ckey = ?")
+        .bind(&ckey)
+        .fetch_one(&mut **db)
+        .await
+    {
+        Ok(whitelist) => Some(Json(whitelist)),
+        Err(_) => None,
+    }
+}
