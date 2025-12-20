@@ -155,7 +155,7 @@ async fn rocket() -> _ {
 
     rocket_builder
         .mount(
-            "/auth",
+            format!("{base_url}/auth"),
             routes![
                 auth::login,
                 auth::callback,
