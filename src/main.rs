@@ -3,6 +3,7 @@
 use auth::{CorsConfig, OidcConfig};
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::figment::value::Value;
+use rocket::fs::FileServer;
 use rocket::http::Header;
 use rocket::{
     fairing::AdHoc,
@@ -26,6 +27,7 @@ mod connections;
 mod logging;
 mod new_players;
 mod player;
+mod spa;
 mod stickyban;
 mod ticket;
 mod twofactor;
@@ -102,7 +104,7 @@ async fn rocket() -> _ {
             Value::String(_, val) => val,
             _ => panic!("base_url must be a string."),
         },
-        Err(_) => "/".to_string(),
+        Err(_) => "/api".to_string(),
     };
 
     // Extract configuration
@@ -222,4 +224,6 @@ async fn rocket() -> _ {
             format!("{}/TwoFactor", base_url),
             routes![twofactor::twofactor_validate],
         )
+        .mount("/assets", FileServer::from("/var/www/static/assets"))
+        .mount("/", routes![spa::index, spa::fallback])
 }
