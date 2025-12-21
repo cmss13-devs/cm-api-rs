@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// OIDC configuration loaded from Api.toml
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 pub struct OidcConfig {
     pub issuer_url: String,
     pub client_id: String,
@@ -66,8 +66,9 @@ pub struct CorsConfig {
 }
 
 /// Discovered OIDC provider client (managed state)
+#[derive(Default)]
 pub struct OidcClient {
-    pub client: CoreClient,
+    pub client: Option<CoreClient>,
     pub config: OidcConfig,
 }
 
@@ -185,7 +186,10 @@ pub async fn init_oidc_client(config: OidcConfig) -> Result<OidcClient, String> 
             .map_err(|e| format!("Invalid redirect URI: {}", e))?,
     );
 
-    Ok(OidcClient { client, config })
+    Ok(OidcClient {
+        client: Some(client),
+        config,
+    })
 }
 
 /// Simple XOR encryption for refresh token (not cryptographically secure, but obfuscates)
@@ -255,9 +259,10 @@ pub fn login(
     let csrf_state_secret = csrf_state.secret().clone();
     let nonce_secret = nonce.secret().clone();
 
+    let client = oidc.client.clone().unwrap();
+
     // Build authorization URL
-    let mut auth_request = oidc
-        .client
+    let mut auth_request = client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
             move || csrf_state,
@@ -335,9 +340,10 @@ pub async fn callback(
         ));
     }
 
+    let client = oidc.client.clone().unwrap();
+
     // Exchange authorization code for tokens
-    let token_response = oidc
-        .client
+    let token_response = client
         .exchange_code(AuthorizationCode::new(code))
         .set_pkce_verifier(PkceCodeVerifier::new(pkce_state.verifier))
         .request_async(async_http_client)
@@ -365,10 +371,7 @@ pub async fn callback(
 
     // Verify ID token
     let claims = id_token
-        .claims(
-            &oidc.client.id_token_verifier(),
-            &Nonce::new(pkce_state.nonce),
-        )
+        .claims(&client.id_token_verifier(), &Nonce::new(pkce_state.nonce))
         .map_err(|e| {
             (
                 Status::InternalServerError,
@@ -582,9 +585,10 @@ pub async fn refresh(
         ));
     }
 
+    let client = oidc.client.clone().unwrap();
+
     // Exchange refresh token for new tokens
-    let token_response = oidc
-        .client
+    let token_response = client
         .exchange_refresh_token(&RefreshToken::new(refresh_token))
         .request_async(async_http_client)
         .await

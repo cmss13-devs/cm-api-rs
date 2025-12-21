@@ -17,6 +17,8 @@ use rocket_db_pools::{sqlx::MySqlPool, Database};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+use crate::auth::OidcClient;
+
 #[macro_use]
 extern crate rocket;
 
@@ -153,6 +155,8 @@ async fn rocket() -> _ {
     // Add OIDC client to managed state if available
     if let Some(client) = oidc_client {
         rocket_builder = rocket_builder.manage(client);
+    } else {
+        rocket_builder = rocket_builder.manage(Arc::new(OidcClient::default()))
     }
 
     rocket_builder
@@ -224,6 +228,13 @@ async fn rocket() -> _ {
             format!("{}/TwoFactor", base_url),
             routes![twofactor::twofactor_validate],
         )
-        .mount("/assets", FileServer::from("/var/www/static/assets"))
+        .mount(
+            "/",
+            if std::path::Path::new("/var/www/static/assets").exists() {
+                FileServer::from("/var/www/static/assets").into()
+            } else {
+                rocket::routes![]
+            },
+        )
         .mount("/", routes![spa::index, spa::fallback])
 }
