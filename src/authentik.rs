@@ -1,7 +1,7 @@
 use rocket::{http::Status, serde::json::Json, State};
 use serde::{Deserialize, Serialize};
 
-use crate::{admin::ManagementUser, Config};
+use crate::{admin::ManagementUser, logging::log_external, Config};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AuthentikConfig {
@@ -108,7 +108,7 @@ pub async fn get_allowed_groups(
 /// POST /Authentik/AddUserToGroup - add a user to an Authentik group by ckey
 #[post("/AddUserToGroup", format = "json", data = "<request>")]
 pub async fn add_user_to_group(
-    _manager: ManagementUser,
+    manager: ManagementUser,
     config: &State<Config>,
     request: Json<UserGroupRequest>,
 ) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
@@ -173,6 +173,17 @@ pub async fn add_user_to_group(
                 }),
             )
         })?;
+
+    // Log the action
+    let _ = log_external(
+        config,
+        "User Manager: User Added to Group".to_string(),
+        format!(
+            "{} added ckey '{}' to group '{}'",
+            manager.username, request.ckey, request.group_name
+        ),
+    )
+    .await;
 
     Ok(Json(AuthentikSuccess {
         message: format!(
@@ -307,7 +318,7 @@ async fn add_user_to_authentik_group(
 /// POST /Authentik/RemoveUserFromGroup - remove a user from an Authentik group by ckey
 #[post("/RemoveUserFromGroup", format = "json", data = "<request>")]
 pub async fn remove_user_from_group(
-    _manager: ManagementUser,
+    manager: ManagementUser,
     config: &State<Config>,
     request: Json<UserGroupRequest>,
 ) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
@@ -372,6 +383,17 @@ pub async fn remove_user_from_group(
                 }),
             )
         })?;
+
+    // Log the action
+    let _ = log_external(
+        config,
+        "User Manager: User Removed from Group".to_string(),
+        format!(
+            "{} removed ckey '{}' from group '{}'",
+            manager.username, request.ckey, request.group_name
+        ),
+    )
+    .await;
 
     Ok(Json(AuthentikSuccess {
         message: format!(
