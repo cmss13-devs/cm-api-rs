@@ -122,57 +122,7 @@ pub async fn init_oidc_client(config: OidcConfig) -> Result<OidcClient, String> 
         match CoreProviderMetadata::discover_async(issuer_url.clone(), async_http_client).await {
             Ok(metadata) => metadata,
             Err(e) => {
-                // If standard discovery fails, try manual discovery with more details
-                eprintln!("Standard OIDC discovery failed: {:?}", e);
-                eprintln!("Attempting manual discovery...");
-
-                // Fetch the discovery document manually to get more error details
-                let discovery_url = format!(
-                    "{}/.well-known/openid-configuration",
-                    config.issuer_url.trim_end_matches('/')
-                );
-
-                let http_client = reqwest::Client::new();
-                let response = http_client
-                    .get(&discovery_url)
-                    .send()
-                    .await
-                    .map_err(|e| format!("Failed to fetch discovery document: {}", e))?;
-
-                let status = response.status();
-                let body = response
-                    .text()
-                    .await
-                    .map_err(|e| format!("Failed to read discovery response body: {}", e))?;
-
-                if !status.is_success() {
-                    return Err(format!(
-                        "Discovery endpoint returned status {}: {}",
-                        status, body
-                    ));
-                }
-
-                eprintln!("Discovery document fetched successfully, attempting to parse...");
-
-                // Try to parse as JSON to see what fields are there
-                let json: serde_json::Value = serde_json::from_str(&body)
-                    .map_err(|e| format!("Discovery document is not valid JSON: {}", e))?;
-
-                eprintln!(
-                    "Discovery JSON keys: {:?}",
-                    json.as_object().map(|o| o.keys().collect::<Vec<_>>())
-                );
-
-                // Try to deserialize into CoreProviderMetadata
-                let metadata: CoreProviderMetadata = serde_json::from_str(&body).map_err(|e| {
-                    format!(
-                        "Failed to parse discovery document as OIDC metadata: {}. Raw JSON: {}",
-                        e,
-                        &body[..body.len().min(500)]
-                    )
-                })?;
-
-                metadata
+                return Err(format!("OIDC discovery failed: {:?}", e));
             }
         };
 
