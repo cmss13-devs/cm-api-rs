@@ -5,13 +5,48 @@ use rocket::{
     form::Form,
     futures::TryStreamExt,
     http::Status,
+    request::{FromRequest, Outcome},
     serde::{json::Json, Serialize},
-    State,
+    Request, State,
 };
 use rocket_db_pools::Connection;
 use sqlx::{MySqlConnection, Row, prelude::FromRow, query, query_as, types::BigDecimal};
 
 use crate::{admin::Admin, logging::log_external, Cmdb, Config};
+
+/// Request guard for extracting the Authorization header
+pub struct AuthorizationHeader(pub String);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for AuthorizationHeader {
+    type Error = ();
+
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        match request.headers().get_one("Authorization") {
+            Some(value) => Outcome::Success(AuthorizationHeader(value.to_string())),
+            None => Outcome::Forward(Status::Unauthorized),
+        }
+    }
+}
+
+/// Validates the Authorization header against the configured API auth token.
+/// Returns true if the header is valid, false otherwise.
+fn validate_auth_header(auth_header: Option<&str>, config: &Config) -> bool {
+    let Some(auth_value) = auth_header else {
+        return false;
+    };
+
+    let Some(api_auth) = &config.api_auth else {
+        return false;
+    };
+
+    // Support both "Bearer <token>" and raw "<token>" formats
+    let token = auth_value
+        .strip_prefix("Bearer ")
+        .unwrap_or(auth_value);
+
+    token == api_auth.token
+}
 
 #[derive(Serialize, FromRow)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
@@ -343,7 +378,21 @@ pub async fn get_playtime(mut db: Connection<Cmdb>, _admin: Admin, id: i64) -> J
 }
 
 #[get("/TotalPlaytime?<ckey>")]
-pub async fn get_total_playtime(mut db: Connection<Cmdb>, _admin: Admin, ckey: String) -> Json<String> {
+pub async fn get_total_playtime(
+    mut db: Connection<Cmdb>,
+    admin: Option<Admin>,
+    config: &State<Config>,
+    auth_header: Option<AuthorizationHeader>,
+    ckey: String,
+) -> Result<Json<String>, Status> {
+    // Check if authorized via Admin guard or Authorization header
+    let is_authorized = admin.is_some()
+        || validate_auth_header(auth_header.as_ref().map(|h| h.0.as_str()), config.inner());
+
+    if !is_authorized {
+        return Err(Status::Unauthorized);
+    }
+
     match query(r"SELECT SUM(player_playtime.total_minutes) AS playtime FROM players INNER JOIN player_playtime ON players.id = player_playtime.player_id WHERE players.ckey = ? AND player_playtime.role_id != 'Observer'")
         .bind(ckey)
         .fetch_one(&mut **db)
@@ -351,13 +400,13 @@ pub async fn get_total_playtime(mut db: Connection<Cmdb>, _admin: Admin, ckey: S
     {
         Ok(some) => {
             if let Ok(decimal) = some.try_get::<BigDecimal, _>("playtime") {
-                Json(decimal.to_string())
+                Ok(Json(decimal.to_string()))
             } else {
-                Json("0".to_string())
+                Ok(Json("0".to_string()))
             }
 
         },
-        Err(_) => Json("0".to_string())
+        Err(_) => Ok(Json("0".to_string()))
     }
 }
 

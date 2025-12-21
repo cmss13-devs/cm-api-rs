@@ -83,6 +83,12 @@ struct LoggingConfig {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+struct ApiAuthConfig {
+    /// Bearer token for API authorization (alternative to session-based auth)
+    token: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(crate = "rocket::serde")]
 #[derive(Default)]
 struct Config {
@@ -91,6 +97,7 @@ struct Config {
     oidc: Option<OidcConfig>,
     cors: Option<CorsConfig>,
     authentik: Option<AuthentikConfig>,
+    api_auth: Option<ApiAuthConfig>,
 }
 
 #[derive(Database)]
