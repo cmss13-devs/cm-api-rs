@@ -52,7 +52,10 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
         let oidc = match req.rocket().state::<Arc<OidcClient>>() {
             Some(oidc) => oidc,
             None => {
-                return request::Outcome::Error((Status::InternalServerError, AuthError::NotConfigured))
+                return request::Outcome::Error((
+                    Status::InternalServerError,
+                    AuthError::NotConfigured,
+                ))
             }
         };
 
@@ -89,3 +92,70 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
 
 // Keep the old Admin type as an alias for backward compatibility
 pub type Admin = AuthenticatedUser;
+
+/// Management user - requires either admin or management group membership
+#[allow(dead_code)]
+pub struct ManagementUser {
+    pub username: String,
+    pub email: String,
+    pub groups: Vec<String>,
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for ManagementUser {
+    type Error = AuthError;
+
+    async fn from_request(req: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
+        // Debug mode: return fake management user
+        if cfg!(debug_assertions) {
+            return request::Outcome::Success(ManagementUser {
+                username: "ManagementBot".to_string(),
+                email: "management@debug.local".to_string(),
+                groups: vec!["management".to_string(), "admin".to_string()],
+            });
+        }
+
+        // Get OIDC client from managed state
+        let oidc = match req.rocket().state::<Arc<OidcClient>>() {
+            Some(oidc) => oidc,
+            None => {
+                return request::Outcome::Error((
+                    Status::InternalServerError,
+                    AuthError::NotConfigured,
+                ))
+            }
+        };
+
+        // Get session cookie
+        let session_cookie = match req.cookies().get(SESSION_COOKIE_NAME) {
+            Some(cookie) => cookie,
+            None => return request::Outcome::Error((Status::Unauthorized, AuthError::Missing)),
+        };
+
+        // Validate session JWT
+        let claims = match validate_session_jwt(session_cookie.value(), &oidc.config.session_secret)
+        {
+            Ok(claims) => claims,
+            Err(e) => {
+                if e.contains("ExpiredSignature") {
+                    return request::Outcome::Error((Status::Unauthorized, AuthError::Expired));
+                }
+                return request::Outcome::Error((Status::Unauthorized, AuthError::Invalid(e)));
+            }
+        };
+
+        // Check if user has required admin or management group
+        let has_admin = claims.groups.contains(&oidc.config.admin_group);
+        let has_management = claims.groups.contains(&oidc.config.management_group);
+
+        if !has_admin || !has_management {
+            return request::Outcome::Error((Status::Forbidden, AuthError::Forbidden));
+        }
+
+        request::Outcome::Success(ManagementUser {
+            username: claims.username,
+            email: claims.email,
+            groups: claims.groups,
+        })
+    }
+}

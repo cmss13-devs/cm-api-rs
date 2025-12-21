@@ -27,6 +27,7 @@ pub struct OidcConfig {
     #[serde(default = "default_scopes")]
     pub scopes: Vec<String>,
     pub admin_group: String,
+    pub management_group: String,
     pub session_secret: String,
     #[serde(default = "default_session_duration")]
     pub session_duration_hours: u64,

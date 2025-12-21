@@ -18,12 +18,14 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::auth::OidcClient;
+use crate::authentik::AuthentikConfig;
 
 #[macro_use]
 extern crate rocket;
 
 mod admin;
 mod auth;
+mod authentik;
 mod byond;
 mod connections;
 mod logging;
@@ -88,6 +90,7 @@ struct Config {
     logging: Option<LoggingConfig>,
     oidc: Option<OidcConfig>,
     cors: Option<CorsConfig>,
+    authentik: Option<AuthentikConfig>,
 }
 
 #[derive(Database)]
@@ -227,6 +230,15 @@ async fn rocket() -> _ {
         .mount(
             format!("{}/TwoFactor", base_url),
             routes![twofactor::twofactor_validate],
+        )
+        .mount(
+            format!("{}/Authentik", base_url),
+            routes![
+                authentik::add_user_to_group,
+                authentik::remove_user_from_group,
+                authentik::get_group_members,
+                authentik::get_allowed_groups
+            ],
         )
         .mount(
             "/",

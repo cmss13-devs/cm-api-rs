@@ -573,6 +573,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "urlencoding",
 ]
 
 [[package]]
