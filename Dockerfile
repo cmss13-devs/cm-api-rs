@@ -2,11 +2,7 @@
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 
-RUN apk add --no-cache git
-
-ARG FRONTEND_REPO=https://github.com/cmss13-devs/cmdb.git
-ARG FRONTEND_REF=main
-RUN git clone --depth 1 --branch ${FRONTEND_REF} ${FRONTEND_REPO} .
+COPY frontend/ .
 
 ARG VITE_API_PATH=/api
 ENV VITE_API_PATH=${VITE_API_PATH}
@@ -15,9 +11,9 @@ RUN npm ci && npm run build
 # Stage 2: Build backend
 FROM rust:1.85 AS backend-builder
 WORKDIR /usr/src/app
-COPY src/ src/
-COPY Cargo.toml Cargo.toml
-COPY Cargo.lock Cargo.lock
+COPY backend/src/ src/
+COPY backend/Cargo.toml Cargo.toml
+COPY backend/Cargo.lock Cargo.lock
 RUN cargo install --path .
 
 # Stage 3: Runtime
