@@ -57,7 +57,7 @@ pub async fn whitelist(
     admin: Admin,
     config: &State<Config>,
 ) -> Status {
-    let admin_id = match get_player_id(&mut db, &admin.username).await {
+    let admin_id = match get_player_id(&mut db, &admin.ckey).await {
         Some(admin_id) => admin_id,
         None => return Status::Unauthorized,
     };
@@ -93,7 +93,7 @@ pub async fn whitelist(
             "Player Whitelisted".to_string(),
             format!(
                 "{} whitelisted {} against all matching stickybans.",
-                &admin.username, &ckey
+                &admin.ckey, &ckey
             ),
         )
         .await;
@@ -120,7 +120,11 @@ impl StickybanMatch for StickybanMatchedCid {
 }
 
 #[get("/<id>/Match/Cid")]
-pub async fn get_matched_cids(mut db: Connection<Cmdb>, _admin: Admin, id: i64) -> Json<Vec<StickybanMatchedCid>> {
+pub async fn get_matched_cids(
+    mut db: Connection<Cmdb>,
+    _admin: Admin,
+    id: i64,
+) -> Json<Vec<StickybanMatchedCid>> {
     match query_as("SELECT * FROM stickyban_matched_cid WHERE linked_stickyban = ?")
         .bind(id)
         .fetch_all(&mut **db)
@@ -132,7 +136,11 @@ pub async fn get_matched_cids(mut db: Connection<Cmdb>, _admin: Admin, id: i64) 
 }
 
 #[get("/Cid?<cid>")]
-pub async fn get_all_cid(mut db: Connection<Cmdb>, _admin: Admin, cid: String) -> Json<Vec<Stickyban>> {
+pub async fn get_all_cid(
+    mut db: Connection<Cmdb>,
+    _admin: Admin,
+    cid: String,
+) -> Json<Vec<Stickyban>> {
     let query: Vec<StickybanMatchedCid> =
         match query_as("SELECT * FROM stickyban_matched_cid WHERE cid = ?")
             .bind(cid)
@@ -191,7 +199,11 @@ pub async fn get_matched_ckey(
 }
 
 #[get("/Ckey?<ckey>")]
-pub async fn get_all_ckey(mut db: Connection<Cmdb>, _admin: Admin, ckey: String) -> Json<Vec<Stickyban>> {
+pub async fn get_all_ckey(
+    mut db: Connection<Cmdb>,
+    _admin: Admin,
+    ckey: String,
+) -> Json<Vec<Stickyban>> {
     let query: Vec<StickybanMatchedCkey> =
         match query_as("SELECT * FROM stickyban_matched_ckey WHERE ckey = ? AND whitelisted = 0")
             .bind(ckey)
@@ -225,7 +237,11 @@ impl StickybanMatch for StickybanMatchedIp {
 }
 
 #[get("/<id>/Match/Ip")]
-pub async fn get_matched_ip(mut db: Connection<Cmdb>, _admin: Admin, id: i64) -> Json<Vec<StickybanMatchedIp>> {
+pub async fn get_matched_ip(
+    mut db: Connection<Cmdb>,
+    _admin: Admin,
+    id: i64,
+) -> Json<Vec<StickybanMatchedIp>> {
     match query_as("SELECT * FROM stickyban_matched_ip WHERE linked_stickyban = ?")
         .bind(id)
         .fetch_all(&mut **db)
@@ -237,7 +253,11 @@ pub async fn get_matched_ip(mut db: Connection<Cmdb>, _admin: Admin, id: i64) ->
 }
 
 #[get("/Ip?<ip>")]
-pub async fn get_all_ip(mut db: Connection<Cmdb>, _admin: Admin, ip: String) -> Json<Vec<Stickyban>> {
+pub async fn get_all_ip(
+    mut db: Connection<Cmdb>,
+    _admin: Admin,
+    ip: String,
+) -> Json<Vec<Stickyban>> {
     let query: Vec<StickybanMatchedIp> =
         match query_as("SELECT * FROM stickyban_matched_ip WHERE ip = ?")
             .bind(ip)

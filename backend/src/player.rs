@@ -295,7 +295,7 @@ pub async fn new_note(
     input: Form<NewNote>,
     config: &State<Config>,
 ) -> Status {
-    let admin_id = match get_player_id(&mut db, &admin.username).await {
+    let admin_id = match get_player_id(&mut db, &admin.ckey).await {
         Some(admin_id) => admin_id,
         None => return Status::Unauthorized,
     };
@@ -321,7 +321,7 @@ pub async fn new_note(
                 "Note Added".to_string(),
                 format!(
                     "{} added a note to {}: {}",
-                    &admin.username, ckey, &input.message
+                    &admin.ckey, ckey, &input.message
                 ),
             )
             .await;
@@ -503,7 +503,7 @@ pub async fn add_vpn_whitelist(
 ) -> Status {
     match query("INSERT INTO vpn_whitelist (ckey, admin_ckey) VALUES (?, ?)")
         .bind(&ckey)
-        .bind(&admin.username)
+        .bind(&admin.ckey)
         .execute(&mut **db)
         .await
     {
