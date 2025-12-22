@@ -107,14 +107,15 @@ async fn get_triplets_by_ckey(db: &mut MySqlConnection, ckey: String) -> Option<
             .fetch_all(db)
             .await;
 
-    match query_result {
-        Ok(query) => Some(query),
-        Err(_) => None,
-    }
+    query_result.ok()
 }
 
 #[get("/Ckey?<ckey>")]
-pub async fn ckey(mut db: Connection<Cmdb>, _admin: Admin, ckey: String) -> Json<ConnectionHistory> {
+pub async fn ckey(
+    mut db: Connection<Cmdb>,
+    _admin: Admin,
+    ckey: String,
+) -> Json<ConnectionHistory> {
     Json(ConnectionHistory::annotate(
         match get_triplets_by_ckey(&mut db, ckey).await {
             Some(query) => query,

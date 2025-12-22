@@ -235,14 +235,14 @@ pub async fn index(
 ) -> Option<Json<Player>> {
     let user_result: Result<Player, sqlx::Error>;
 
-    if ckey.is_some() {
+    if let Some(ckey) = ckey {
         user_result = query_as("SELECT * FROM players WHERE ckey = ?")
-            .bind(ckey.unwrap())
+            .bind(ckey)
             .fetch_one(&mut **db)
             .await;
-    } else if discord_id.is_some() {
+    } else if let Some(discord_id) = discord_id {
         let player_id: i64 = match query("SELECT player_id FROM discord_links WHERE discord_id = ?")
-            .bind(discord_id.unwrap())
+            .bind(discord_id)
             .fetch_one(&mut **db)
             .await
         {

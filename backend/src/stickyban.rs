@@ -287,12 +287,9 @@ async fn get_stickybans_by_ids(
         unique_sticky.insert(sticky.get_parent_id().to_string());
     }
 
-    match query_as("SELECT * FROM stickyban WHERE FIND_IN_SET(id, ?) AND active = 1")
+    query_as("SELECT * FROM stickyban WHERE FIND_IN_SET(id, ?) AND active = 1")
         .bind(unique_sticky.into_iter().collect::<Vec<String>>().join(","))
         .fetch_all(db)
         .await
-    {
-        Ok(result) => result,
-        Err(_) => Vec::new(),
-    }
+        .unwrap_or_default()
 }

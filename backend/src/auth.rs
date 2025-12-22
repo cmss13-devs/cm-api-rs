@@ -1,6 +1,10 @@
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use openidconnect::{
+    AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
+    EmptyExtraTokenFields, IdTokenFields, IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge,
+    PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, StandardErrorResponse,
+    StandardTokenResponse, TokenResponse,
     core::{
         CoreAuthDisplay, CoreAuthPrompt, CoreErrorResponseType, CoreGenderClaim, CoreJsonWebKey,
         CoreJsonWebKeyType, CoreJsonWebKeyUse, CoreJweContentEncryptionAlgorithm,
@@ -8,16 +12,12 @@ use openidconnect::{
         CoreRevocationErrorResponse, CoreTokenIntrospectionResponse, CoreTokenType,
     },
     reqwest::async_http_client,
-    AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    EmptyExtraTokenFields, IdTokenFields, IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge,
-    PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, StandardErrorResponse,
-    StandardTokenResponse, TokenResponse,
 };
 use rocket::{
+    State,
     http::{Cookie, CookieJar, SameSite, Status},
     response::Redirect,
     serde::json::Json,
-    State,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -503,13 +503,13 @@ async fn fetch_user_groups(
 
     // Extract groups from the JSON response
     // Authentik typically returns groups as an array of strings
-    if let Some(groups) = json.get("groups") {
-        if let Some(groups_array) = groups.as_array() {
-            return Ok(groups_array
-                .iter()
-                .filter_map(|g| g.as_str().map(String::from))
-                .collect());
-        }
+    if let Some(groups) = json.get("groups")
+        && let Some(groups_array) = groups.as_array()
+    {
+        return Ok(groups_array
+            .iter()
+            .filter_map(|g| g.as_str().map(String::from))
+            .collect());
     }
 
     Ok(vec![])
