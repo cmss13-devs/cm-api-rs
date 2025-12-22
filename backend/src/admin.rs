@@ -1,21 +1,12 @@
 use std::sync::Arc;
 
 use rocket::{
+    Request,
     http::Status,
     request::{self, FromRequest},
-    Request,
 };
 
-use crate::auth::{validate_session_jwt, OidcClient};
-
-/// Authenticated user extracted from session JWT
-#[allow(dead_code)]
-pub struct AuthenticatedUser {
-    pub username: String,
-    pub ckey: String,
-    pub email: String,
-    pub groups: Vec<String>,
-}
+use crate::auth::{OidcClient, SessionClaims, validate_session_jwt};
 
 /// Errors that can occur during authentication
 #[derive(Debug)]
@@ -35,89 +26,86 @@ pub enum AuthError {
 
 const SESSION_COOKIE_NAME: &str = "session";
 
-#[rocket::async_trait]
-impl<'r> FromRequest<'r> for AuthenticatedUser {
-    type Error = AuthError;
+/// Trait for defining permission requirements
+pub trait PermissionLevel: Send + Sync {
+    /// Check if the user's groups satisfy this permission level
+    fn is_authorized(claims: &SessionClaims, oidc: &OidcClient) -> bool;
 
-    async fn from_request(req: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
-        // Debug mode: return fake admin user
-        if cfg!(debug_assertions) {
-            return request::Outcome::Success(AuthenticatedUser {
-                username: "AdminBot".to_string(),
-                ckey: "adminbot".to_string(),
-                email: "admin@debug.local".to_string(),
-                groups: vec!["admin".to_string()],
-            });
-        }
+    /// Debug mode username
+    fn debug_username() -> &'static str;
 
-        // Get OIDC client from managed state
-        let oidc = match req.rocket().state::<Arc<OidcClient>>() {
-            Some(oidc) => oidc,
-            None => {
-                return request::Outcome::Error((
-                    Status::InternalServerError,
-                    AuthError::NotConfigured,
-                ))
-            }
-        };
+    /// Debug mode groups
+    fn debug_groups() -> Vec<String>;
+}
 
-        // Get session cookie
-        let session_cookie = match req.cookies().get(SESSION_COOKIE_NAME) {
-            Some(cookie) => cookie,
-            None => return request::Outcome::Error((Status::Unauthorized, AuthError::Missing)),
-        };
+pub struct Admin;
 
-        // Validate session JWT
-        let claims = match validate_session_jwt(session_cookie.value(), &oidc.config.session_secret)
-        {
-            Ok(claims) => claims,
-            Err(e) => {
-                if e.contains("ExpiredSignature") {
-                    return request::Outcome::Error((Status::Unauthorized, AuthError::Expired));
-                }
-                return request::Outcome::Error((Status::Unauthorized, AuthError::Invalid(e)));
-            }
-        };
+impl PermissionLevel for Admin {
+    fn is_authorized(claims: &SessionClaims, oidc: &OidcClient) -> bool {
+        claims.groups.contains(&oidc.config.admin_group)
+    }
 
-        // Check if user has required admin group
-        if !claims.groups.contains(&oidc.config.admin_group) {
-            return request::Outcome::Error((Status::Forbidden, AuthError::Forbidden));
-        }
+    fn debug_username() -> &'static str {
+        "AdminBot"
+    }
 
-        request::Outcome::Success(AuthenticatedUser {
-            username: claims.username,
-            ckey: claims.ckey,
-            email: claims.email,
-            groups: claims.groups,
-        })
+    fn debug_groups() -> Vec<String> {
+        vec!["admin".to_string()]
     }
 }
 
-// Keep the old Admin type as an alias for backward compatibility
-pub type Admin = AuthenticatedUser;
+pub struct Management;
 
-/// Management user - requires either admin or management group membership
+impl PermissionLevel for Management {
+    fn is_authorized(claims: &SessionClaims, oidc: &OidcClient) -> bool {
+        claims.groups.contains(&oidc.config.admin_group)
+            && claims.groups.contains(&oidc.config.management_group)
+    }
+
+    fn debug_username() -> &'static str {
+        "ManagementBot"
+    }
+
+    fn debug_groups() -> Vec<String> {
+        vec!["management".to_string(), "admin".to_string()]
+    }
+}
+
+/// Generic authenticated user with permission level
 #[allow(dead_code)]
-pub struct ManagementUser {
+pub struct AuthenticatedUser<P: PermissionLevel> {
     pub username: String,
     pub ckey: String,
     pub email: String,
     pub groups: Vec<String>,
+    _permission: std::marker::PhantomData<P>,
+}
+
+impl<P: PermissionLevel> AuthenticatedUser<P> {
+    fn new(username: String, ckey: String, email: String, groups: Vec<String>) -> Self {
+        Self {
+            username,
+            ckey,
+            email,
+            groups,
+            _permission: std::marker::PhantomData,
+        }
+    }
 }
 
 #[rocket::async_trait]
-impl<'r> FromRequest<'r> for ManagementUser {
+impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> {
     type Error = AuthError;
 
     async fn from_request(req: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
-        // Debug mode: return fake management user
+        // Debug mode: return fake user
         if cfg!(debug_assertions) {
-            return request::Outcome::Success(ManagementUser {
-                username: "ManagementBot".to_string(),
-                ckey: "managementbot".to_string(),
-                email: "management@debug.local".to_string(),
-                groups: vec!["management".to_string(), "admin".to_string()],
-            });
+            return request::Outcome::Success(AuthenticatedUser::new(
+                P::debug_username().to_string(),
+                P::debug_username().to_lowercase(),
+                format!("{}@debug.local", P::debug_username().to_lowercase()),
+                P::debug_groups(),
+            ));
         }
 
         // Get OIDC client from managed state
@@ -127,7 +115,7 @@ impl<'r> FromRequest<'r> for ManagementUser {
                 return request::Outcome::Error((
                     Status::InternalServerError,
                     AuthError::NotConfigured,
-                ))
+                ));
             }
         };
 
@@ -149,19 +137,16 @@ impl<'r> FromRequest<'r> for ManagementUser {
             }
         };
 
-        // Check if user has required admin or management group
-        let has_admin = claims.groups.contains(&oidc.config.admin_group);
-        let has_management = claims.groups.contains(&oidc.config.management_group);
-
-        if !has_admin || !has_management {
+        // Check permission level
+        if !P::is_authorized(&claims, oidc) {
             return request::Outcome::Error((Status::Forbidden, AuthError::Forbidden));
         }
 
-        request::Outcome::Success(ManagementUser {
-            username: claims.username,
-            ckey: claims.ckey,
-            email: claims.email,
-            groups: claims.groups,
-        })
+        request::Outcome::Success(AuthenticatedUser::new(
+            claims.username,
+            claims.ckey,
+            claims.email,
+            claims.groups,
+        ))
     }
 }

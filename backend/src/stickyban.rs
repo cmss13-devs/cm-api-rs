@@ -1,16 +1,16 @@
 use core::panic;
 use std::collections::HashSet;
 
-use rocket::{http::Status, serde::json::Json, State};
+use rocket::{State, http::Status, serde::json::Json};
 use rocket_db_pools::Connection;
 use serde::Serialize;
-use sqlx::{prelude::FromRow, query, query_as, MySqlConnection};
+use sqlx::{MySqlConnection, prelude::FromRow, query, query_as};
 
 use crate::{
-    admin::Admin,
+    Cmdb, Config,
+    admin::{Admin, AuthenticatedUser},
     logging::log_external,
     player::{create_note, get_player_ckey, get_player_id},
-    Cmdb, Config,
 };
 
 #[derive(Serialize, FromRow)]
@@ -31,7 +31,10 @@ pub struct Stickyban {
 }
 
 #[get("/")]
-pub async fn all_stickybans(mut db: Connection<Cmdb>, _admin: Admin) -> Json<Vec<Stickyban>> {
+pub async fn all_stickybans(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Admin>,
+) -> Json<Vec<Stickyban>> {
     let query_result: Result<Vec<Stickyban>, sqlx::Error> = query_as("SELECT * FROM stickyban")
         .fetch_all(&mut **db)
         .await;
@@ -54,7 +57,7 @@ pub async fn all_stickybans(mut db: Connection<Cmdb>, _admin: Admin) -> Json<Vec
 pub async fn whitelist(
     mut db: Connection<Cmdb>,
     ckey: String,
-    admin: Admin,
+    admin: AuthenticatedUser<Admin>,
     config: &State<Config>,
 ) -> Status {
     let admin_id = match get_player_id(&mut db, &admin.ckey).await {
@@ -122,7 +125,7 @@ impl StickybanMatch for StickybanMatchedCid {
 #[get("/<id>/Match/Cid")]
 pub async fn get_matched_cids(
     mut db: Connection<Cmdb>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
     id: i64,
 ) -> Json<Vec<StickybanMatchedCid>> {
     match query_as("SELECT * FROM stickyban_matched_cid WHERE linked_stickyban = ?")
@@ -138,7 +141,7 @@ pub async fn get_matched_cids(
 #[get("/Cid?<cid>")]
 pub async fn get_all_cid(
     mut db: Connection<Cmdb>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
     cid: String,
 ) -> Json<Vec<Stickyban>> {
     let query: Vec<StickybanMatchedCid> =
@@ -183,7 +186,7 @@ impl StickybanMatch for StickybanMatchedCkey {
 #[get("/<id>/Match/Ckey")]
 pub async fn get_matched_ckey(
     mut db: Connection<Cmdb>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
     id: i64,
 ) -> Json<Vec<StickybanMatchedCkey>> {
     match query_as(
@@ -201,7 +204,7 @@ pub async fn get_matched_ckey(
 #[get("/Ckey?<ckey>")]
 pub async fn get_all_ckey(
     mut db: Connection<Cmdb>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
     ckey: String,
 ) -> Json<Vec<Stickyban>> {
     let query: Vec<StickybanMatchedCkey> =
@@ -239,7 +242,7 @@ impl StickybanMatch for StickybanMatchedIp {
 #[get("/<id>/Match/Ip")]
 pub async fn get_matched_ip(
     mut db: Connection<Cmdb>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
     id: i64,
 ) -> Json<Vec<StickybanMatchedIp>> {
     match query_as("SELECT * FROM stickyban_matched_ip WHERE linked_stickyban = ?")
@@ -255,7 +258,7 @@ pub async fn get_matched_ip(
 #[get("/Ip?<ip>")]
 pub async fn get_all_ip(
     mut db: Connection<Cmdb>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
     ip: String,
 ) -> Json<Vec<Stickyban>> {
     let query: Vec<StickybanMatchedIp> =

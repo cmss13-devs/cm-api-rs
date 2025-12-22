@@ -1,12 +1,15 @@
 use rocket_db_pools::Connection;
 use sqlx::query;
 
-use crate::{admin::Admin, Cmdb};
+use crate::{
+    Cmdb,
+    admin::{Admin, AuthenticatedUser},
+};
 
 #[get("/?<cid>&<ip>")]
 pub async fn twofactor_validate(
     mut db: Connection<Cmdb>,
-    admin: Admin,
+    admin: AuthenticatedUser<Admin>,
     cid: &str,
     ip: &str,
 ) -> String {

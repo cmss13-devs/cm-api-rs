@@ -1,7 +1,11 @@
-use rocket::{http::Status, serde::json::Json, State};
+use rocket::{State, http::Status, serde::json::Json};
 use serde::{Deserialize, Serialize};
 
-use crate::{admin::ManagementUser, logging::log_external, Config};
+use crate::{
+    Config,
+    admin::{AuthenticatedUser, Management},
+    logging::log_external,
+};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AuthentikConfig {
@@ -89,7 +93,7 @@ fn validate_group_allowed(config: &AuthentikConfig, group_name: &str) -> Result<
 /// GET /Authentik/AllowedGroups - get the list of allowed group names
 #[get("/AllowedGroups")]
 pub async fn get_allowed_groups(
-    _manager: ManagementUser,
+    _manager: AuthenticatedUser<Management>,
     config: &State<Config>,
 ) -> Result<Json<Vec<String>>, (Status, Json<AuthentikError>)> {
     let authentik_config = config.authentik.as_ref().ok_or_else(|| {
@@ -108,7 +112,7 @@ pub async fn get_allowed_groups(
 /// POST /Authentik/AddUserToGroup - add a user to an Authentik group by ckey
 #[post("/AddUserToGroup", format = "json", data = "<request>")]
 pub async fn add_user_to_group(
-    manager: ManagementUser,
+    manager: AuthenticatedUser<Management>,
     config: &State<Config>,
     request: Json<UserGroupRequest>,
 ) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
@@ -318,7 +322,7 @@ async fn add_user_to_authentik_group(
 /// POST /Authentik/RemoveUserFromGroup - remove a user from an Authentik group by ckey
 #[post("/RemoveUserFromGroup", format = "json", data = "<request>")]
 pub async fn remove_user_from_group(
-    manager: ManagementUser,
+    manager: AuthenticatedUser<Management>,
     config: &State<Config>,
     request: Json<UserGroupRequest>,
 ) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
@@ -440,7 +444,7 @@ async fn remove_user_from_authentik_group(
 /// GET /Authentik/GroupMembers/<group_name> - get all users in an Authentik group
 #[get("/GroupMembers/<group_name>")]
 pub async fn get_group_members(
-    _manager: ManagementUser,
+    _manager: AuthenticatedUser<Management>,
     config: &State<Config>,
     group_name: String,
 ) -> Result<Json<GroupMembersResponse>, (Status, Json<AuthentikError>)> {

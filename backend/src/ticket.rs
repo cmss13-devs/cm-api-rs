@@ -6,7 +6,8 @@ use serde::Serialize;
 use sqlx::Row;
 use sqlx::{prelude::FromRow, query, query_as};
 
-use crate::{admin::Admin, Cmdb};
+use crate::admin::AuthenticatedUser;
+use crate::{Cmdb, admin::Admin};
 
 #[derive(FromRow, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -25,7 +26,7 @@ pub struct Ticket {
 #[get("/<round_id>")]
 pub async fn get_tickets_by_round_id(
     mut db: Connection<Cmdb>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
     round_id: i64,
 ) -> Json<Vec<Ticket>> {
     match query_as("SELECT * FROM ticket WHERE round_id = ?")
@@ -41,7 +42,7 @@ pub async fn get_tickets_by_round_id(
 #[get("/User/<ckey>?<page>&<from>&<to>")]
 pub async fn get_tickets_by_user(
     mut db: Connection<Cmdb>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
     ckey: &str,
     page: Option<i64>,
     from: Option<String>,

@@ -3,9 +3,12 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use rocket::serde::json::Json;
 use rocket_db_pools::Connection;
-use sqlx::{prelude::FromRow, query_as, MySqlConnection};
+use sqlx::{MySqlConnection, prelude::FromRow, query_as};
 
-use crate::{admin::Admin, Cmdb};
+use crate::{
+    Cmdb,
+    admin::{Admin, AuthenticatedUser},
+};
 
 #[derive(serde::Serialize, FromRow, Hash, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -64,7 +67,11 @@ impl ConnectionHistory {
 }
 
 #[get("/Ip?<ip>")]
-pub async fn ip(mut db: Connection<Cmdb>, _admin: Admin, ip: String) -> Json<ConnectionHistory> {
+pub async fn ip(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Admin>,
+    ip: String,
+) -> Json<ConnectionHistory> {
     let parts: Vec<&str> = ip.split('.').collect();
 
     let query = match query_as(
@@ -85,7 +92,11 @@ pub async fn ip(mut db: Connection<Cmdb>, _admin: Admin, ip: String) -> Json<Con
 }
 
 #[get("/Cid?<cid>")]
-pub async fn cid(mut db: Connection<Cmdb>, _admin: Admin, cid: String) -> Json<ConnectionHistory> {
+pub async fn cid(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Admin>,
+    cid: String,
+) -> Json<ConnectionHistory> {
     let query_result: Result<Vec<LoginTriplet>, sqlx::Error> =
         query_as("SELECT * FROM login_triplets WHERE last_known_cid = ?")
             .bind(cid)
@@ -113,7 +124,7 @@ async fn get_triplets_by_ckey(db: &mut MySqlConnection, ckey: String) -> Option<
 #[get("/Ckey?<ckey>")]
 pub async fn ckey(
     mut db: Connection<Cmdb>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
     ckey: String,
 ) -> Json<ConnectionHistory> {
     Json(ConnectionHistory::annotate(
@@ -127,7 +138,7 @@ pub async fn ckey(
 #[get("/FullByAllCid?<ckey>")]
 pub async fn connection_history_by_cid(
     mut db: Connection<Cmdb>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
     ckey: String,
 ) -> Json<ConnectionHistory> {
     let triplets = match get_triplets_by_ckey(&mut db, ckey).await {
@@ -160,7 +171,7 @@ pub async fn connection_history_by_cid(
 #[get("/FullByAllIps?<ckey>")]
 pub async fn connection_history_by_ip(
     mut db: Connection<Cmdb>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
     ckey: String,
 ) -> Json<ConnectionHistory> {
     let triplets = match get_triplets_by_ckey(&mut db, ckey).await {

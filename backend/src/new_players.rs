@@ -2,10 +2,18 @@ use rocket::serde::json::Json;
 use rocket_db_pools::Connection;
 use sqlx::query_as;
 
-use crate::{admin::Admin, player::Player, Cmdb};
+use crate::{
+    Cmdb,
+    admin::{Admin, AuthenticatedUser},
+    player::Player,
+};
 
 #[get("/<minutes>")]
-pub async fn get_new_players(mut db: Connection<Cmdb>, _admin: Admin, minutes: i64) -> Json<Vec<Player>> {
+pub async fn get_new_players(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Admin>,
+    minutes: i64,
+) -> Json<Vec<Player>> {
     let time_ago = format!(
         "{}",
         (chrono::Utc::now() - chrono::Duration::minutes(minutes)).format("%Y-%m-%d %H:%M:%S")

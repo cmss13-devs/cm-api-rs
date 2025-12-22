@@ -1,14 +1,15 @@
-use sqlx::{prelude::FromRow, Error};
+use sqlx::{Error, prelude::FromRow};
 use std::sync::Mutex;
 use std::{net::ToSocketAddrs, sync::MutexGuard};
 
 use chrono::{DateTime, Duration, Utc};
 use http2byond::ByondTopicValue;
-use rocket::{serde::json::Json, State};
+use rocket::{State, serde::json::Json};
 use rocket_db_pools::Connection;
 use sqlx::query_as;
 
-use crate::{admin::Admin, Cmdb, Config};
+use crate::admin::AuthenticatedUser;
+use crate::{Cmdb, Config, admin::Admin};
 
 #[derive(Default)]
 pub struct ByondTopic {
@@ -57,7 +58,7 @@ pub struct GameStatus {
 pub async fn round(
     cache: &State<ByondTopic>,
     config: &State<Config>,
-    _admin: Admin,
+    _admin: AuthenticatedUser<Admin>,
 ) -> Option<Json<GameResponse>> {
     {
         let mutexed: MutexGuard<'_, Option<DateTime<Utc>>> = match cache.cache_time.lock() {
@@ -130,7 +131,10 @@ pub struct Round {
 }
 
 #[get("/Recent")]
-pub async fn recent(mut db: Connection<Cmdb>, _admin: Admin) -> Json<Vec<Round>> {
+pub async fn recent(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Admin>,
+) -> Json<Vec<Round>> {
     let rounds: Result<Vec<Round>, Error> =
         query_as("SELECT * FROM mc_round ORDER BY id DESC LIMIT ?")
             .bind(10)
