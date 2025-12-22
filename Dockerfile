@@ -9,7 +9,7 @@ ENV VITE_API_PATH=${VITE_API_PATH}
 RUN npm ci && npm run build
 
 # Stage 2: Build backend
-FROM rust:1.85 AS backend-builder
+FROM rust:1.89 AS backend-builder
 WORKDIR /usr/src/app
 COPY backend/src/ src/
 COPY backend/Cargo.toml Cargo.toml
