@@ -515,8 +515,8 @@ async fn fetch_user_groups(
     Ok(vec![])
 }
 
-/// POST /auth/logout - Clears session cookie
-#[post("/logout")]
+/// GET /auth/logout - Clears session cookie
+#[get("/logout")]
 pub fn logout(oidc: &State<Arc<OidcClient>>, cookies: &CookieJar<'_>) -> Redirect {
     // Remove session cookie
     cookies.remove(Cookie::from(SESSION_COOKIE_NAME));
