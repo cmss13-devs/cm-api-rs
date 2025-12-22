@@ -11,9 +11,9 @@ pub async fn twofactor_validate(
     ip: &str,
 ) -> String {
     match query("UPDATE twofactor SET approved = 1 WHERE cid = ? AND ckey = ? AND ip = ?")
-        .bind(&cid)
-        .bind(&admin.username)
-        .bind(&ip)
+        .bind(cid)
+        .bind(&admin.ckey)
+        .bind(ip)
         .execute(&mut **db)
         .await
     {
@@ -23,7 +23,7 @@ pub async fn twofactor_validate(
             } else {
                 format!(
                     "An error occured: could not find match for ckey: {}, cid: {}, ip: {}.",
-                    &cid, &admin.username, &ip
+                    &admin.ckey, &cid, &ip
                 )
             }
         }

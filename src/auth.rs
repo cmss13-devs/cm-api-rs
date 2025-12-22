@@ -1,11 +1,17 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
 use openidconnect::{
-    core::{CoreClient, CoreProviderMetadata, CoreResponseType},
+    core::{
+        CoreAuthDisplay, CoreAuthPrompt, CoreErrorResponseType, CoreGenderClaim, CoreJsonWebKey,
+        CoreJsonWebKeyType, CoreJsonWebKeyUse, CoreJweContentEncryptionAlgorithm,
+        CoreJwsSigningAlgorithm, CoreProviderMetadata, CoreResponseType, CoreRevocableToken,
+        CoreRevocationErrorResponse, CoreTokenIntrospectionResponse, CoreTokenType,
+    },
     reqwest::async_http_client,
-    AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
-    OAuth2TokenResponse, PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope,
-    TokenResponse,
+    AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
+    EmptyExtraTokenFields, IdTokenFields, IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge,
+    PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, StandardErrorResponse,
+    StandardTokenResponse, TokenResponse,
 };
 use rocket::{
     http::{Cookie, CookieJar, SameSite, Status},
@@ -69,9 +75,45 @@ pub struct CorsConfig {
 /// Discovered OIDC provider client (managed state)
 #[derive(Default)]
 pub struct OidcClient {
-    pub client: Option<CoreClient>,
+    pub client: Option<CmdbClient>,
     pub config: OidcConfig,
 }
+
+pub type CmdbClient = openidconnect::Client<
+    AdditionalClaims,
+    CoreAuthDisplay,
+    CoreGenderClaim,
+    CoreJweContentEncryptionAlgorithm,
+    CoreJwsSigningAlgorithm,
+    CoreJsonWebKeyType,
+    CoreJsonWebKeyUse,
+    CoreJsonWebKey,
+    CoreAuthPrompt,
+    StandardErrorResponse<CoreErrorResponseType>,
+    CmdbTokenResponse,
+    CoreTokenType,
+    CoreTokenIntrospectionResponse,
+    CoreRevocableToken,
+    CoreRevocationErrorResponse,
+>;
+
+pub type CmdbTokenResponse = StandardTokenResponse<CmdbIdTokenFields, CoreTokenType>;
+
+pub type CmdbIdTokenFields = IdTokenFields<
+    AdditionalClaims,
+    EmptyExtraTokenFields,
+    CoreGenderClaim,
+    CoreJweContentEncryptionAlgorithm,
+    CoreJwsSigningAlgorithm,
+    CoreJsonWebKeyType,
+>;
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct AdditionalClaims {
+    ckey: String,
+}
+
+impl openidconnect::AdditionalClaims for AdditionalClaims {}
 
 /// JWT claims for session cookie
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -80,6 +122,7 @@ pub struct SessionClaims {
     pub username: String,
     pub email: String,
     pub groups: Vec<String>,
+    pub ckey: String,
     pub exp: usize,
     pub iat: usize,
     /// Encrypted refresh token (base64 encoded, XOR with session secret)
@@ -101,6 +144,7 @@ pub struct UserInfo {
     pub username: String,
     pub email: String,
     pub groups: Vec<String>,
+    pub ckey: String,
 }
 
 /// Error response
@@ -127,7 +171,7 @@ pub async fn init_oidc_client(config: OidcConfig) -> Result<OidcClient, String> 
             }
         };
 
-    let client = CoreClient::from_provider_metadata(
+    let client: CmdbClient = openidconnect::Client::from_provider_metadata(
         provider_metadata,
         ClientId::new(config.client_id.clone()),
         Some(ClientSecret::new(config.client_secret.clone())),
@@ -380,9 +424,12 @@ pub async fn callback(
         .unwrap()
         .as_secs() as usize;
 
+    let ckey = claims.additional_claims().ckey.clone();
+
     let session_claims = SessionClaims {
         sub: subject,
         username,
+        ckey,
         email,
         groups,
         iat: now,
@@ -574,6 +621,7 @@ pub async fn refresh(
     let new_claims = SessionClaims {
         sub: claims.sub,
         username: claims.username,
+        ckey: claims.ckey,
         email: claims.email,
         groups: claims.groups,
         iat: now,
@@ -618,6 +666,7 @@ pub fn userinfo(
     if cfg!(debug_assertions) {
         return Ok(Json(UserInfo {
             username: "AdminBot".to_string(),
+            ckey: "adminbot".to_string(),
             email: "admin@debug.local".to_string(),
             groups: vec!["admin".to_string()],
         }));
@@ -648,6 +697,7 @@ pub fn userinfo(
 
     Ok(Json(UserInfo {
         username: claims.username,
+        ckey: claims.ckey,
         email: claims.email,
         groups: claims.groups,
     }))

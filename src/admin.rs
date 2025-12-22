@@ -12,6 +12,7 @@ use crate::auth::{validate_session_jwt, OidcClient};
 #[allow(dead_code)]
 pub struct AuthenticatedUser {
     pub username: String,
+    pub ckey: String,
     pub email: String,
     pub groups: Vec<String>,
 }
@@ -43,6 +44,7 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
         if cfg!(debug_assertions) {
             return request::Outcome::Success(AuthenticatedUser {
                 username: "AdminBot".to_string(),
+                ckey: "adminbot".to_string(),
                 email: "admin@debug.local".to_string(),
                 groups: vec!["admin".to_string()],
             });
@@ -84,6 +86,7 @@ impl<'r> FromRequest<'r> for AuthenticatedUser {
 
         request::Outcome::Success(AuthenticatedUser {
             username: claims.username,
+            ckey: claims.ckey,
             email: claims.email,
             groups: claims.groups,
         })
@@ -97,6 +100,7 @@ pub type Admin = AuthenticatedUser;
 #[allow(dead_code)]
 pub struct ManagementUser {
     pub username: String,
+    pub ckey: String,
     pub email: String,
     pub groups: Vec<String>,
 }
@@ -110,6 +114,7 @@ impl<'r> FromRequest<'r> for ManagementUser {
         if cfg!(debug_assertions) {
             return request::Outcome::Success(ManagementUser {
                 username: "ManagementBot".to_string(),
+                ckey: "managementbot".to_string(),
                 email: "management@debug.local".to_string(),
                 groups: vec!["management".to_string(), "admin".to_string()],
             });
@@ -154,6 +159,7 @@ impl<'r> FromRequest<'r> for ManagementUser {
 
         request::Outcome::Success(ManagementUser {
             username: claims.username,
+            ckey: claims.ckey,
             email: claims.email,
             groups: claims.groups,
         })
