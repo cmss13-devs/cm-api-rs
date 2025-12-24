@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 use rocket::{State, http::Status, serde::json::Json};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     Config,
-    admin::{AuthenticatedUser, Management},
+    admin::{AuthenticatedUser, Staff},
     logging::log_external,
 };
 
@@ -11,9 +13,13 @@ use crate::{
 pub struct AuthentikConfig {
     pub token: String,
     pub base_url: String,
-    /// whitelist of group names that can be modified through the API
+    /// mapping of permission role names to the Authentik groups they can manage, eg:
+    /// [authentik.group_permissions]
+    /// staff_management = [ "admins", "moderators" ]
+    /// mentor_overseer = [ "mentors" ]
+    /// users who are members of a permission role can manage all groups listed for that role
     #[serde(default)]
-    pub allowed_groups: Vec<String>,
+    pub group_permissions: HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,26 +80,54 @@ pub struct AuthentikSuccess {
     pub message: String,
 }
 
-/// Check if a group name is in the allowed whitelist
-fn validate_group_allowed(config: &AuthentikConfig, group_name: &str) -> Result<(), String> {
-    if config.allowed_groups.is_empty() {
-        return Err("No groups are configured as allowed. Add groups to 'allowed_groups' in the Authentik config.".to_string());
+/// get the list of Authentik groups that a user can manage based on their group memberships
+fn get_manageable_groups(config: &AuthentikConfig, user_groups: &[String]) -> Vec<String> {
+    let mut manageable = Vec::new();
+    for (permission_role, allowed_groups) in &config.group_permissions {
+        if user_groups.contains(permission_role) {
+            for group in allowed_groups {
+                if !manageable.contains(group) {
+                    manageable.push(group.clone());
+                }
+            }
+        }
+    }
+    manageable
+}
+
+/// check if a user can manage a specific group based on their group memberships
+fn validate_group_allowed(
+    config: &AuthentikConfig,
+    user_groups: &[String],
+    group_name: &str,
+) -> Result<(), String> {
+    if config.group_permissions.is_empty() {
+        return Err(
+            "No group permissions are configured. Add group_permissions to the Authentik config."
+                .to_string(),
+        );
     }
 
-    if !config.allowed_groups.iter().any(|g| g == group_name) {
+    let manageable = get_manageable_groups(config, user_groups);
+
+    if manageable.is_empty() {
+        return Err("You do not have permission to manage any groups.".to_string());
+    }
+
+    if !manageable.contains(&group_name.to_string()) {
         return Err(format!(
-            "Group '{}' is not in the allowed groups list. Allowed groups: {:?}",
-            group_name, config.allowed_groups
+            "You do not have permission to manage group '{}'. You can manage: {:?}",
+            group_name, manageable
         ));
     }
 
     Ok(())
 }
 
-/// GET /Authentik/AllowedGroups - get the list of allowed group names
+/// GET /Authentik/AllowedGroups - get the list of groups the current user can manage
 #[get("/AllowedGroups")]
 pub async fn get_allowed_groups(
-    _manager: AuthenticatedUser<Management>,
+    user: AuthenticatedUser<Staff>,
     config: &State<Config>,
 ) -> Result<Json<Vec<String>>, (Status, Json<AuthentikError>)> {
     let authentik_config = config.authentik.as_ref().ok_or_else(|| {
@@ -106,13 +140,14 @@ pub async fn get_allowed_groups(
         )
     })?;
 
-    Ok(Json(authentik_config.allowed_groups.clone()))
+    let manageable = get_manageable_groups(authentik_config, &user.groups);
+    Ok(Json(manageable))
 }
 
 /// POST /Authentik/AddUserToGroup - add a user to an Authentik group by ckey
 #[post("/AddUserToGroup", format = "json", data = "<request>")]
 pub async fn add_user_to_group(
-    manager: AuthenticatedUser<Management>,
+    user: AuthenticatedUser<Staff>,
     config: &State<Config>,
     request: Json<UserGroupRequest>,
 ) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
@@ -126,8 +161,7 @@ pub async fn add_user_to_group(
         )
     })?;
 
-    // Validate group is in the allowed whitelist
-    validate_group_allowed(authentik_config, &request.group_name).map_err(|e| {
+    validate_group_allowed(authentik_config, &user.groups, &request.group_name).map_err(|e| {
         (
             Status::Forbidden,
             Json(AuthentikError {
@@ -139,7 +173,6 @@ pub async fn add_user_to_group(
 
     let http_client = reqwest::Client::new();
 
-    // Step 1: Find the group by name
     let group_pk = find_group_by_name(&http_client, authentik_config, &request.group_name)
         .await
         .map_err(|e| {
@@ -152,7 +185,6 @@ pub async fn add_user_to_group(
             )
         })?;
 
-    // Step 2: Find the user by ckey attribute
     let user_pk = find_user_by_ckey(&http_client, authentik_config, &request.ckey)
         .await
         .map_err(|e| {
@@ -165,7 +197,6 @@ pub async fn add_user_to_group(
             )
         })?;
 
-    // Step 3: Add the user to the group
     add_user_to_authentik_group(&http_client, authentik_config, user_pk, &group_pk)
         .await
         .map_err(|e| {
@@ -178,13 +209,12 @@ pub async fn add_user_to_group(
             )
         })?;
 
-    // Log the action
     let _ = log_external(
         config,
         "User Manager: User Added to Group".to_string(),
         format!(
             "{} added ckey '{}' to group '{}'",
-            manager.username, request.ckey, request.group_name
+            user.username, request.ckey, request.group_name
         ),
         true,
     )
@@ -323,7 +353,7 @@ async fn add_user_to_authentik_group(
 /// POST /Authentik/RemoveUserFromGroup - remove a user from an Authentik group by ckey
 #[post("/RemoveUserFromGroup", format = "json", data = "<request>")]
 pub async fn remove_user_from_group(
-    manager: AuthenticatedUser<Management>,
+    user: AuthenticatedUser<Staff>,
     config: &State<Config>,
     request: Json<UserGroupRequest>,
 ) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
@@ -337,8 +367,7 @@ pub async fn remove_user_from_group(
         )
     })?;
 
-    // Validate group is in the allowed whitelist
-    validate_group_allowed(authentik_config, &request.group_name).map_err(|e| {
+    validate_group_allowed(authentik_config, &user.groups, &request.group_name).map_err(|e| {
         (
             Status::Forbidden,
             Json(AuthentikError {
@@ -350,7 +379,6 @@ pub async fn remove_user_from_group(
 
     let http_client = reqwest::Client::new();
 
-    // Step 1: Find the group by name
     let group_pk = find_group_by_name(&http_client, authentik_config, &request.group_name)
         .await
         .map_err(|e| {
@@ -363,7 +391,6 @@ pub async fn remove_user_from_group(
             )
         })?;
 
-    // Step 2: Find the user by ckey attribute
     let user_pk = find_user_by_ckey(&http_client, authentik_config, &request.ckey)
         .await
         .map_err(|e| {
@@ -376,7 +403,6 @@ pub async fn remove_user_from_group(
             )
         })?;
 
-    // Step 3: Remove the user from the group
     remove_user_from_authentik_group(&http_client, authentik_config, user_pk, &group_pk)
         .await
         .map_err(|e| {
@@ -389,13 +415,12 @@ pub async fn remove_user_from_group(
             )
         })?;
 
-    // Log the action
     let _ = log_external(
         config,
         "User Manager: User Removed from Group".to_string(),
         format!(
             "{} removed ckey '{}' from group '{}'",
-            manager.username, request.ckey, request.group_name
+            user.username, request.ckey, request.group_name
         ),
         true,
     )
@@ -446,7 +471,7 @@ async fn remove_user_from_authentik_group(
 /// GET /Authentik/GroupMembers/<group_name> - get all users in an Authentik group
 #[get("/GroupMembers/<group_name>")]
 pub async fn get_group_members(
-    _manager: AuthenticatedUser<Management>,
+    user: AuthenticatedUser<Staff>,
     config: &State<Config>,
     group_name: String,
 ) -> Result<Json<GroupMembersResponse>, (Status, Json<AuthentikError>)> {
@@ -460,8 +485,7 @@ pub async fn get_group_members(
         )
     })?;
 
-    // Validate group is in the allowed whitelist
-    validate_group_allowed(authentik_config, &group_name).map_err(|e| {
+    validate_group_allowed(authentik_config, &user.groups, &group_name).map_err(|e| {
         (
             Status::Forbidden,
             Json(AuthentikError {
@@ -473,7 +497,6 @@ pub async fn get_group_members(
 
     let http_client = reqwest::Client::new();
 
-    // Step 1: Find the group by name
     let group_pk = find_group_by_name(&http_client, authentik_config, &group_name)
         .await
         .map_err(|e| {
@@ -486,7 +509,6 @@ pub async fn get_group_members(
             )
         })?;
 
-    // Step 2: Fetch group members
     let members = fetch_group_members(&http_client, authentik_config, &group_pk)
         .await
         .map_err(|e| {

@@ -54,6 +54,7 @@ impl PermissionLevel for Staff {
     }
 }
 
+#[allow(dead_code)]
 pub struct Management;
 
 impl PermissionLevel for Management {
