@@ -4,14 +4,14 @@ use sqlx::query_as;
 
 use crate::{
     Cmdb,
-    admin::{Admin, AuthenticatedUser},
+    admin::{Staff, AuthenticatedUser},
     player::Player,
 };
 
 #[get("/<minutes>")]
 pub async fn get_new_players(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Admin>,
+    _admin: AuthenticatedUser<Staff>,
     minutes: i64,
 ) -> Json<Vec<Player>> {
     let time_ago = format!(

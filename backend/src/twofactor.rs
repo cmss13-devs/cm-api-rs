@@ -3,13 +3,13 @@ use sqlx::query;
 
 use crate::{
     Cmdb,
-    admin::{Admin, AuthenticatedUser},
+    admin::{Staff, AuthenticatedUser},
 };
 
 #[get("/?<cid>&<ip>")]
 pub async fn twofactor_validate(
     mut db: Connection<Cmdb>,
-    admin: AuthenticatedUser<Admin>,
+    admin: AuthenticatedUser<Staff>,
     cid: &str,
     ip: &str,
 ) -> String {

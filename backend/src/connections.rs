@@ -7,7 +7,7 @@ use sqlx::{MySqlConnection, prelude::FromRow, query_as};
 
 use crate::{
     Cmdb,
-    admin::{Admin, AuthenticatedUser},
+    admin::{Staff, AuthenticatedUser},
 };
 
 #[derive(serde::Serialize, FromRow, Hash, Eq, PartialEq)]
@@ -69,7 +69,7 @@ impl ConnectionHistory {
 #[get("/Ip?<ip>")]
 pub async fn ip(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Admin>,
+    _admin: AuthenticatedUser<Staff>,
     ip: String,
 ) -> Json<ConnectionHistory> {
     let parts: Vec<&str> = ip.split('.').collect();
@@ -94,7 +94,7 @@ pub async fn ip(
 #[get("/Cid?<cid>")]
 pub async fn cid(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Admin>,
+    _admin: AuthenticatedUser<Staff>,
     cid: String,
 ) -> Json<ConnectionHistory> {
     let query_result: Result<Vec<LoginTriplet>, sqlx::Error> =
@@ -124,7 +124,7 @@ async fn get_triplets_by_ckey(db: &mut MySqlConnection, ckey: String) -> Option<
 #[get("/Ckey?<ckey>")]
 pub async fn ckey(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Admin>,
+    _admin: AuthenticatedUser<Staff>,
     ckey: String,
 ) -> Json<ConnectionHistory> {
     Json(ConnectionHistory::annotate(
@@ -138,7 +138,7 @@ pub async fn ckey(
 #[get("/FullByAllCid?<ckey>")]
 pub async fn connection_history_by_cid(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Admin>,
+    _admin: AuthenticatedUser<Staff>,
     ckey: String,
 ) -> Json<ConnectionHistory> {
     let triplets = match get_triplets_by_ckey(&mut db, ckey).await {
@@ -171,7 +171,7 @@ pub async fn connection_history_by_cid(
 #[get("/FullByAllIps?<ckey>")]
 pub async fn connection_history_by_ip(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Admin>,
+    _admin: AuthenticatedUser<Staff>,
     ckey: String,
 ) -> Json<ConnectionHistory> {
     let triplets = match get_triplets_by_ckey(&mut db, ckey).await {

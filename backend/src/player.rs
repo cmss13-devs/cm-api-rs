@@ -12,7 +12,7 @@ use rocket::{
 use rocket_db_pools::Connection;
 use sqlx::{MySqlConnection, Row, prelude::FromRow, query, query_as, types::BigDecimal};
 
-use crate::{Cmdb, Config, admin::{Admin, AuthenticatedUser}, logging::log_external};
+use crate::{Cmdb, Config, admin::{Staff, AuthenticatedUser}, logging::log_external};
 
 /// Request guard for extracting the Authorization header
 pub struct AuthorizationHeader(pub String);
@@ -161,7 +161,7 @@ async fn get_player_notes(db: &mut MySqlConnection, id: i64) -> Option<Vec<Note>
 }
 
 #[get("/<id>/AppliedNotes")]
-pub async fn applied_notes(mut db: Connection<Cmdb>, _admin: AuthenticatedUser<Admin>, id: i64) -> Json<Vec<Note>> {
+pub async fn applied_notes(mut db: Connection<Cmdb>, _admin: AuthenticatedUser<Staff>, id: i64) -> Json<Vec<Note>> {
     let mut user_notes: Vec<Note> = match query_as("SELECT * FROM player_notes WHERE admin_id = ?")
         .bind(id)
         .fetch_all(&mut **db)
@@ -229,7 +229,7 @@ async fn get_discord_id_from_player_id(db: &mut MySqlConnection, id: i64) -> Opt
 #[get("/?<ckey>&<discord_id>")]
 pub async fn index(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Admin>,
+    _admin: AuthenticatedUser<Staff>,
     ckey: Option<String>,
     discord_id: Option<String>,
 ) -> Option<Json<Player>> {
@@ -267,7 +267,7 @@ pub async fn index(
 }
 
 #[get("/<id>")]
-pub async fn id(mut db: Connection<Cmdb>, _admin: AuthenticatedUser<Admin>, id: i32) -> Option<Json<Player>> {
+pub async fn id(mut db: Connection<Cmdb>, _admin: AuthenticatedUser<Staff>, id: i32) -> Option<Json<Player>> {
     let user: Player = match query_as("SELECT * FROM players WHERE id = ?")
         .bind(id)
         .fetch_one(&mut **db)
@@ -290,7 +290,7 @@ pub struct NewNote {
 #[post("/<id>/Note", data = "<input>")]
 pub async fn new_note(
     mut db: Connection<Cmdb>,
-    admin: AuthenticatedUser<Admin>,
+    admin: AuthenticatedUser<Staff>,
     id: i64,
     input: Form<NewNote>,
     config: &State<Config>,
@@ -367,7 +367,7 @@ pub struct Playtime {
 }
 
 #[get("/<id>/Playtime")]
-pub async fn get_playtime(mut db: Connection<Cmdb>, _admin: AuthenticatedUser<Admin>, id: i64) -> Json<Vec<Playtime>> {
+pub async fn get_playtime(mut db: Connection<Cmdb>, _admin: AuthenticatedUser<Staff>, id: i64) -> Json<Vec<Playtime>> {
     match query_as("SELECT * FROM player_playtime WHERE player_id = ?")
         .bind(id)
         .fetch_all(&mut **db)
@@ -381,12 +381,12 @@ pub async fn get_playtime(mut db: Connection<Cmdb>, _admin: AuthenticatedUser<Ad
 #[get("/TotalPlaytime?<ckey>")]
 pub async fn get_total_playtime(
     mut db: Connection<Cmdb>,
-    admin: Option<AuthenticatedUser<Admin>>,
+    admin: Option<AuthenticatedUser<Staff>>,
     config: &State<Config>,
     auth_header: Option<AuthorizationHeader>,
     ckey: String,
 ) -> Result<Json<String>, Status> {
-    // Check if authorized via Admin guard or Authorization header
+    // Check if authorized via Staff guard or Authorization header
     let is_authorized = admin.is_some()
         || validate_auth_header(auth_header.as_ref().map(|h| h.0.as_str()), config.inner());
 
@@ -414,7 +414,7 @@ pub async fn get_total_playtime(
 #[get("/<id>/Playtime/<days>")]
 pub async fn get_recent_playtime(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Admin>,
+    _admin: AuthenticatedUser<Staff>,
     id: i64,
     days: i64,
 ) -> Json<Vec<Playtime>> {
@@ -499,7 +499,7 @@ pub async fn get_player_ckey(db: &mut MySqlConnection, id: i64) -> Option<String
 #[post("/VpnWhitelist?<ckey>")]
 pub async fn add_vpn_whitelist(
     mut db: Connection<Cmdb>,
-    admin: AuthenticatedUser<Admin>,
+    admin: AuthenticatedUser<Staff>,
     ckey: String,
 ) -> Status {
     match query("INSERT INTO vpn_whitelist (ckey, admin_ckey) VALUES (?, ?)")
@@ -516,7 +516,7 @@ pub async fn add_vpn_whitelist(
 #[delete("/VpnWhitelist?<ckey>")]
 pub async fn remove_vpn_whitelist(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Admin>,
+    _admin: AuthenticatedUser<Staff>,
     ckey: String,
 ) -> Status {
     match query("DELETE FROM vpn_whitelist WHERE ckey = ?")
@@ -539,7 +539,7 @@ pub struct VpnWhitelist {
 #[get("/VpnWhitelist?<ckey>")]
 pub async fn get_vpn_whitelist(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Admin>,
+    _admin: AuthenticatedUser<Staff>,
     ckey: String,
 ) -> Option<Json<VpnWhitelist>> {
     match query_as("SELECT ckey, admin_ckey FROM vpn_whitelist WHERE ckey = ?")

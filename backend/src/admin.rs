@@ -38,19 +38,19 @@ pub trait PermissionLevel: Send + Sync {
     fn debug_groups() -> Vec<String>;
 }
 
-pub struct Admin;
+pub struct Staff;
 
-impl PermissionLevel for Admin {
+impl PermissionLevel for Staff {
     fn is_authorized(claims: &SessionClaims, oidc: &OidcClient) -> bool {
-        claims.groups.contains(&oidc.config.admin_group)
+        claims.groups.contains(&oidc.config.staff_group)
     }
 
     fn debug_username() -> &'static str {
-        "AdminBot"
+        "StaffBot"
     }
 
     fn debug_groups() -> Vec<String> {
-        vec!["admin".to_string()]
+        vec!["staff".to_string()]
     }
 }
 
@@ -58,7 +58,7 @@ pub struct Management;
 
 impl PermissionLevel for Management {
     fn is_authorized(claims: &SessionClaims, oidc: &OidcClient) -> bool {
-        claims.groups.contains(&oidc.config.admin_group)
+        claims.groups.contains(&oidc.config.staff_group)
             && claims.groups.contains(&oidc.config.management_group)
     }
 
@@ -67,7 +67,7 @@ impl PermissionLevel for Management {
     }
 
     fn debug_groups() -> Vec<String> {
-        vec!["management".to_string(), "admin".to_string()]
+        vec!["management".to_string(), "staff".to_string()]
     }
 }
 

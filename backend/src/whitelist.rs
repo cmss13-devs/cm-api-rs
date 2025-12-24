@@ -5,7 +5,7 @@ use sqlx::{prelude::FromRow, query_as};
 
 use crate::{
     Cmdb,
-    admin::{Admin, AuthenticatedUser},
+    admin::{Staff, AuthenticatedUser},
 };
 
 #[derive(Serialize, FromRow)]
@@ -19,7 +19,7 @@ pub struct WhitelistPlayer {
 #[get("/")]
 pub async fn get_all_whitelistees(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Admin>,
+    _admin: AuthenticatedUser<Staff>,
 ) -> Json<Vec<WhitelistPlayer>> {
     match query_as(
         "SELECT id, ckey, whitelist_status FROM players WHERE (whitelist_status is not null AND LENGTH(whitelist_status) > 0)",
