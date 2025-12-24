@@ -13,7 +13,6 @@ import { NameExpand } from "./nameExpand";
 
 export const AuthentikPanel: React.FC = () => {
   const global = useContext(GlobalContext);
-  const user = global?.user;
 
   const [availableGroups, setAvailableGroups] = useState<string[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(true);
@@ -32,15 +31,9 @@ export const AuthentikPanel: React.FC = () => {
   );
   const [removeLoading, setRemoveLoading] = useState(false);
 
-  // Check if user has management group
-  const hasManagement = user?.groups?.includes("management") ?? false;
-
   const addCkeyInputId = useId();
 
-  // Fetch allowed groups on mount
   useEffect(() => {
-    if (!hasManagement) return;
-
     const fetchAllowedGroups = async () => {
       try {
         const response = await callApi("/Authentik/AllowedGroups");
@@ -62,7 +55,7 @@ export const AuthentikPanel: React.FC = () => {
     };
 
     fetchAllowedGroups();
-  }, [hasManagement]);
+  }, []);
 
   const fetchGroupMembers = useCallback(async (groupName: string) => {
     setLoading(true);
@@ -86,10 +79,10 @@ export const AuthentikPanel: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (hasManagement && selectedGroup) {
+    if (selectedGroup) {
       fetchGroupMembers(selectedGroup);
     }
-  }, [selectedGroup, hasManagement, fetchGroupMembers]);
+  }, [selectedGroup, fetchGroupMembers]);
 
   const handleAddUser = async () => {
     if (!addCkey.trim()) return;
@@ -158,14 +151,6 @@ export const AuthentikPanel: React.FC = () => {
       setRemoveLoading(false);
     }
   };
-
-  if (!hasManagement) {
-    return (
-      <div className="text-red-400">
-        Access denied. You must be in the management group to view this page.
-      </div>
-    );
-  }
 
   if (groupsLoading) {
     return <div>Loading...</div>;
