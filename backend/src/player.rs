@@ -323,6 +323,7 @@ pub async fn new_note(
                     "{} added a note to {}: {}",
                     &admin.ckey, ckey, &input.message
                 ),
+                false,
             )
             .await;
             Status::Accepted

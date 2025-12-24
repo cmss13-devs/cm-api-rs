@@ -98,6 +98,7 @@ pub async fn whitelist(
                 "{} whitelisted {} against all matching stickybans.",
                 &admin.ckey, &ckey
             ),
+            false,
         )
         .await;
     };

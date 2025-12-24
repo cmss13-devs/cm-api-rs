@@ -37,10 +37,20 @@ pub async fn log_external(
     config: &Config,
     title: String,
     message: String,
+    use_user_manager_channel: bool,
 ) -> Result<(), Box<dyn Error>> {
     let logging_config = match &config.logging {
         Some(logging) => logging,
         None => return Err(Box::new(LogError {})),
+    };
+
+    let webhook_url = if use_user_manager_channel {
+        logging_config
+            .user_manager_webhook
+            .as_ref()
+            .unwrap_or(&logging_config.webhook)
+    } else {
+        &logging_config.webhook
     };
 
     let json = ExternalLog {
@@ -57,7 +67,7 @@ pub async fn log_external(
     };
 
     match reqwest::Client::new()
-        .post(&logging_config.webhook)
+        .post(webhook_url)
         .body(serde_json::to_string(&json)?)
         .header("Content-Type", "application/json")
         .send()

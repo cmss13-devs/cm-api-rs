@@ -186,6 +186,7 @@ pub async fn add_user_to_group(
             "{} added ckey '{}' to group '{}'",
             manager.username, request.ckey, request.group_name
         ),
+        true,
     )
     .await;
 
@@ -396,6 +397,7 @@ pub async fn remove_user_from_group(
             "{} removed ckey '{}' from group '{}'",
             manager.username, request.ckey, request.group_name
         ),
+        true,
     )
     .await;
 

@@ -80,6 +80,7 @@ struct TopicConfig {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct LoggingConfig {
     webhook: String,
+    user_manager_webhook: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
