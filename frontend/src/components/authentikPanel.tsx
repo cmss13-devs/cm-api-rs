@@ -79,6 +79,12 @@ export const AuthentikPanel: React.FC = () => {
     }
   }, []);
 
+  useEffect(() => {
+    if (selectedGroup) {
+      fetchGroupMembers(selectedGroup);
+    }
+  }, [selectedGroup, fetchGroupMembers]);
+
   const handleAddUser = async () => {
     if (!addCkey.trim()) return;
 
