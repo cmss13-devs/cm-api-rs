@@ -32,13 +32,6 @@ export const AuthentikPanel: React.FC = () => {
   );
   const [removeLoading, setRemoveLoading] = useState(false);
 
-  // Admin ranks state
-  const [adminRanks, setAdminRanks] = useState<string[]>([]);
-  const [allowedRanks, setAllowedRanks] = useState<string[]>([]);
-  const [ranksLoading, setRanksLoading] = useState(false);
-  const [ranksError, setRanksError] = useState<string | null>(null);
-  const [ranksSaving, setRanksSaving] = useState(false);
-
   const addCkeyInputId = useId();
 
   useEffect(() => {
@@ -85,42 +78,6 @@ export const AuthentikPanel: React.FC = () => {
       setLoading(false);
     }
   }, []);
-
-  const fetchAdminRanks = useCallback(async (groupName: string) => {
-    setRanksLoading(true);
-    setRanksError(null);
-    try {
-      const response = await callApi(
-        `/Authentik/GroupAdminRanks/${encodeURIComponent(groupName)}`
-      );
-      if (!response.ok) {
-        if (response.status === 403) {
-          // User doesn't have management permissions - just clear ranks
-          setAdminRanks([]);
-          setAllowedRanks([]);
-          return;
-        }
-        const err: AuthentikError = await response.json();
-        throw new Error(err.message || "Failed to fetch admin ranks");
-      }
-      const data: GroupAdminRanksResponse = await response.json();
-      setAdminRanks(data.adminRanks);
-      setAllowedRanks(data.allowedRanks);
-    } catch (err) {
-      setRanksError(err instanceof Error ? err.message : "An error occurred");
-      setAdminRanks([]);
-      setAllowedRanks([]);
-    } finally {
-      setRanksLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (selectedGroup) {
-      fetchGroupMembers(selectedGroup);
-      fetchAdminRanks(selectedGroup);
-    }
-  }, [selectedGroup, fetchGroupMembers, fetchAdminRanks]);
 
   const handleAddUser = async () => {
     if (!addCkey.trim()) return;
@@ -187,38 +144,6 @@ export const AuthentikPanel: React.FC = () => {
       );
     } finally {
       setRemoveLoading(false);
-    }
-  };
-
-  const handleToggleRank = async (rank: string) => {
-    const newRanks = adminRanks.includes(rank)
-      ? adminRanks.filter((r) => r !== rank)
-      : [...adminRanks, rank];
-
-    setRanksSaving(true);
-    try {
-      const response = await callApi("/Authentik/GroupAdminRanks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          groupName: selectedGroup,
-          adminRanks: newRanks,
-        }),
-      });
-
-      if (!response.ok) {
-        const err: AuthentikError = await response.json();
-        throw new Error(err.message || "Failed to update admin ranks");
-      }
-
-      setAdminRanks(newRanks);
-      global?.updateAndShowToast(`Updated admin ranks for ${selectedGroup}`);
-    } catch (err) {
-      global?.updateAndShowToast(
-        err instanceof Error ? err.message : "Failed to update admin ranks"
-      );
-    } finally {
-      setRanksSaving(false);
     }
   };
 
@@ -289,36 +214,7 @@ export const AuthentikPanel: React.FC = () => {
         </div>
       )}
 
-      {allowedRanks.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold">Admin Ranks</h2>
-          {ranksLoading ? (
-            <div>Loading admin ranks...</div>
-          ) : ranksError ? (
-            <div className="text-red-400">Error: {ranksError}</div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {allowedRanks.map((rank) => (
-                <label
-                  key={rank}
-                  className="flex flex-row gap-2 items-center cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    checked={adminRanks.includes(rank)}
-                    onChange={() => handleToggleRank(rank)}
-                    disabled={ranksSaving}
-                    className="w-4 h-4 accent-blue-500"
-                  />
-                  <span className={ranksSaving ? "text-gray-500" : ""}>
-                    {rank}
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      <RanksPanel selectedGroup={selectedGroup} />
 
       {showAddDialog && (
         <Dialog open={showAddDialog} toggle={() => setShowAddDialog(false)}>
@@ -394,5 +290,155 @@ export const AuthentikPanel: React.FC = () => {
         </Dialog>
       )}
     </div>
+  );
+};
+
+const RanksPanel = (props: { selectedGroup: string }) => {
+  const global = useContext(GlobalContext);
+
+  const [adminRanks, setAdminRanks] = useState<string[]>([]);
+  const [pendingRanks, setPendingRanks] = useState<string[]>([]);
+  const [allowedRanks, setAllowedRanks] = useState<string[]>([]);
+  const [ranksLoading, setRanksLoading] = useState(false);
+  const [ranksError, setRanksError] = useState<string | null>(null);
+  const [ranksSaving, setRanksSaving] = useState(false);
+
+  const { selectedGroup } = props;
+
+  const fetchAdminRanks = useCallback(async (groupName: string) => {
+    setRanksLoading(true);
+    setRanksError(null);
+    try {
+      const response = await callApi(
+        `/Authentik/GroupAdminRanks/${encodeURIComponent(groupName)}`
+      );
+      if (!response.ok) {
+        if (response.status === 403) {
+          // User doesn't have management permissions - just clear ranks
+          setAdminRanks([]);
+          setPendingRanks([]);
+          setAllowedRanks([]);
+          return;
+        }
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to fetch admin ranks");
+      }
+      const data: GroupAdminRanksResponse = await response.json();
+      setAdminRanks(data.adminRanks);
+      setPendingRanks(data.adminRanks);
+      setAllowedRanks(data.allowedRanks);
+    } catch (err) {
+      setRanksError(err instanceof Error ? err.message : "An error occurred");
+      setAdminRanks([]);
+      setPendingRanks([]);
+      setAllowedRanks([]);
+    } finally {
+      setRanksLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedGroup) {
+      fetchAdminRanks(selectedGroup);
+    }
+  }, [selectedGroup, fetchAdminRanks]);
+
+  const handleToggleRank = (rank: string) => {
+    setPendingRanks((prev) =>
+      prev.includes(rank) ? prev.filter((r) => r !== rank) : [...prev, rank]
+    );
+  };
+
+  const handleSaveRanks = async () => {
+    setRanksSaving(true);
+    try {
+      const response = await callApi("/Authentik/GroupAdminRanks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groupName: selectedGroup,
+          adminRanks: pendingRanks,
+        }),
+      });
+
+      if (!response.ok) {
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to update admin ranks");
+      }
+
+      setAdminRanks(pendingRanks);
+      global?.updateAndShowToast(`Updated admin ranks for ${selectedGroup}`);
+    } catch (err) {
+      global?.updateAndShowToast(
+        err instanceof Error ? err.message : "Failed to update admin ranks"
+      );
+    } finally {
+      setRanksSaving(false);
+    }
+  };
+
+  const handleResetRanks = () => {
+    setPendingRanks(adminRanks);
+  };
+
+  const ranksChanged =
+    JSON.stringify([...adminRanks].sort()) !==
+    JSON.stringify([...pendingRanks].sort());
+
+  return (
+    <>
+      {allowedRanks.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold">Admin Ranks</h2>
+          {ranksLoading ? (
+            <div>Loading admin ranks...</div>
+          ) : ranksError ? (
+            <div className="text-red-400">Error: {ranksError}</div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2">
+                {allowedRanks.map((rank) => (
+                  <label
+                    key={rank}
+                    className="flex flex-row gap-2 items-center cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={pendingRanks.includes(rank)}
+                      onChange={() => handleToggleRank(rank)}
+                      disabled={ranksSaving}
+                      className="w-4 h-4 accent-blue-500"
+                    />
+                    <span className={ranksSaving ? "text-gray-500" : ""}>
+                      {rank}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {ranksChanged && (
+                <div className="flex flex-row gap-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveRanks}
+                    disabled={ranksSaving}
+                    className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-4 py-2 rounded"
+                  >
+                    {ranksSaving ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetRanks}
+                    disabled={ranksSaving}
+                    className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-600 px-4 py-2 rounded"
+                  >
+                    Reset
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </>
   );
 };
