@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Config,
-    admin::{AuthenticatedUser, Staff},
+    admin::{AuthenticatedUser, Management, Staff},
     logging::log_external,
 };
 
@@ -20,6 +20,10 @@ pub struct AuthentikConfig {
     /// users who are members of a permission role can manage all groups listed for that role
     #[serde(default)]
     pub group_permissions: HashMap<String, Vec<String>>,
+    /// list of allowed admin_ranks values that can be toggled on groups
+    /// eg: allowed_admin_ranks = ["R_ADMIN", "R_MOD", "R_EVENT"]
+    #[serde(default)]
+    pub allowed_admin_ranks: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,9 +43,11 @@ struct AuthentikGroupSearchResponse {
     results: Vec<AuthentikGroup>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct AuthentikGroup {
     pk: String,
+    #[serde(default)]
+    attributes: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,6 +84,21 @@ pub struct AuthentikError {
 #[serde(crate = "rocket::serde")]
 pub struct AuthentikSuccess {
     pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct GroupAdminRanksResponse {
+    pub group_name: String,
+    pub admin_ranks: Vec<String>,
+    pub allowed_ranks: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct UpdateAdminRanksRequest {
+    pub group_name: String,
+    pub admin_ranks: Vec<String>,
 }
 
 /// get the list of Authentik groups that a user can manage based on their group memberships
@@ -173,7 +194,7 @@ pub async fn add_user_to_group(
 
     let http_client = reqwest::Client::new();
 
-    let group_pk = find_group_by_name(&http_client, authentik_config, &request.group_name)
+    let group = get_group_by_name(&http_client, authentik_config, &request.group_name)
         .await
         .map_err(|e| {
             (
@@ -197,7 +218,7 @@ pub async fn add_user_to_group(
             )
         })?;
 
-    add_user_to_authentik_group(&http_client, authentik_config, user_pk, &group_pk)
+    add_user_to_authentik_group(&http_client, authentik_config, user_pk, &group.pk)
         .await
         .map_err(|e| {
             (
@@ -273,11 +294,11 @@ async fn find_user_by_ckey(
 }
 
 /// find an Authentik group by name and return its UUID
-async fn find_group_by_name(
+async fn get_group_by_name(
     client: &reqwest::Client,
     config: &AuthentikConfig,
     group_name: &str,
-) -> Result<String, String> {
+) -> Result<AuthentikGroup, String> {
     let url = format!(
         "{}/api/v3/core/groups/?name={}",
         config.base_url.trim_end_matches('/'),
@@ -313,7 +334,7 @@ async fn find_group_by_name(
         ));
     }
 
-    Ok(search_response.results[0].pk.clone())
+    Ok(search_response.results[0].clone())
 }
 
 /// add a user to an Authentik group
@@ -379,7 +400,7 @@ pub async fn remove_user_from_group(
 
     let http_client = reqwest::Client::new();
 
-    let group_pk = find_group_by_name(&http_client, authentik_config, &request.group_name)
+    let group = get_group_by_name(&http_client, authentik_config, &request.group_name)
         .await
         .map_err(|e| {
             (
@@ -403,7 +424,7 @@ pub async fn remove_user_from_group(
             )
         })?;
 
-    remove_user_from_authentik_group(&http_client, authentik_config, user_pk, &group_pk)
+    remove_user_from_authentik_group(&http_client, authentik_config, user_pk, &group.pk)
         .await
         .map_err(|e| {
             (
@@ -497,7 +518,7 @@ pub async fn get_group_members(
 
     let http_client = reqwest::Client::new();
 
-    let group_pk = find_group_by_name(&http_client, authentik_config, &group_name)
+    let group = get_group_by_name(&http_client, authentik_config, &group_name)
         .await
         .map_err(|e| {
             (
@@ -509,7 +530,7 @@ pub async fn get_group_members(
             )
         })?;
 
-    let members = fetch_group_members(&http_client, authentik_config, &group_pk)
+    let members = fetch_group_members(&http_client, authentik_config, &group.pk)
         .await
         .map_err(|e| {
             (
@@ -575,4 +596,211 @@ async fn fetch_group_members(
         .collect();
 
     Ok(members)
+}
+
+/// update the attributes on an Authentik group
+async fn update_group_attributes(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    group_pk: &str,
+    attributes: serde_json::Value,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/api/v3/core/groups/{}/",
+        config.base_url.trim_end_matches('/'),
+        group_pk
+    );
+
+    let response = client
+        .patch(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({ "attributes": attributes }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to update group: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to update group attributes (status {}): {}",
+            status, body
+        ));
+    }
+
+    Ok(())
+}
+
+/// GET /Authentik/GroupAdminRanks/<group_name> - get the admin_ranks attribute for a group
+#[get("/GroupAdminRanks/<group_name>")]
+pub async fn get_group_admin_ranks(
+    user: AuthenticatedUser<Management>,
+    config: &State<Config>,
+    group_name: String,
+) -> Result<Json<GroupAdminRanksResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    validate_group_allowed(authentik_config, &user.groups, &group_name).map_err(|e| {
+        (
+            Status::Forbidden,
+            Json(AuthentikError {
+                error: "group_not_allowed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let group = get_group_by_name(&http_client, authentik_config, &group_name)
+        .await
+        .map_err(|e| {
+            (
+                Status::BadRequest,
+                Json(AuthentikError {
+                    error: "group_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let admin_ranks = group
+        .attributes
+        .get("admin_ranks")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Ok(Json(GroupAdminRanksResponse {
+        group_name,
+        admin_ranks,
+        allowed_ranks: authentik_config.allowed_admin_ranks.clone(),
+    }))
+}
+
+/// POST /Authentik/GroupAdminRanks - update the admin_ranks attribute for a group (Management only)
+#[post("/GroupAdminRanks", format = "json", data = "<request>")]
+pub async fn update_group_admin_ranks(
+    user: AuthenticatedUser<Management>,
+    config: &State<Config>,
+    request: Json<UpdateAdminRanksRequest>,
+) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    validate_group_allowed(authentik_config, &user.groups, &request.group_name).map_err(|e| {
+        (
+            Status::Forbidden,
+            Json(AuthentikError {
+                error: "group_not_allowed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
+
+    // Validate that all provided ranks are in the allowed list
+    if authentik_config.allowed_admin_ranks.is_empty() {
+        return Err((
+            Status::BadRequest,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "No allowed_admin_ranks are configured".to_string(),
+            }),
+        ));
+    }
+
+    let invalid_ranks: Vec<_> = request
+        .admin_ranks
+        .iter()
+        .filter(|rank| !authentik_config.allowed_admin_ranks.contains(rank))
+        .collect();
+
+    if !invalid_ranks.is_empty() {
+        return Err((
+            Status::BadRequest,
+            Json(AuthentikError {
+                error: "invalid_ranks".to_string(),
+                message: format!(
+                    "Invalid admin ranks: {:?}. Allowed ranks are: {:?}",
+                    invalid_ranks, authentik_config.allowed_admin_ranks
+                ),
+            }),
+        ));
+    }
+
+    let http_client = reqwest::Client::new();
+
+    let group = get_group_by_name(&http_client, authentik_config, &request.group_name)
+        .await
+        .map_err(|e| {
+            (
+                Status::BadRequest,
+                Json(AuthentikError {
+                    error: "group_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let mut attributes = group.attributes.clone();
+    if let Some(obj) = attributes.as_object_mut() {
+        obj.insert(
+            "admin_ranks".to_string(),
+            serde_json::json!(request.admin_ranks),
+        );
+    } else {
+        attributes = serde_json::json!({
+            "admin_ranks": request.admin_ranks
+        });
+    }
+
+    update_group_attributes(&http_client, authentik_config, &group.pk, attributes)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "update_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let _ = log_external(
+        config,
+        "User Manager: Group Admin Ranks Updated".to_string(),
+        format!(
+            "{} updated admin_ranks for group '{}' to: {:?}",
+            user.username, request.group_name, request.admin_ranks
+        ),
+        true,
+    )
+    .await;
+
+    Ok(Json(AuthentikSuccess {
+        message: format!(
+            "Successfully updated admin_ranks for group '{}'",
+            request.group_name
+        ),
+    }))
 }

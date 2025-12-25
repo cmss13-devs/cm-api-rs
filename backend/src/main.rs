@@ -245,7 +245,9 @@ async fn rocket() -> _ {
                 authentik::add_user_to_group,
                 authentik::remove_user_from_group,
                 authentik::get_group_members,
-                authentik::get_allowed_groups
+                authentik::get_allowed_groups,
+                authentik::get_group_admin_ranks,
+                authentik::update_group_admin_ranks
             ],
         )
         .mount(

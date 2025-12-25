@@ -22,3 +22,14 @@ export type AuthentikError = {
 	error: string;
 	message: string;
 };
+
+export type GroupAdminRanksResponse = {
+	groupName: string;
+	adminRanks: string[];
+	allowedRanks: string[];
+};
+
+export type UpdateAdminRanksRequest = {
+	groupName: string;
+	adminRanks: string[];
+};

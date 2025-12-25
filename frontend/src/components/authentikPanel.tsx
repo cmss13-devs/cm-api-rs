@@ -3,6 +3,7 @@ import { useCallback, useContext, useEffect, useId, useState } from "react";
 import { callApi } from "../helpers/api";
 import type {
   AuthentikError,
+  GroupAdminRanksResponse,
   GroupMember,
   GroupMembersResponse,
 } from "../types/authentik";
@@ -30,6 +31,13 @@ export const AuthentikPanel: React.FC = () => {
     null
   );
   const [removeLoading, setRemoveLoading] = useState(false);
+
+  // Admin ranks state
+  const [adminRanks, setAdminRanks] = useState<string[]>([]);
+  const [allowedRanks, setAllowedRanks] = useState<string[]>([]);
+  const [ranksLoading, setRanksLoading] = useState(false);
+  const [ranksError, setRanksError] = useState<string | null>(null);
+  const [ranksSaving, setRanksSaving] = useState(false);
 
   const addCkeyInputId = useId();
 
@@ -78,11 +86,41 @@ export const AuthentikPanel: React.FC = () => {
     }
   }, []);
 
+  const fetchAdminRanks = useCallback(async (groupName: string) => {
+    setRanksLoading(true);
+    setRanksError(null);
+    try {
+      const response = await callApi(
+        `/Authentik/GroupAdminRanks/${encodeURIComponent(groupName)}`
+      );
+      if (!response.ok) {
+        if (response.status === 403) {
+          // User doesn't have management permissions - just clear ranks
+          setAdminRanks([]);
+          setAllowedRanks([]);
+          return;
+        }
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to fetch admin ranks");
+      }
+      const data: GroupAdminRanksResponse = await response.json();
+      setAdminRanks(data.adminRanks);
+      setAllowedRanks(data.allowedRanks);
+    } catch (err) {
+      setRanksError(err instanceof Error ? err.message : "An error occurred");
+      setAdminRanks([]);
+      setAllowedRanks([]);
+    } finally {
+      setRanksLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (selectedGroup) {
       fetchGroupMembers(selectedGroup);
+      fetchAdminRanks(selectedGroup);
     }
-  }, [selectedGroup, fetchGroupMembers]);
+  }, [selectedGroup, fetchGroupMembers, fetchAdminRanks]);
 
   const handleAddUser = async () => {
     if (!addCkey.trim()) return;
@@ -152,6 +190,38 @@ export const AuthentikPanel: React.FC = () => {
     }
   };
 
+  const handleToggleRank = async (rank: string) => {
+    const newRanks = adminRanks.includes(rank)
+      ? adminRanks.filter((r) => r !== rank)
+      : [...adminRanks, rank];
+
+    setRanksSaving(true);
+    try {
+      const response = await callApi("/Authentik/GroupAdminRanks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groupName: selectedGroup,
+          adminRanks: newRanks,
+        }),
+      });
+
+      if (!response.ok) {
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to update admin ranks");
+      }
+
+      setAdminRanks(newRanks);
+      global?.updateAndShowToast(`Updated admin ranks for ${selectedGroup}`);
+    } catch (err) {
+      global?.updateAndShowToast(
+        err instanceof Error ? err.message : "Failed to update admin ranks"
+      );
+    } finally {
+      setRanksSaving(false);
+    }
+  };
+
   if (groupsLoading) {
     return <div>Loading...</div>;
   }
@@ -160,7 +230,6 @@ export const AuthentikPanel: React.FC = () => {
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-bold">User Manager</h1>
 
-      {/* Group selector */}
       <div className="flex flex-row gap-2 items-center">
         <span>Group:</span>
         <select
@@ -180,13 +249,10 @@ export const AuthentikPanel: React.FC = () => {
         </LinkColor>
       </div>
 
-      {/* Error display */}
       {error && <div className="text-red-400">Error: {error}</div>}
 
-      {/* Loading state */}
       {loading && <div>Loading members...</div>}
 
-      {/* Members list */}
       {!loading && !error && (
         <div className="flex flex-col gap-2">
           <h2 className="text-lg font-semibold">
@@ -223,7 +289,37 @@ export const AuthentikPanel: React.FC = () => {
         </div>
       )}
 
-      {/* Add User Dialog */}
+      {allowedRanks.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h2 className="text-lg font-semibold">Admin Ranks</h2>
+          {ranksLoading ? (
+            <div>Loading admin ranks...</div>
+          ) : ranksError ? (
+            <div className="text-red-400">Error: {ranksError}</div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {allowedRanks.map((rank) => (
+                <label
+                  key={rank}
+                  className="flex flex-row gap-2 items-center cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={adminRanks.includes(rank)}
+                    onChange={() => handleToggleRank(rank)}
+                    disabled={ranksSaving}
+                    className="w-4 h-4 accent-blue-500"
+                  />
+                  <span className={ranksSaving ? "text-gray-500" : ""}>
+                    {rank}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {showAddDialog && (
         <Dialog open={showAddDialog} toggle={() => setShowAddDialog(false)}>
           <div className="flex flex-col gap-4 pt-6">
@@ -265,7 +361,6 @@ export const AuthentikPanel: React.FC = () => {
         </Dialog>
       )}
 
-      {/* Remove User Confirmation Dialog */}
       {showRemoveDialog && memberToRemove && (
         <Dialog
           open={showRemoveDialog}
