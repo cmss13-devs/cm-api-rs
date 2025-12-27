@@ -183,6 +183,7 @@ pub struct AdminRanksExportResponse {
 pub struct DiscourseUserIdResponse {
     pub ckey: String,
     pub discourse_user_id: i64,
+    pub discourse_username: String,
 }
 
 #[derive(Debug, Clone)]
@@ -1415,7 +1416,6 @@ pub async fn get_admin_ranks_export(
 
     let http_client = reqwest::Client::new();
 
-    // Fetch all groups with admin_ranks
     let groups_with_ranks = fetch_groups_with_admin_ranks(&http_client, authentik_config)
         .await
         .map_err(|e| {
@@ -1428,13 +1428,11 @@ pub async fn get_admin_ranks_export(
             )
         })?;
 
-    // Build the groups map for the response
     let mut groups_map: HashMap<String, HashMap<String, Vec<String>>> = HashMap::new();
     for group in &groups_with_ranks {
         groups_map.insert(group.name.clone(), group.admin_ranks.clone());
     }
 
-    // Fetch users from each group and deduplicate by ckey
     let mut users_map: HashMap<String, AdminRanksUser> = HashMap::new();
     let mut user_max_priority: HashMap<String, i64> = HashMap::new();
 
@@ -1489,7 +1487,6 @@ pub async fn get_admin_ranks_export(
     }))
 }
 
-/// Response from the Discourse API when looking up a user by external ID
 #[derive(Debug, Deserialize)]
 struct DiscourseUserResponse {
     user: DiscourseUser,
@@ -1498,14 +1495,15 @@ struct DiscourseUserResponse {
 #[derive(Debug, Deserialize)]
 struct DiscourseUser {
     id: i64,
+    username: String,
 }
 
-/// Look up a Discourse user by their identity provider external ID (Authentik uid)
+/// look up a Discourse user by their identity provider external ID (Authentik uid)
 async fn get_discourse_user_by_external_id(
     client: &reqwest::Client,
     config: &DiscourseConfig,
     external_id: &str,
-) -> Result<i64, String> {
+) -> Result<DiscourseUser, String> {
     let url = format!(
         "{}/u/by-external/{}/{}.json",
         config.base_url.trim_end_matches('/'),
@@ -1532,12 +1530,12 @@ async fn get_discourse_user_by_external_id(
         .await
         .map_err(|e| format!("Failed to parse Discourse response: {}", e))?;
 
-    Ok(user_response.user.id)
+    Ok(user_response.user)
 }
 
 /// GET /Authentik/DiscourseUserId/<ckey> - get a user's Discourse user ID by their ckey
 /// looks up the user in Authentik by ckey, then uses their uid to find them in Discourse
-#[get("/DiscourseUserId/<ckey>")]
+#[get("/DiscourseUser/<ckey>")]
 pub async fn get_discourse_user_id(
     _user: AuthenticatedUser<Staff>,
     config: &State<Config>,
@@ -1565,7 +1563,6 @@ pub async fn get_discourse_user_id(
 
     let http_client = reqwest::Client::new();
 
-    // Get the Authentik user by ckey to retrieve their pk (uid)
     let authentik_user = get_user_by_ckey(&http_client, authentik_config, &ckey)
         .await
         .map_err(|e| {
@@ -1578,10 +1575,9 @@ pub async fn get_discourse_user_id(
             )
         })?;
 
-    // Use the Authentik user's pk as the external ID to look up in Discourse
     let external_id = authentik_user.uid.to_string();
 
-    let discourse_user_id =
+    let discourse_user =
         get_discourse_user_by_external_id(&http_client, discourse_config, &external_id)
             .await
             .map_err(|e| {
@@ -1596,6 +1592,7 @@ pub async fn get_discourse_user_id(
 
     Ok(Json(DiscourseUserIdResponse {
         ckey,
-        discourse_user_id,
+        discourse_user_id: discourse_user.id,
+        discourse_username: discourse_user.username,
     }))
 }

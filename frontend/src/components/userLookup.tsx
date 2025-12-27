@@ -298,6 +298,12 @@ type VpnWhitelist = {
   adminCkey: string;
 };
 
+type DiscourseUser = {
+  ckey: string;
+  discourseUserId: number;
+  discourseUsername: string;
+};
+
 const UserDetailsModal = (props: { player: Player }) => {
   const { player } = props;
 
@@ -318,10 +324,14 @@ const UserDetailsModal = (props: { player: Player }) => {
   const [vpnWhitelist, setVpnWhitelist] = useState<
     VpnWhitelist | null | undefined
   >(undefined);
+  const [discourseUser, setDiscourseUser] = useState<
+    DiscourseUser | null | undefined
+  >(undefined);
 
   useEffect(() => {
     setViewTickets(false);
     setVpnWhitelist(undefined);
+    setDiscourseUser(undefined);
   }, [player, setViewTickets]);
 
   useEffect(() => {
@@ -335,6 +345,18 @@ const UserDetailsModal = (props: { player: Player }) => {
       });
     }
   }, [ckey, vpnWhitelist]);
+
+  useEffect(() => {
+    if (discourseUser === undefined) {
+      callApi(`/Authentik/DiscourseUser/${ckey}`).then((response) => {
+        if (response.status === 200) {
+          response.json().then((json) => setDiscourseUser(json));
+        } else {
+          setDiscourseUser(null);
+        }
+      });
+    }
+  }, [ckey, discourseUser]);
 
   const potentialUser = useLoaderData() as string;
   const nav = useNavigate();
@@ -443,17 +465,21 @@ const UserDetailsModal = (props: { player: Player }) => {
           <LinkColor onClick={() => setViewPlaytime(true)}>
             View Playtime
           </LinkColor>
-          {"|"}
-          <LinkColor
-            onClick={() =>
-              window.open(
-                `https://forum.cm-ss13.com/search?q=${ckey}&search_type=users`,
-                "_blank"
-              )
-            }
-          >
-            Find Forum Account
-          </LinkColor>
+          {discourseUser && (
+            <>
+              {"|"}
+              <LinkColor
+                onClick={() =>
+                  window.open(
+                    `https://forum.cm-ss13.com/admin/users/${discourseUser.discourseUserId}/${discourseUser.discourseUsername}`,
+                    "_blank"
+                  )
+                }
+              >
+                View Forum Account
+              </LinkColor>
+            </>
+          )}
           {playtime && (
             <Dialog
               open={playtime}
