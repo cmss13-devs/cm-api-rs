@@ -61,9 +61,10 @@ struct AuthentikGroup {
     name: String,
     #[serde(default)]
     attributes: serde_json::Value,
+    users: Vec<AuthentikUser>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct AuthentikUser {
     pk: i64,
     username: String,
@@ -164,9 +165,11 @@ pub struct AdminRanksExportResponse {
 #[derive(Debug, Clone)]
 struct GroupWithPriority {
     name: String,
+    pk: String,
     priority: i64,
     admin_ranks: HashMap<String, Vec<String>>,
     display_name: Option<String>,
+    users: Vec<AuthentikUser>,
 }
 
 /// get the list of Authentik groups that a user can manage based on their group memberships
@@ -1326,6 +1329,8 @@ async fn fetch_groups_with_admin_ranks(
 
                 all_groups.push(GroupWithPriority {
                     name: group.name,
+                    pk: group.pk,
+                    users: group.users,
                     priority,
                     admin_ranks,
                     display_name,
@@ -1446,7 +1451,6 @@ pub async fn get_admin_ranks_export(
     auth_header: AuthorizationHeader,
     config: &State<Config>,
 ) -> Result<Json<AdminRanksExportResponse>, (Status, Json<AuthentikError>)> {
-    // Validate authorization header
     if !validate_auth_header(&auth_header.0, config) {
         return Err((
             Status::Unauthorized,
@@ -1488,48 +1492,12 @@ pub async fn get_admin_ranks_export(
         groups_map.insert(group.name.clone(), group.admin_ranks.clone());
     }
 
-    let group_priority_map: HashMap<String, i64> = groups_with_ranks
-        .iter()
-        .map(|g| (g.name.clone(), g.priority))
-        .collect();
-
-    let group_display_name_map: HashMap<String, Option<String>> = groups_with_ranks
-        .iter()
-        .map(|g| (g.name.clone(), g.display_name.clone()))
-        .collect();
-
     // Fetch users from each group and deduplicate by ckey
     let mut users_map: HashMap<String, AdminRanksUser> = HashMap::new();
     let mut user_max_priority: HashMap<String, i64> = HashMap::new();
 
     for group in &groups_with_ranks {
-        // Get group pk by name
-        let group_info = get_group_by_name(&http_client, authentik_config, &group.name)
-            .await
-            .map_err(|e| {
-                (
-                    Status::InternalServerError,
-                    Json(AuthentikError {
-                        error: "fetch_group_failed".to_string(),
-                        message: e,
-                    }),
-                )
-            })?;
-
-        let users =
-            fetch_users_in_group_with_memberships(&http_client, authentik_config, &group_info.pk)
-                .await
-                .map_err(|e| {
-                    (
-                        Status::InternalServerError,
-                        Json(AuthentikError {
-                            error: "fetch_users_failed".to_string(),
-                            message: e,
-                        }),
-                    )
-                })?;
-
-        for user in users {
+        for user in &group.users {
             let Some(ckey) = user
                 .attributes
                 .get("ckey")
@@ -1539,55 +1507,34 @@ pub async fn get_admin_ranks_export(
                 continue;
             };
 
-            let user_groups: Vec<&str> = user.groups_obj.iter().map(|g| g.name.as_str()).collect();
+            let should_update = match user_max_priority.get(&ckey) {
+                None => true,
+                Some(&existing_priority) => group.priority > existing_priority,
+            };
 
-            let mut best_group: Option<(&str, i64)> = None;
-            for user_group in &user_groups {
-                if let Some(&priority) = group_priority_map.get(*user_group) {
-                    match best_group {
-                        None => best_group = Some((user_group, priority)),
-                        Some((_, current_priority)) if priority > current_priority => {
-                            best_group = Some((user_group, priority));
-                        }
-                        _ => {}
-                    }
-                }
-            }
+            if should_update {
+                let additional_titles = user
+                    .attributes
+                    .get("additional_titles")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty());
 
-            if let Some((primary_group, priority)) = best_group {
-                let should_update = match user_max_priority.get(&ckey) {
-                    None => true,
-                    Some(&existing_priority) => priority > existing_priority,
+                let display_name = match (group.display_name.clone(), additional_titles) {
+                    (Some(dn), Some(at)) => Some(format!("{} - {}", dn, at)),
+                    (Some(dn), None) => Some(dn),
+                    (None, Some(at)) => Some(at.to_string()),
+                    (None, None) => None,
                 };
 
-                if should_update {
-                    let group_display_name =
-                        group_display_name_map.get(primary_group).cloned().flatten();
-
-                    // Get user's additional_titles and append to display_name if present
-                    let additional_titles = user
-                        .attributes
-                        .get("additional_titles")
-                        .and_then(|v| v.as_str())
-                        .filter(|s| !s.is_empty());
-
-                    let display_name = match (group_display_name, additional_titles) {
-                        (Some(dn), Some(at)) => Some(format!("{} - {}", dn, at)),
-                        (Some(dn), None) => Some(dn),
-                        (None, Some(at)) => Some(at.to_string()),
-                        (None, None) => None,
-                    };
-
-                    users_map.insert(
-                        ckey.clone(),
-                        AdminRanksUser {
-                            ckey: ckey.clone(),
-                            primary_group: primary_group.to_string(),
-                            display_name,
-                        },
-                    );
-                    user_max_priority.insert(ckey, priority);
-                }
+                users_map.insert(
+                    ckey.clone(),
+                    AdminRanksUser {
+                        ckey: ckey.clone(),
+                        primary_group: group.name.to_string(),
+                        display_name,
+                    },
+                );
+                user_max_priority.insert(ckey, group.priority);
             }
         }
     }
