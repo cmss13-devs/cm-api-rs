@@ -45,7 +45,13 @@ struct AuthentikUserSearchResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct AuthentikPagination {
+    total_pages: i32,
+}
+
+#[derive(Debug, Deserialize)]
 struct AuthentikGroupSearchResponse {
+    pagination: AuthentikPagination,
     results: Vec<AuthentikGroup>,
 }
 
@@ -911,10 +917,18 @@ async fn fetch_groups_with_admin_ranks(
     config: &AuthentikConfig,
 ) -> Result<Vec<GroupWithPriority>, String> {
     let mut all_groups = Vec::new();
+
     let mut page = 1;
+    let mut max_pages: Option<i32> = None;
     let page_size = 100;
 
     loop {
+        if let Some(max_pages) = max_pages
+            && page > max_pages
+        {
+            break;
+        };
+
         let url = format!(
             "{}/api/v3/core/groups/?page={}&page_size={}",
             config.base_url.trim_end_matches('/'),
@@ -939,6 +953,10 @@ async fn fetch_groups_with_admin_ranks(
             .json()
             .await
             .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+
+        if max_pages.is_none() {
+            max_pages = Some(search_response.pagination.total_pages)
+        }
 
         if search_response.results.is_empty() {
             break;
