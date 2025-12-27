@@ -743,22 +743,16 @@ pub async fn get_group_admin_ranks(
         admin_ranks: HashMap<String, Vec<String>>,
     }
 
-    let ranks_response: AdminRanksResponse = serde_json::from_value(
-        group
-            .attributes
-            .get("admin_ranks")
-            .unwrap_or(&serde_json::Value::from("{}"))
-            .clone(),
-    )
-    .map_err(|e| {
-        (
-            Status::InternalServerError,
-            Json(AuthentikError {
-                error: "could_not_deserialize".to_string(),
-                message: e.to_string(),
-            }),
-        )
-    })?;
+    let ranks_response: AdminRanksResponse =
+        serde_json::from_value(group.attributes).map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "could_not_deserialize".to_string(),
+                    message: e.to_string(),
+                }),
+            )
+        })?;
 
     let Some(ranks) = ranks_response.admin_ranks.get(&instance) else {
         return Err((
