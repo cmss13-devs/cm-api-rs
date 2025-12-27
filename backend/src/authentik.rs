@@ -923,12 +923,6 @@ async fn fetch_groups_with_admin_ranks(
     let page_size = 100;
 
     loop {
-        if let Some(max_pages) = max_pages
-            && page > max_pages
-        {
-            break;
-        };
-
         let url = format!(
             "{}/api/v3/core/groups/?page={}&page_size={}",
             config.base_url.trim_end_matches('/'),
@@ -998,6 +992,12 @@ async fn fetch_groups_with_admin_ranks(
                     admin_ranks,
                 });
             }
+        }
+
+        if let Some(max_page) = max_pages
+            && max_page == page
+        {
+            break;
         }
 
         page += 1;
