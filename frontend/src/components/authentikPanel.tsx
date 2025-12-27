@@ -15,6 +15,8 @@ import { NameExpand } from "./nameExpand";
 export const AuthentikPanel: React.FC = () => {
   const global = useContext(GlobalContext);
 
+  const [viewRanksPanel, setViewRanksPanel] = useState(false);
+
   const [availableGroups, setAvailableGroups] = useState<string[]>([]);
   const [groupsLoading, setGroupsLoading] = useState(true);
   const [selectedGroup, setSelectedGroup] = useState<string>("");
@@ -220,7 +222,16 @@ export const AuthentikPanel: React.FC = () => {
         </div>
       )}
 
-      <RanksPanel selectedGroup={selectedGroup} />
+      <button
+        type="button"
+        onClick={() => {
+          setViewRanksPanel((curr) => !curr);
+        }}
+        className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-600 px-4 py-2 rounded"
+      >
+        {viewRanksPanel ? "Hide Ranks" : "View Ranks"}
+      </button>
+      {viewRanksPanel && <RanksPanel selectedGroup={selectedGroup} />}
 
       {showAddDialog && (
         <Dialog open={showAddDialog} toggle={() => setShowAddDialog(false)}>
