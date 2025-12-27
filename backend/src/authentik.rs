@@ -12,6 +12,18 @@ use crate::{
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DiscourseConfig {
+    /// base URL for the Discourse instance (e.g., "https://forum.example.com")
+    pub base_url: String,
+    /// API key for Discourse
+    pub api_key: String,
+    /// API username for Discourse (typically "system")
+    pub api_username: String,
+    /// the identity provider name as configured in Discourse (e.g., "oidc", "oauth2_basic")
+    pub provider_name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct AuthentikConfig {
     pub token: String,
     pub base_url: String,
@@ -30,6 +42,8 @@ pub struct AuthentikConfig {
     /// eg: allowed_instances = ["cm13-live", "cm13-rp"]
     #[serde(default)]
     pub allowed_instances: Vec<String>,
+    /// Discourse integration configuration for looking up forum user IDs
+    pub discourse: Option<DiscourseConfig>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -68,6 +82,7 @@ struct AuthentikGroup {
 #[derive(Debug, Deserialize, Clone)]
 struct AuthentikUser {
     pk: i64,
+    uid: String,
     username: String,
     #[serde(default)]
     attributes: serde_json::Value,
@@ -162,10 +177,18 @@ pub struct AdminRanksExportResponse {
     pub groups: HashMap<String, HashMap<String, Vec<String>>>,
 }
 
-/// Extended group info including name and priority for sorting
+/// Response for the Discourse user ID lookup endpoint
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct DiscourseUserIdResponse {
+    pub ckey: String,
+    pub discourse_user_id: i64,
+}
+
 #[derive(Debug, Clone)]
 struct GroupWithPriority {
     name: String,
+    #[allow(dead_code)]
     pk: String,
     priority: i64,
     admin_ranks: HashMap<String, Vec<String>>,
@@ -1351,88 +1374,6 @@ async fn fetch_groups_with_admin_ranks(
     Ok(all_groups)
 }
 
-/// Extended user info including groups for the export endpoint
-#[derive(Debug, Deserialize)]
-struct AuthentikUserWithGroups {
-    #[serde(default)]
-    attributes: serde_json::Value,
-    #[serde(default)]
-    groups_obj: Vec<AuthentikGroupRef>,
-}
-
-#[derive(Debug, Deserialize)]
-struct AuthentikGroupRef {
-    name: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct AuthentikUserWithGroupsSearchResponse {
-    results: Vec<AuthentikUserWithGroups>,
-    pagination: AuthentikPagination,
-}
-
-/// Fetch all users in a specific group with their group memberships
-async fn fetch_users_in_group_with_memberships(
-    client: &reqwest::Client,
-    config: &AuthentikConfig,
-    group_pk: &str,
-) -> Result<Vec<AuthentikUserWithGroups>, String> {
-    let mut all_users = Vec::new();
-
-    let mut max_pages: Option<i32> = None;
-
-    let mut page = 1;
-    let page_size = 100;
-
-    loop {
-        let url = format!(
-            "{}/api/v3/core/users/?groups_by_pk={}&page={}&page_size={}",
-            config.base_url.trim_end_matches('/'),
-            group_pk,
-            page,
-            page_size
-        );
-
-        let response = client
-            .get(&url)
-            .header("Authorization", format!("Bearer {}", config.token))
-            .send()
-            .await
-            .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response.text().await.unwrap_or_default();
-            return Err(format!("Authentik API returned error {}: {}", status, body));
-        }
-
-        let search_response: AuthentikUserWithGroupsSearchResponse = response
-            .json()
-            .await
-            .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
-
-        if max_pages.is_none() {
-            max_pages = Some(search_response.pagination.total_pages);
-        }
-
-        if search_response.results.is_empty() {
-            break;
-        }
-
-        all_users.extend(search_response.results);
-
-        if let Some(max_pages) = max_pages
-            && max_pages == page
-        {
-            break;
-        }
-
-        page += 1;
-    }
-
-    Ok(all_users)
-}
-
 /// Validates the Authorization header against the configured API auth token.
 fn validate_auth_header(auth_header: &str, config: &Config) -> bool {
     let Some(api_auth) = &config.api_auth else {
@@ -1545,5 +1486,116 @@ pub async fn get_admin_ranks_export(
     Ok(Json(AdminRanksExportResponse {
         users,
         groups: groups_map,
+    }))
+}
+
+/// Response from the Discourse API when looking up a user by external ID
+#[derive(Debug, Deserialize)]
+struct DiscourseUserResponse {
+    user: DiscourseUser,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscourseUser {
+    id: i64,
+}
+
+/// Look up a Discourse user by their identity provider external ID (Authentik uid)
+async fn get_discourse_user_by_external_id(
+    client: &reqwest::Client,
+    config: &DiscourseConfig,
+    external_id: &str,
+) -> Result<i64, String> {
+    let url = format!(
+        "{}/u/by-external/{}/{}.json",
+        config.base_url.trim_end_matches('/'),
+        urlencoding::encode(&config.provider_name),
+        urlencoding::encode(external_id)
+    );
+
+    let response = client
+        .get(&url)
+        .header("Api-Key", &config.api_key)
+        .header("Api-Username", &config.api_username)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to query Discourse API: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Discourse API returned error {}: {}", status, body));
+    }
+
+    let user_response: DiscourseUserResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Discourse response: {}", e))?;
+
+    Ok(user_response.user.id)
+}
+
+/// GET /Authentik/DiscourseUserId/<ckey> - get a user's Discourse user ID by their ckey
+/// looks up the user in Authentik by ckey, then uses their uid to find them in Discourse
+#[get("/DiscourseUserId/<ckey>")]
+pub async fn get_discourse_user_id(
+    _user: AuthenticatedUser<Staff>,
+    config: &State<Config>,
+    ckey: String,
+) -> Result<Json<DiscourseUserIdResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let discourse_config = authentik_config.discourse.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Discourse integration is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    // Get the Authentik user by ckey to retrieve their pk (uid)
+    let authentik_user = get_user_by_ckey(&http_client, authentik_config, &ckey)
+        .await
+        .map_err(|e| {
+            (
+                Status::BadRequest,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    // Use the Authentik user's pk as the external ID to look up in Discourse
+    let external_id = authentik_user.uid.to_string();
+
+    let discourse_user_id =
+        get_discourse_user_by_external_id(&http_client, discourse_config, &external_id)
+            .await
+            .map_err(|e| {
+                (
+                    Status::NotFound,
+                    Json(AuthentikError {
+                        error: "discourse_user_not_found".to_string(),
+                        message: e,
+                    }),
+                )
+            })?;
+
+    Ok(Json(DiscourseUserIdResponse {
+        ckey,
+        discourse_user_id,
     }))
 }
