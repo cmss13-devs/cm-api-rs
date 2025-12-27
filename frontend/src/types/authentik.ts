@@ -44,3 +44,13 @@ export type UpdateDisplayNameRequest = {
 	groupName: string;
 	displayName: string;
 };
+
+export type UserAdditionalTitlesResponse = {
+	ckey: string;
+	additionalTitles: string | null;
+};
+
+export type UpdateAdditionalTitlesRequest = {
+	ckey: string;
+	additionalTitles: string;
+};

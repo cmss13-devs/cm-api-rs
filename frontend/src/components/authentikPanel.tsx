@@ -7,6 +7,7 @@ import type {
   GroupDisplayNameResponse,
   GroupMember,
   GroupMembersResponse,
+  UserAdditionalTitlesResponse,
 } from "../types/authentik";
 import { GlobalContext } from "../types/global";
 import { Dialog } from "./dialog";
@@ -197,26 +198,14 @@ export const AuthentikPanel: React.FC = () => {
           ) : (
             <div className="flex flex-col gap-1">
               {members.map((member) => (
-                <div
+                <MemberRow
                   key={member.pk}
-                  className="flex flex-row gap-2 items-center border-b border-[#3f3f3f] py-1"
-                >
-                  <span className="min-w-[150px]">{member.username}</span>
-                  {member.ckey && (
-                    <span className="text-gray-400">
-                      (<NameExpand name={member.ckey} />)
-                    </span>
-                  )}
-                  <LinkColor
-                    className="ml-auto text-red-400"
-                    onClick={() => {
-                      setMemberToRemove(member);
-                      setShowRemoveDialog(true);
-                    }}
-                  >
-                    Remove
-                  </LinkColor>
-                </div>
+                  member={member}
+                  onRemove={(m) => {
+                    setMemberToRemove(m);
+                    setShowRemoveDialog(true);
+                  }}
+                />
               ))}
             </div>
           )}
@@ -311,6 +300,153 @@ export const AuthentikPanel: React.FC = () => {
   );
 };
 
+const MemberRow = (props: {
+  member: GroupMember;
+  onRemove: (member: GroupMember) => void;
+}) => {
+  const global = useContext(GlobalContext);
+  const { member, onRemove } = props;
+
+  const [additionalTitles, setAdditionalTitles] = useState<string | null>(null);
+  const [pendingTitles, setPendingTitles] = useState<string>("");
+  const [titlesLoading, setTitlesLoading] = useState(false);
+  const [titlesSaving, setTitlesSaving] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    if (!member.ckey) return;
+
+    const fetchTitles = async () => {
+      setTitlesLoading(true);
+      try {
+        const response = await callApi(
+          `/Authentik/UserAdditionalTitles/${encodeURIComponent(
+            member.ckey as string
+          )}`
+        );
+        if (response.ok) {
+          const data: UserAdditionalTitlesResponse = await response.json();
+          setAdditionalTitles(data.additionalTitles);
+          setPendingTitles(data.additionalTitles ?? "");
+        }
+      } catch {
+        // Silently fail
+      } finally {
+        setTitlesLoading(false);
+      }
+    };
+
+    fetchTitles();
+  }, [member.ckey]);
+
+  const handleSaveTitles = async () => {
+    if (!member.ckey) return;
+
+    setTitlesSaving(true);
+    try {
+      const response = await callApi("/Authentik/UserAdditionalTitles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ckey: member.ckey,
+          additionalTitles: pendingTitles,
+        }),
+      });
+
+      if (!response.ok) {
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to update additional titles");
+      }
+
+      setAdditionalTitles(pendingTitles);
+      setIsEditing(false);
+      global?.updateAndShowToast(
+        `Updated additional titles for ${member.ckey}`
+      );
+    } catch (err) {
+      global?.updateAndShowToast(
+        err instanceof Error
+          ? err.message
+          : "Failed to update additional titles"
+      );
+    } finally {
+      setTitlesSaving(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setPendingTitles(additionalTitles ?? "");
+    setIsEditing(false);
+  };
+
+  return (
+    <div className="flex flex-col gap-1 border-b border-[#3f3f3f] py-2">
+      <div className="flex flex-row gap-2 items-center">
+        <span className="min-w-[150px]">{member.username}</span>
+        {member.ckey && (
+          <span className="text-gray-400">
+            (<NameExpand name={member.ckey} />)
+          </span>
+        )}
+        <LinkColor
+          className="ml-auto text-red-400"
+          onClick={() => onRemove(member)}
+        >
+          Remove
+        </LinkColor>
+      </div>
+      {member.ckey && (
+        <div className="flex flex-row gap-2 items-center text-sm">
+          <span className="text-gray-400">Additional Titles:</span>
+          {titlesLoading ? (
+            <span className="text-gray-500">Loading...</span>
+          ) : isEditing ? (
+            <>
+              <input
+                type="text"
+                value={pendingTitles}
+                onChange={(e) => setPendingTitles(e.target.value)}
+                disabled={titlesSaving}
+                className="bg-[#2a2a2a] border border-[#3f3f3f] rounded px-2 py-0.5 text-white flex-1"
+                placeholder="Enter additional titles..."
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveTitles();
+                  if (e.key === "Escape") handleCancelEdit();
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleSaveTitles}
+                disabled={titlesSaving}
+                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-2 py-0.5 rounded text-xs"
+              >
+                {titlesSaving ? "Saving..." : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={titlesSaving}
+                className="bg-gray-600 hover:bg-gray-700 px-2 py-0.5 rounded text-xs"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <span className={additionalTitles ? "" : "text-gray-500"}>
+                {additionalTitles || "(none)"}
+              </span>
+              <LinkColor className="text-xs" onClick={() => setIsEditing(true)}>
+                Edit
+              </LinkColor>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const RanksPanel = (props: { selectedGroup: string }) => {
   const global = useContext(GlobalContext);
 
@@ -332,14 +468,12 @@ const RanksPanel = (props: { selectedGroup: string }) => {
 
   const { selectedGroup } = props;
 
-  // Fetch available instances on mount
   useEffect(() => {
     const fetchInstances = async () => {
       try {
         const response = await callApi("/Authentik/AllowedInstances");
         if (!response.ok) {
           if (response.status === 403) {
-            // User doesn't have management permissions
             setAvailableInstances([]);
             return;
           }
@@ -350,8 +484,7 @@ const RanksPanel = (props: { selectedGroup: string }) => {
         if (instances.length > 0) {
           setSelectedInstance(instances[0]);
         }
-      } catch (err) {
-        // Silently fail - user may not have management permissions
+      } catch (_err) {
         setAvailableInstances([]);
       } finally {
         setInstancesLoading(false);
@@ -375,7 +508,6 @@ const RanksPanel = (props: { selectedGroup: string }) => {
         );
         if (!response.ok) {
           if (response.status === 403) {
-            // User doesn't have management permissions - just clear ranks
             setAdminRanks([]);
             setPendingRanks([]);
             setAllowedRanks([]);
@@ -406,7 +538,6 @@ const RanksPanel = (props: { selectedGroup: string }) => {
     }
   }, [selectedGroup, selectedInstance, fetchAdminRanks]);
 
-  // Fetch display name when group changes
   const fetchDisplayName = useCallback(async (groupName: string) => {
     setDisplayNameLoading(true);
     try {
@@ -497,9 +628,7 @@ const RanksPanel = (props: { selectedGroup: string }) => {
       }
 
       setDisplayName(pendingDisplayName);
-      global?.updateAndShowToast(
-        `Updated display name for ${selectedGroup}`
-      );
+      global?.updateAndShowToast(`Updated display name for ${selectedGroup}`);
     } catch (err) {
       global?.updateAndShowToast(
         err instanceof Error ? err.message : "Failed to update display name"
@@ -573,71 +702,71 @@ const RanksPanel = (props: { selectedGroup: string }) => {
       <div className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold">Admin Ranks</h2>
 
-      <div className="flex flex-row gap-2 items-center">
-        <span>Instance:</span>
-        <select
-          value={selectedInstance}
-          onChange={(e) => setSelectedInstance(e.target.value)}
-          className="bg-[#2a2a2a] border border-[#3f3f3f] rounded px-2 py-1 text-white"
-          disabled={availableInstances.length === 0}
-        >
-          {availableInstances.map((instance) => (
-            <option key={instance} value={instance}>
-              {instance}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {ranksLoading ? (
-        <div>Loading admin ranks...</div>
-      ) : ranksError ? (
-        <div className="text-red-400">Error: {ranksError}</div>
-      ) : allowedRanks.length > 0 ? (
-        <>
-          <div className="flex flex-col gap-2">
-            {allowedRanks.map((rank) => (
-              <label
-                key={rank}
-                className="flex flex-row gap-2 items-center cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={pendingRanks.includes(rank)}
-                  onChange={() => handleToggleRank(rank)}
-                  disabled={ranksSaving}
-                  className="w-4 h-4 accent-blue-500"
-                />
-                <span className={ranksSaving ? "text-gray-500" : ""}>
-                  {rank}
-                </span>
-              </label>
+        <div className="flex flex-row gap-2 items-center">
+          <span>Instance:</span>
+          <select
+            value={selectedInstance}
+            onChange={(e) => setSelectedInstance(e.target.value)}
+            className="bg-[#2a2a2a] border border-[#3f3f3f] rounded px-2 py-1 text-white"
+            disabled={availableInstances.length === 0}
+          >
+            {availableInstances.map((instance) => (
+              <option key={instance} value={instance}>
+                {instance}
+              </option>
             ))}
-          </div>
-          {ranksChanged && (
-            <div className="flex flex-row gap-2 mt-2">
-              <button
-                type="button"
-                onClick={handleSaveRanks}
-                disabled={ranksSaving}
-                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-4 py-2 rounded"
-              >
-                {ranksSaving ? "Saving..." : "Save"}
-              </button>
-              <button
-                type="button"
-                onClick={handleResetRanks}
-                disabled={ranksSaving}
-                className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-600 px-4 py-2 rounded"
-              >
-                Reset
-              </button>
+          </select>
+        </div>
+
+        {ranksLoading ? (
+          <div>Loading admin ranks...</div>
+        ) : ranksError ? (
+          <div className="text-red-400">Error: {ranksError}</div>
+        ) : allowedRanks.length > 0 ? (
+          <>
+            <div className="flex flex-col gap-2">
+              {allowedRanks.map((rank) => (
+                <label
+                  key={rank}
+                  className="flex flex-row gap-2 items-center cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={pendingRanks.includes(rank)}
+                    onChange={() => handleToggleRank(rank)}
+                    disabled={ranksSaving}
+                    className="w-4 h-4 accent-blue-500"
+                  />
+                  <span className={ranksSaving ? "text-gray-500" : ""}>
+                    {rank}
+                  </span>
+                </label>
+              ))}
             </div>
-          )}
-        </>
-      ) : (
-        <div className="text-gray-400">No ranks configured</div>
-      )}
+            {ranksChanged && (
+              <div className="flex flex-row gap-2 mt-2">
+                <button
+                  type="button"
+                  onClick={handleSaveRanks}
+                  disabled={ranksSaving}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-4 py-2 rounded"
+                >
+                  {ranksSaving ? "Saving..." : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetRanks}
+                  disabled={ranksSaving}
+                  className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-600 px-4 py-2 rounded"
+                >
+                  Reset
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-gray-400">No ranks configured</div>
+        )}
       </div>
     </div>
   );

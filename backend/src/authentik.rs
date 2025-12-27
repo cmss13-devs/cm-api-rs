@@ -129,6 +129,20 @@ pub struct UpdateDisplayNameRequest {
     pub display_name: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct UserAdditionalTitlesResponse {
+    pub ckey: String,
+    pub additional_titles: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct UpdateAdditionalTitlesRequest {
+    pub ckey: String,
+    pub additional_titles: String,
+}
+
 /// User info for the admin ranks export endpoint
 #[derive(Debug, Serialize)]
 #[serde(crate = "rocket::serde")]
@@ -279,7 +293,7 @@ pub async fn add_user_to_group(
             )
         })?;
 
-    let user_pk = find_user_by_ckey(&http_client, authentik_config, &request.ckey)
+    let user_pk = get_user_by_ckey(&http_client, authentik_config, &request.ckey)
         .await
         .map_err(|e| {
             (
@@ -289,7 +303,8 @@ pub async fn add_user_to_group(
                     message: e,
                 }),
             )
-        })?;
+        })?
+        .pk;
 
     add_user_to_authentik_group(&http_client, authentik_config, user_pk, &group.pk)
         .await
@@ -323,11 +338,11 @@ pub async fn add_user_to_group(
 }
 
 /// find an Authentik user by their ckey attribute
-async fn find_user_by_ckey(
+async fn get_user_by_ckey(
     client: &reqwest::Client,
     config: &AuthentikConfig,
     ckey: &str,
-) -> Result<i64, String> {
+) -> Result<AuthentikUser, String> {
     let url = format!(
         "{}/api/v3/core/users/?attributes={{\"ckey\": \"{}\"}}",
         config.base_url.trim_end_matches('/'),
@@ -363,7 +378,41 @@ async fn find_user_by_ckey(
         ));
     }
 
-    Ok(search_response.results[0].pk)
+    Ok(search_response.results.into_iter().next().unwrap())
+}
+
+/// update the attributes on an Authentik user
+async fn update_user_attributes(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    user_pk: i64,
+    attributes: serde_json::Value,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/api/v3/core/users/{}/",
+        config.base_url.trim_end_matches('/'),
+        user_pk
+    );
+
+    let response = client
+        .patch(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({ "attributes": attributes }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to update user: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to update user attributes (status {}): {}",
+            status, body
+        ));
+    }
+
+    Ok(())
 }
 
 /// find an Authentik group by name and return its UUID
@@ -485,7 +534,7 @@ pub async fn remove_user_from_group(
             )
         })?;
 
-    let user_pk = find_user_by_ckey(&http_client, authentik_config, &request.ckey)
+    let user_pk = get_user_by_ckey(&http_client, authentik_config, &request.ckey)
         .await
         .map_err(|e| {
             (
@@ -495,7 +544,8 @@ pub async fn remove_user_from_group(
                     message: e,
                 }),
             )
-        })?;
+        })?
+        .pk;
 
     remove_user_from_authentik_group(&http_client, authentik_config, user_pk, &group.pk)
         .await
@@ -925,6 +975,132 @@ pub async fn update_group_display_name(
         message: format!(
             "Successfully updated display_name for group '{}'",
             request.group_name
+        ),
+    }))
+}
+
+/// GET /Authentik/UserAdditionalTitles/<ckey> - get the additional_titles attribute for a user
+#[get("/UserAdditionalTitles/<ckey>")]
+pub async fn get_user_additional_titles(
+    _user: AuthenticatedUser<Staff>,
+    config: &State<Config>,
+    ckey: String,
+) -> Result<Json<UserAdditionalTitlesResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let user = get_user_by_ckey(&http_client, authentik_config, &ckey)
+        .await
+        .map_err(|e| {
+            (
+                Status::BadRequest,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let additional_titles = user
+        .attributes
+        .get("additional_titles")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    Ok(Json(UserAdditionalTitlesResponse {
+        ckey,
+        additional_titles,
+    }))
+}
+
+/// POST /Authentik/UserAdditionalTitles - update the additional_titles attribute for a user
+#[post("/UserAdditionalTitles", format = "json", data = "<request>")]
+pub async fn update_user_additional_titles(
+    user: AuthenticatedUser<Staff>,
+    config: &State<Config>,
+    request: Json<UpdateAdditionalTitlesRequest>,
+) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let target_user = get_user_by_ckey(&http_client, authentik_config, &request.ckey)
+        .await
+        .map_err(|e| {
+            (
+                Status::BadRequest,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let mut attributes = target_user.attributes.clone();
+    if let Some(obj) = attributes.as_object_mut() {
+        if request.additional_titles.is_empty() {
+            obj.remove("additional_titles");
+        } else {
+            obj.insert(
+                "additional_titles".to_string(),
+                serde_json::json!(request.additional_titles),
+            );
+        }
+    } else {
+        let mut map = Map::new();
+        if !request.additional_titles.is_empty() {
+            map.insert(
+                "additional_titles".to_string(),
+                serde_json::json!(request.additional_titles),
+            );
+        }
+        attributes = serde_json::Value::Object(map);
+    }
+
+    update_user_attributes(&http_client, authentik_config, target_user.pk, attributes)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "update_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let _ = log_external(
+        config,
+        "User Manager: User Additional Titles Updated".to_string(),
+        format!(
+            "{} updated additional_titles for ckey '{}' to: '{}'",
+            user.username, request.ckey, request.additional_titles
+        ),
+        true,
+    )
+    .await;
+
+    Ok(Json(AuthentikSuccess {
+        message: format!(
+            "Successfully updated additional_titles for user '{}'",
+            request.ckey
         ),
     }))
 }
@@ -1385,7 +1561,23 @@ pub async fn get_admin_ranks_export(
                 };
 
                 if should_update {
-                    let display_name = group_display_name_map.get(primary_group).cloned().flatten();
+                    let group_display_name =
+                        group_display_name_map.get(primary_group).cloned().flatten();
+
+                    // Get user's additional_titles and append to display_name if present
+                    let additional_titles = user
+                        .attributes
+                        .get("additional_titles")
+                        .and_then(|v| v.as_str())
+                        .filter(|s| !s.is_empty());
+
+                    let display_name = match (group_display_name, additional_titles) {
+                        (Some(dn), Some(at)) => Some(format!("{} - {}", dn, at)),
+                        (Some(dn), None) => Some(dn),
+                        (None, Some(at)) => Some(at.to_string()),
+                        (None, None) => None,
+                    };
+
                     users_map.insert(
                         ckey.clone(),
                         AdminRanksUser {
