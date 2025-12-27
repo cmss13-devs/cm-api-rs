@@ -738,13 +738,13 @@ pub async fn get_group_admin_ranks(
             )
         })?;
 
-    #[derive(Deserialize)]
+    #[derive(Deserialize, Default)]
     struct AdminRanksResponse {
         admin_ranks: HashMap<String, Vec<String>>,
     }
 
-    let ranks_response: AdminRanksResponse =
-        serde_json::from_value(group.attributes).map_err(|e| {
+    let ranks_response: AdminRanksResponse = serde_json::from_value(group.attributes)
+        .map_err(|e| {
             (
                 Status::InternalServerError,
                 Json(AuthentikError {
@@ -752,7 +752,8 @@ pub async fn get_group_admin_ranks(
                     message: e.to_string(),
                 }),
             )
-        })?;
+        })
+        .unwrap_or_default();
 
     let ranks = match ranks_response.admin_ranks.get(&instance) {
         Some(ranks) => ranks,
