@@ -115,12 +115,27 @@ pub struct UpdateAdminRanksRequest {
     pub instance_name: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct GroupDisplayNameResponse {
+    pub group_name: String,
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct UpdateDisplayNameRequest {
+    pub group_name: String,
+    pub display_name: String,
+}
+
 /// User info for the admin ranks export endpoint
 #[derive(Debug, Serialize)]
 #[serde(crate = "rocket::serde")]
 pub struct AdminRanksUser {
     pub ckey: String,
     pub primary_group: String,
+    pub display_name: Option<String>,
 }
 
 /// Response for the admin ranks export endpoint
@@ -137,6 +152,7 @@ struct GroupWithPriority {
     name: String,
     priority: i64,
     admin_ranks: HashMap<String, Vec<String>>,
+    display_name: Option<String>,
 }
 
 /// get the list of Authentik groups that a user can manage based on their group memberships
@@ -773,6 +789,146 @@ pub async fn get_group_admin_ranks(
     }))
 }
 
+/// GET /Authentik/GroupDisplayName/<group_name> - get the display_name attribute for a group
+#[get("/GroupDisplayName/<group_name>")]
+pub async fn get_group_display_name(
+    user: AuthenticatedUser<Staff>,
+    config: &State<Config>,
+    group_name: String,
+) -> Result<Json<GroupDisplayNameResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    validate_group_allowed(authentik_config, &user.groups, &group_name).map_err(|e| {
+        (
+            Status::Forbidden,
+            Json(AuthentikError {
+                error: "group_not_allowed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let group = get_group_by_name(&http_client, authentik_config, &group_name)
+        .await
+        .map_err(|e| {
+            (
+                Status::BadRequest,
+                Json(AuthentikError {
+                    error: "group_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let display_name = group
+        .attributes
+        .get("display_name")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    Ok(Json(GroupDisplayNameResponse {
+        group_name,
+        display_name,
+    }))
+}
+
+/// POST /Authentik/GroupDisplayName - update the display_name attribute for a group
+#[post("/GroupDisplayName", format = "json", data = "<request>")]
+pub async fn update_group_display_name(
+    user: AuthenticatedUser<Staff>,
+    config: &State<Config>,
+    request: Json<UpdateDisplayNameRequest>,
+) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    validate_group_allowed(authentik_config, &user.groups, &request.group_name).map_err(|e| {
+        (
+            Status::Forbidden,
+            Json(AuthentikError {
+                error: "group_not_allowed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let group = get_group_by_name(&http_client, authentik_config, &request.group_name)
+        .await
+        .map_err(|e| {
+            (
+                Status::BadRequest,
+                Json(AuthentikError {
+                    error: "group_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let mut attributes = group.attributes.clone();
+    if let Some(obj) = attributes.as_object_mut() {
+        obj.insert(
+            "display_name".to_string(),
+            serde_json::json!(request.display_name),
+        );
+    } else {
+        let mut map = Map::new();
+        map.insert(
+            "display_name".to_string(),
+            serde_json::json!(request.display_name),
+        );
+        attributes = serde_json::Value::Object(map);
+    }
+
+    update_group_attributes(&http_client, authentik_config, &group.pk, attributes)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "update_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let _ = log_external(
+        config,
+        "User Manager: Group Display Name Updated".to_string(),
+        format!(
+            "{} updated display_name for group '{}' to: '{}'",
+            user.username, request.group_name, request.display_name
+        ),
+        true,
+    )
+    .await;
+
+    Ok(Json(AuthentikSuccess {
+        message: format!(
+            "Successfully updated display_name for group '{}'",
+            request.group_name
+        ),
+    }))
+}
+
 /// POST /Authentik/GroupAdminRanks - update the admin_ranks attribute for a group (Management only)
 #[post("/GroupAdminRanks", format = "json", data = "<request>")]
 pub async fn update_group_admin_ranks(
@@ -986,10 +1142,17 @@ async fn fetch_groups_with_admin_ranks(
                     .and_then(|v| v.as_i64())
                     .unwrap_or(0);
 
+                let display_name = group
+                    .attributes
+                    .get("display_name")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+
                 all_groups.push(GroupWithPriority {
                     name: group.name,
                     priority,
                     admin_ranks,
+                    display_name,
                 });
             }
         }
@@ -1066,7 +1229,9 @@ async fn fetch_users_in_group_with_memberships(
             .await
             .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
 
-        max_pages = Some(search_response.pagination.total_pages);
+        if max_pages.is_none() {
+            max_pages = Some(search_response.pagination.total_pages);
+        }
 
         if search_response.results.is_empty() {
             break;
@@ -1147,10 +1312,14 @@ pub async fn get_admin_ranks_export(
         groups_map.insert(group.name.clone(), group.admin_ranks.clone());
     }
 
-    // Create a map of group name to priority for quick lookup
     let group_priority_map: HashMap<String, i64> = groups_with_ranks
         .iter()
         .map(|g| (g.name.clone(), g.priority))
+        .collect();
+
+    let group_display_name_map: HashMap<String, Option<String>> = groups_with_ranks
+        .iter()
+        .map(|g| (g.name.clone(), g.display_name.clone()))
         .collect();
 
     // Fetch users from each group and deduplicate by ckey
@@ -1191,10 +1360,9 @@ pub async fn get_admin_ranks_export(
                 .and_then(|v| v.as_str())
                 .map(String::from)
             else {
-                continue; // Skip users without ckey
+                continue;
             };
 
-            // Find the user's primary group (highest priority group that has admin_ranks)
             let user_groups: Vec<&str> = user.groups_obj.iter().map(|g| g.name.as_str()).collect();
 
             let mut best_group: Option<(&str, i64)> = None;
@@ -1211,18 +1379,19 @@ pub async fn get_admin_ranks_export(
             }
 
             if let Some((primary_group, priority)) = best_group {
-                // Only update if this is the first time seeing this user or if we found a higher priority group
                 let should_update = match user_max_priority.get(&ckey) {
                     None => true,
                     Some(&existing_priority) => priority > existing_priority,
                 };
 
                 if should_update {
+                    let display_name = group_display_name_map.get(primary_group).cloned().flatten();
                     users_map.insert(
                         ckey.clone(),
                         AdminRanksUser {
                             ckey: ckey.clone(),
                             primary_group: primary_group.to_string(),
+                            display_name,
                         },
                     );
                     user_max_priority.insert(ckey, priority);

@@ -249,6 +249,8 @@ async fn rocket() -> _ {
                 authentik::get_allowed_instances,
                 authentik::get_group_admin_ranks,
                 authentik::update_group_admin_ranks,
+                authentik::get_group_display_name,
+                authentik::update_group_display_name,
                 authentik::get_admin_ranks_export
             ],
         )
