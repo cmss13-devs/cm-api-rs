@@ -754,14 +754,9 @@ pub async fn get_group_admin_ranks(
             )
         })?;
 
-    let Some(ranks) = ranks_response.admin_ranks.get(&instance) else {
-        return Err((
-            Status::BadRequest,
-            Json(AuthentikError {
-                error: "instance_not_valid".to_string(),
-                message: "The requested instance does not exist.".to_string(),
-            }),
-        ));
+    let ranks = match ranks_response.admin_ranks.get(&instance) {
+        Some(ranks) => ranks,
+        None => &Vec::new(),
     };
 
     Ok(Json(GroupAdminRanksResponse {
