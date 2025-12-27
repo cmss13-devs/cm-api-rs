@@ -21,7 +21,7 @@ pub struct DiscourseConfig {
     pub api_username: String,
     /// the identity provider name as configured in Discourse (e.g., "oidc", "oauth2_basic")
     pub provider_name: String,
-    /// Optional webhook secret for authenticating incoming Authentik webhooks
+    /// optional webhook secret for authenticating incoming Authentik webhooks
     pub webhook_secret: Option<String>,
 }
 
@@ -419,7 +419,7 @@ pub async fn add_user_to_group(
 async fn get_user_by_pk(
     client: &reqwest::Client,
     config: &AuthentikConfig,
-    pk: &str,
+    pk: i64,
 ) -> Result<AuthentikUser, String> {
     let url = format!(
         "{}/api/v3/core/users/{}/",
@@ -1851,7 +1851,7 @@ pub async fn get_discourse_user_id(
 #[derive(Debug, Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct UserWriteWebhookPayload {
-    pub pk: String,
+    pub pk: i64,
     pub name: Option<String>,
     pub username: Option<String>,
     pub webhook_secret: Option<String>,
@@ -1979,7 +1979,7 @@ pub async fn user_write_webhook(
 
     let http_client = reqwest::Client::new();
 
-    let authentik_user = get_user_by_pk(&http_client, authentik_config, &payload.pk)
+    let authentik_user = get_user_by_pk(&http_client, authentik_config, payload.pk)
         .await
         .map_err(|e| {
             (
