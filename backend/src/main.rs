@@ -246,8 +246,10 @@ async fn rocket() -> _ {
                 authentik::remove_user_from_group,
                 authentik::get_group_members,
                 authentik::get_allowed_groups,
+                authentik::get_allowed_instances,
                 authentik::get_group_admin_ranks,
-                authentik::update_group_admin_ranks
+                authentik::update_group_admin_ranks,
+                authentik::get_admin_ranks_export
             ],
         )
         .mount(

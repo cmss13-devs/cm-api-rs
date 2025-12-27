@@ -2,11 +2,13 @@ use std::collections::HashMap;
 
 use rocket::{State, http::Status, serde::json::Json};
 use serde::{Deserialize, Serialize};
+use serde_json::Map;
 
 use crate::{
     Config,
     admin::{AuthenticatedUser, Management, Staff},
     logging::log_external,
+    player::AuthorizationHeader,
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -24,6 +26,10 @@ pub struct AuthentikConfig {
     /// eg: allowed_admin_ranks = ["R_ADMIN", "R_MOD", "R_EVENT"]
     #[serde(default)]
     pub allowed_admin_ranks: Vec<String>,
+    /// list of allowed instance names for admin_ranks configuration
+    /// eg: allowed_instances = ["cm13-live", "cm13-rp"]
+    #[serde(default)]
+    pub allowed_instances: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,6 +52,7 @@ struct AuthentikGroupSearchResponse {
 #[derive(Debug, Deserialize, Clone)]
 struct AuthentikGroup {
     pk: String,
+    name: String,
     #[serde(default)]
     attributes: serde_json::Value,
 }
@@ -99,6 +106,31 @@ pub struct GroupAdminRanksResponse {
 pub struct UpdateAdminRanksRequest {
     pub group_name: String,
     pub admin_ranks: Vec<String>,
+    pub instance_name: String,
+}
+
+/// User info for the admin ranks export endpoint
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde")]
+pub struct AdminRanksUser {
+    pub ckey: String,
+    pub primary_group: String,
+}
+
+/// Response for the admin ranks export endpoint
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde")]
+pub struct AdminRanksExportResponse {
+    pub users: Vec<AdminRanksUser>,
+    pub groups: HashMap<String, HashMap<String, Vec<String>>>,
+}
+
+/// Extended group info including name and priority for sorting
+#[derive(Debug, Clone)]
+struct GroupWithPriority {
+    name: String,
+    priority: i64,
+    admin_ranks: HashMap<String, Vec<String>>,
 }
 
 /// get the list of Authentik groups that a user can manage based on their group memberships
@@ -163,6 +195,25 @@ pub async fn get_allowed_groups(
 
     let manageable = get_manageable_groups(authentik_config, &user.groups);
     Ok(Json(manageable))
+}
+
+/// GET /Authentik/AllowedInstances - get the list of configured instance names
+#[get("/AllowedInstances")]
+pub async fn get_allowed_instances(
+    _user: AuthenticatedUser<Management>,
+    config: &State<Config>,
+) -> Result<Json<Vec<String>>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    Ok(Json(authentik_config.allowed_instances.clone()))
 }
 
 /// POST /Authentik/AddUserToGroup - add a user to an Authentik group by ckey
@@ -632,12 +683,13 @@ async fn update_group_attributes(
     Ok(())
 }
 
-/// GET /Authentik/GroupAdminRanks/<group_name> - get the admin_ranks attribute for a group
-#[get("/GroupAdminRanks/<group_name>")]
+/// GET /Authentik/GroupAdminRanks/<group_name>/<instance> - get the admin_ranks attribute for a group
+#[get("/GroupAdminRanks/<group_name>/<instance>")]
 pub async fn get_group_admin_ranks(
     user: AuthenticatedUser<Management>,
     config: &State<Config>,
     group_name: String,
+    instance: String,
 ) -> Result<Json<GroupAdminRanksResponse>, (Status, Json<AuthentikError>)> {
     let authentik_config = config.authentik.as_ref().ok_or_else(|| {
         (
@@ -659,6 +711,19 @@ pub async fn get_group_admin_ranks(
         )
     })?;
 
+    if !authentik_config.allowed_instances.contains(&instance) {
+        return Err((
+            Status::BadRequest,
+            Json(AuthentikError {
+                error: "invalid_instance".to_string(),
+                message: format!(
+                    "Invalid instance '{}'. Allowed instances are: {:?}",
+                    instance, authentik_config.allowed_instances
+                ),
+            }),
+        ));
+    }
+
     let http_client = reqwest::Client::new();
 
     let group = get_group_by_name(&http_client, authentik_config, &group_name)
@@ -673,20 +738,41 @@ pub async fn get_group_admin_ranks(
             )
         })?;
 
-    let admin_ranks = group
-        .attributes
-        .get("admin_ranks")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+    #[derive(Deserialize)]
+    struct AdminRanksResponse {
+        admin_ranks: HashMap<String, Vec<String>>,
+    }
+
+    let ranks_response: AdminRanksResponse = serde_json::from_value(
+        group
+            .attributes
+            .get("admin_ranks")
+            .unwrap_or(&serde_json::Value::from("{}"))
+            .clone(),
+    )
+    .map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "could_not_deserialize".to_string(),
+                message: e.to_string(),
+            }),
+        )
+    })?;
+
+    let Some(ranks) = ranks_response.admin_ranks.get(&instance) else {
+        return Err((
+            Status::BadRequest,
+            Json(AuthentikError {
+                error: "instance_not_valid".to_string(),
+                message: "The requested instance does not exist.".to_string(),
+            }),
+        ));
+    };
 
     Ok(Json(GroupAdminRanksResponse {
         group_name,
-        admin_ranks,
+        admin_ranks: ranks.clone(),
         allowed_ranks: authentik_config.allowed_admin_ranks.clone(),
     }))
 }
@@ -717,6 +803,22 @@ pub async fn update_group_admin_ranks(
             }),
         )
     })?;
+
+    if !authentik_config
+        .allowed_instances
+        .contains(&request.instance_name)
+    {
+        return Err((
+            Status::BadRequest,
+            Json(AuthentikError {
+                error: "invalid_instance".to_string(),
+                message: format!(
+                    "Invalid instance '{}'. Allowed instances are: {:?}",
+                    request.instance_name, authentik_config.allowed_instances
+                ),
+            }),
+        ));
+    }
 
     // Validate that all provided ranks are in the allowed list
     if authentik_config.allowed_admin_ranks.is_empty() {
@@ -764,14 +866,22 @@ pub async fn update_group_admin_ranks(
 
     let mut attributes = group.attributes.clone();
     if let Some(obj) = attributes.as_object_mut() {
-        obj.insert(
-            "admin_ranks".to_string(),
+        if let Some(ranks) = obj.get_mut("admin_ranks")
+            && let Some(rank_obj) = ranks.as_object_mut()
+        {
+            rank_obj.insert(
+                request.instance_name.clone(),
+                serde_json::json!(request.admin_ranks),
+            );
+        }
+    } else {
+        let mut map = Map::new();
+        map.insert(
+            request.instance_name.clone(),
             serde_json::json!(request.admin_ranks),
         );
-    } else {
-        attributes = serde_json::json!({
-            "admin_ranks": request.admin_ranks
-        });
+
+        attributes = serde_json::Value::Object(map);
     }
 
     update_group_attributes(&http_client, authentik_config, &group.pk, attributes)
@@ -802,5 +912,308 @@ pub async fn update_group_admin_ranks(
             "Successfully updated admin_ranks for group '{}'",
             request.group_name
         ),
+    }))
+}
+
+/// fetch all groups that have admin_ranks attribute set
+async fn fetch_groups_with_admin_ranks(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+) -> Result<Vec<GroupWithPriority>, String> {
+    let mut all_groups = Vec::new();
+    let mut page = 1;
+    let page_size = 100;
+
+    loop {
+        let url = format!(
+            "{}/api/v3/core/groups/?page={}&page_size={}",
+            config.base_url.trim_end_matches('/'),
+            page,
+            page_size
+        );
+
+        let response = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", config.token))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Authentik API returned error {}: {}", status, body));
+        }
+
+        let search_response: AuthentikGroupSearchResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+
+        if search_response.results.is_empty() {
+            break;
+        }
+
+        // Filter groups that have admin_ranks attribute set and non-empty
+        for group in search_response.results {
+            // admin_ranks is now a HashMap<String, Vec<String>> where keys are instance names
+            let admin_ranks: HashMap<String, Vec<String>> = group
+                .attributes
+                .get("admin_ranks")
+                .and_then(|v| v.as_object())
+                .map(|obj| {
+                    obj.iter()
+                        .filter_map(|(instance, ranks)| {
+                            ranks.as_array().map(|arr| {
+                                let ranks_vec: Vec<String> = arr
+                                    .iter()
+                                    .filter_map(|v| v.as_str().map(String::from))
+                                    .collect();
+                                (instance.clone(), ranks_vec)
+                            })
+                        })
+                        .filter(|(_, ranks)| !ranks.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            if !admin_ranks.is_empty() {
+                let priority = group
+                    .attributes
+                    .get("priority")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(0);
+
+                all_groups.push(GroupWithPriority {
+                    name: group.name,
+                    priority,
+                    admin_ranks,
+                });
+            }
+        }
+
+        page += 1;
+    }
+
+    Ok(all_groups)
+}
+
+/// Extended user info including groups for the export endpoint
+#[derive(Debug, Deserialize)]
+struct AuthentikUserWithGroups {
+    #[serde(default)]
+    attributes: serde_json::Value,
+    #[serde(default)]
+    groups_obj: Vec<AuthentikGroupRef>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthentikGroupRef {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthentikUserWithGroupsSearchResponse {
+    results: Vec<AuthentikUserWithGroups>,
+}
+
+/// Fetch all users in a specific group with their group memberships
+async fn fetch_users_in_group_with_memberships(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    group_pk: &str,
+) -> Result<Vec<AuthentikUserWithGroups>, String> {
+    let mut all_users = Vec::new();
+    let mut page = 1;
+    let page_size = 100;
+
+    loop {
+        let url = format!(
+            "{}/api/v3/core/users/?groups_by_pk={}&page={}&page_size={}",
+            config.base_url.trim_end_matches('/'),
+            group_pk,
+            page,
+            page_size
+        );
+
+        let response = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", config.token))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Authentik API returned error {}: {}", status, body));
+        }
+
+        let search_response: AuthentikUserWithGroupsSearchResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+
+        if search_response.results.is_empty() {
+            break;
+        }
+
+        all_users.extend(search_response.results);
+        page += 1;
+    }
+
+    Ok(all_users)
+}
+
+/// Validates the Authorization header against the configured API auth token.
+fn validate_auth_header(auth_header: &str, config: &Config) -> bool {
+    let Some(api_auth) = &config.api_auth else {
+        return false;
+    };
+
+    // Support both "Bearer <token>" and raw "<token>" formats
+    let token = auth_header.strip_prefix("Bearer ").unwrap_or(auth_header);
+
+    token == api_auth.token
+}
+
+/// GET /Authentik/AdminRanksExport - export all users with admin ranks and their groups
+/// This endpoint uses Authorization header instead of session-based auth
+#[get("/AdminRanksExport")]
+pub async fn get_admin_ranks_export(
+    auth_header: AuthorizationHeader,
+    config: &State<Config>,
+) -> Result<Json<AdminRanksExportResponse>, (Status, Json<AuthentikError>)> {
+    // Validate authorization header
+    if !validate_auth_header(&auth_header.0, config) {
+        return Err((
+            Status::Unauthorized,
+            Json(AuthentikError {
+                error: "unauthorized".to_string(),
+                message: "Invalid or missing authorization token".to_string(),
+            }),
+        ));
+    }
+
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    // Fetch all groups with admin_ranks
+    let groups_with_ranks = fetch_groups_with_admin_ranks(&http_client, authentik_config)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "fetch_groups_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    // Build the groups map for the response
+    let mut groups_map: HashMap<String, HashMap<String, Vec<String>>> = HashMap::new();
+    for group in &groups_with_ranks {
+        groups_map.insert(group.name.clone(), group.admin_ranks.clone());
+    }
+
+    // Create a map of group name to priority for quick lookup
+    let group_priority_map: HashMap<String, i64> = groups_with_ranks
+        .iter()
+        .map(|g| (g.name.clone(), g.priority))
+        .collect();
+
+    // Fetch users from each group and deduplicate by ckey
+    let mut users_map: HashMap<String, AdminRanksUser> = HashMap::new();
+    let mut user_max_priority: HashMap<String, i64> = HashMap::new();
+
+    for group in &groups_with_ranks {
+        // Get group pk by name
+        let group_info = get_group_by_name(&http_client, authentik_config, &group.name)
+            .await
+            .map_err(|e| {
+                (
+                    Status::InternalServerError,
+                    Json(AuthentikError {
+                        error: "fetch_group_failed".to_string(),
+                        message: e,
+                    }),
+                )
+            })?;
+
+        let users =
+            fetch_users_in_group_with_memberships(&http_client, authentik_config, &group_info.pk)
+                .await
+                .map_err(|e| {
+                    (
+                        Status::InternalServerError,
+                        Json(AuthentikError {
+                            error: "fetch_users_failed".to_string(),
+                            message: e,
+                        }),
+                    )
+                })?;
+
+        for user in users {
+            let Some(ckey) = user
+                .attributes
+                .get("ckey")
+                .and_then(|v| v.as_str())
+                .map(String::from)
+            else {
+                continue; // Skip users without ckey
+            };
+
+            // Find the user's primary group (highest priority group that has admin_ranks)
+            let user_groups: Vec<&str> = user.groups_obj.iter().map(|g| g.name.as_str()).collect();
+
+            let mut best_group: Option<(&str, i64)> = None;
+            for user_group in &user_groups {
+                if let Some(&priority) = group_priority_map.get(*user_group) {
+                    match best_group {
+                        None => best_group = Some((user_group, priority)),
+                        Some((_, current_priority)) if priority > current_priority => {
+                            best_group = Some((user_group, priority));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            if let Some((primary_group, priority)) = best_group {
+                // Only update if this is the first time seeing this user or if we found a higher priority group
+                let should_update = match user_max_priority.get(&ckey) {
+                    None => true,
+                    Some(&existing_priority) => priority > existing_priority,
+                };
+
+                if should_update {
+                    users_map.insert(
+                        ckey.clone(),
+                        AdminRanksUser {
+                            ckey: ckey.clone(),
+                            primary_group: primary_group.to_string(),
+                        },
+                    );
+                    user_max_priority.insert(ckey, priority);
+                }
+            }
+        }
+    }
+
+    let users: Vec<AdminRanksUser> = users_map.into_values().collect();
+
+    Ok(Json(AdminRanksExportResponse {
+        users,
+        groups: groups_map,
     }))
 }

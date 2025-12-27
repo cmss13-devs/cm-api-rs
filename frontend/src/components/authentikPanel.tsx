@@ -302,6 +302,10 @@ export const AuthentikPanel: React.FC = () => {
 const RanksPanel = (props: { selectedGroup: string }) => {
   const global = useContext(GlobalContext);
 
+  const [availableInstances, setAvailableInstances] = useState<string[]>([]);
+  const [selectedInstance, setSelectedInstance] = useState<string>("");
+  const [instancesLoading, setInstancesLoading] = useState(true);
+
   const [adminRanks, setAdminRanks] = useState<string[]>([]);
   const [pendingRanks, setPendingRanks] = useState<string[]>([]);
   const [allowedRanks, setAllowedRanks] = useState<string[]>([]);
@@ -311,43 +315,79 @@ const RanksPanel = (props: { selectedGroup: string }) => {
 
   const { selectedGroup } = props;
 
-  const fetchAdminRanks = useCallback(async (groupName: string) => {
-    setRanksLoading(true);
-    setRanksError(null);
-    try {
-      const response = await callApi(
-        `/Authentik/GroupAdminRanks/${encodeURIComponent(groupName)}`
-      );
-      if (!response.ok) {
-        if (response.status === 403) {
-          // User doesn't have management permissions - just clear ranks
-          setAdminRanks([]);
-          setPendingRanks([]);
-          setAllowedRanks([]);
-          return;
+  // Fetch available instances on mount
+  useEffect(() => {
+    const fetchInstances = async () => {
+      try {
+        const response = await callApi("/Authentik/AllowedInstances");
+        if (!response.ok) {
+          if (response.status === 403) {
+            // User doesn't have management permissions
+            setAvailableInstances([]);
+            return;
+          }
+          throw new Error("Failed to fetch instances");
         }
-        const err: AuthentikError = await response.json();
-        throw new Error(err.message || "Failed to fetch admin ranks");
+        const instances: string[] = await response.json();
+        setAvailableInstances(instances);
+        if (instances.length > 0) {
+          setSelectedInstance(instances[0]);
+        }
+      } catch (err) {
+        // Silently fail - user may not have management permissions
+        setAvailableInstances([]);
+      } finally {
+        setInstancesLoading(false);
       }
-      const data: GroupAdminRanksResponse = await response.json();
-      setAdminRanks(data.adminRanks);
-      setPendingRanks(data.adminRanks);
-      setAllowedRanks(data.allowedRanks);
-    } catch (err) {
-      setRanksError(err instanceof Error ? err.message : "An error occurred");
-      setAdminRanks([]);
-      setPendingRanks([]);
-      setAllowedRanks([]);
-    } finally {
-      setRanksLoading(false);
-    }
+    };
+
+    fetchInstances();
   }, []);
 
+  const fetchAdminRanks = useCallback(
+    async (groupName: string, instance: string) => {
+      if (!instance) return;
+
+      setRanksLoading(true);
+      setRanksError(null);
+      try {
+        const response = await callApi(
+          `/Authentik/GroupAdminRanks/${encodeURIComponent(
+            groupName
+          )}/${encodeURIComponent(instance)}`
+        );
+        if (!response.ok) {
+          if (response.status === 403) {
+            // User doesn't have management permissions - just clear ranks
+            setAdminRanks([]);
+            setPendingRanks([]);
+            setAllowedRanks([]);
+            return;
+          }
+          const err: AuthentikError = await response.json();
+          throw new Error(err.message || "Failed to fetch admin ranks");
+        }
+        const data: GroupAdminRanksResponse = await response.json();
+        setAdminRanks(data.adminRanks);
+        setPendingRanks(data.adminRanks);
+        setAllowedRanks(data.allowedRanks);
+      } catch (err) {
+        setRanksError(err instanceof Error ? err.message : "An error occurred");
+        setAdminRanks([]);
+        setPendingRanks([]);
+        setAllowedRanks([]);
+      } finally {
+        setRanksLoading(false);
+      }
+    },
+    []
+  );
+
   useEffect(() => {
-    if (selectedGroup) {
-      fetchAdminRanks(selectedGroup);
+    if (selectedGroup && selectedInstance) {
+      fetchAdminRanks(selectedGroup, selectedInstance);
     }
-  }, [selectedGroup, fetchAdminRanks]);
+  }, [selectedGroup, selectedInstance, fetchAdminRanks]);
 
   const handleToggleRank = (rank: string) => {
     setPendingRanks((prev) =>
@@ -364,6 +404,7 @@ const RanksPanel = (props: { selectedGroup: string }) => {
         body: JSON.stringify({
           groupName: selectedGroup,
           adminRanks: pendingRanks,
+          instanceName: selectedInstance,
         }),
       });
 
@@ -373,7 +414,9 @@ const RanksPanel = (props: { selectedGroup: string }) => {
       }
 
       setAdminRanks(pendingRanks);
-      global?.updateAndShowToast(`Updated admin ranks for ${selectedGroup}`);
+      global?.updateAndShowToast(
+        `Updated admin ranks for ${selectedGroup} on ${selectedInstance}`
+      );
     } catch (err) {
       global?.updateAndShowToast(
         err instanceof Error ? err.message : "Failed to update admin ranks"
@@ -391,60 +434,84 @@ const RanksPanel = (props: { selectedGroup: string }) => {
     JSON.stringify([...adminRanks].sort()) !==
     JSON.stringify([...pendingRanks].sort());
 
+  // Don't show panel if no instances available (user lacks permissions)
+  if (instancesLoading) {
+    return null;
+  }
+
+  if (availableInstances.length === 0) {
+    return null;
+  }
+
   return (
-    <>
-      {allowedRanks.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <h2 className="text-lg font-semibold">Admin Ranks</h2>
-          {ranksLoading ? (
-            <div>Loading admin ranks...</div>
-          ) : ranksError ? (
-            <div className="text-red-400">Error: {ranksError}</div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-2">
-                {allowedRanks.map((rank) => (
-                  <label
-                    key={rank}
-                    className="flex flex-row gap-2 items-center cursor-pointer"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={pendingRanks.includes(rank)}
-                      onChange={() => handleToggleRank(rank)}
-                      disabled={ranksSaving}
-                      className="w-4 h-4 accent-blue-500"
-                    />
-                    <span className={ranksSaving ? "text-gray-500" : ""}>
-                      {rank}
-                    </span>
-                  </label>
-                ))}
-              </div>
-              {ranksChanged && (
-                <div className="flex flex-row gap-2 mt-2">
-                  <button
-                    type="button"
-                    onClick={handleSaveRanks}
-                    disabled={ranksSaving}
-                    className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-4 py-2 rounded"
-                  >
-                    {ranksSaving ? "Saving..." : "Save"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleResetRanks}
-                    disabled={ranksSaving}
-                    className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-600 px-4 py-2 rounded"
-                  >
-                    Reset
-                  </button>
-                </div>
-              )}
-            </>
+    <div className="flex flex-col gap-2">
+      <h2 className="text-lg font-semibold">Admin Ranks</h2>
+
+      <div className="flex flex-row gap-2 items-center">
+        <span>Instance:</span>
+        <select
+          value={selectedInstance}
+          onChange={(e) => setSelectedInstance(e.target.value)}
+          className="bg-[#2a2a2a] border border-[#3f3f3f] rounded px-2 py-1 text-white"
+          disabled={availableInstances.length === 0}
+        >
+          {availableInstances.map((instance) => (
+            <option key={instance} value={instance}>
+              {instance}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {ranksLoading ? (
+        <div>Loading admin ranks...</div>
+      ) : ranksError ? (
+        <div className="text-red-400">Error: {ranksError}</div>
+      ) : allowedRanks.length > 0 ? (
+        <>
+          <div className="flex flex-col gap-2">
+            {allowedRanks.map((rank) => (
+              <label
+                key={rank}
+                className="flex flex-row gap-2 items-center cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={pendingRanks.includes(rank)}
+                  onChange={() => handleToggleRank(rank)}
+                  disabled={ranksSaving}
+                  className="w-4 h-4 accent-blue-500"
+                />
+                <span className={ranksSaving ? "text-gray-500" : ""}>
+                  {rank}
+                </span>
+              </label>
+            ))}
+          </div>
+          {ranksChanged && (
+            <div className="flex flex-row gap-2 mt-2">
+              <button
+                type="button"
+                onClick={handleSaveRanks}
+                disabled={ranksSaving}
+                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-4 py-2 rounded"
+              >
+                {ranksSaving ? "Saving..." : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={handleResetRanks}
+                disabled={ranksSaving}
+                className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-600 px-4 py-2 rounded"
+              >
+                Reset
+              </button>
+            </div>
           )}
-        </div>
+        </>
+      ) : (
+        <div className="text-gray-400">No ranks configured</div>
       )}
-    </>
+    </div>
   );
 };

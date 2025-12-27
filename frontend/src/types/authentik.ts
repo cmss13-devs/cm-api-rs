@@ -32,4 +32,5 @@ export type GroupAdminRanksResponse = {
 export type UpdateAdminRanksRequest = {
 	groupName: string;
 	adminRanks: string[];
+	instanceName: string;
 };
