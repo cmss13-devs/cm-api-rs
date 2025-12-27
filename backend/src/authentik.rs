@@ -1023,6 +1023,7 @@ struct AuthentikGroupRef {
 #[derive(Debug, Deserialize)]
 struct AuthentikUserWithGroupsSearchResponse {
     results: Vec<AuthentikUserWithGroups>,
+    pagination: AuthentikPagination,
 }
 
 /// Fetch all users in a specific group with their group memberships
@@ -1032,6 +1033,9 @@ async fn fetch_users_in_group_with_memberships(
     group_pk: &str,
 ) -> Result<Vec<AuthentikUserWithGroups>, String> {
     let mut all_users = Vec::new();
+
+    let mut max_pages: Option<i32> = None;
+
     let mut page = 1;
     let page_size = 100;
 
@@ -1062,11 +1066,20 @@ async fn fetch_users_in_group_with_memberships(
             .await
             .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
 
+        max_pages = Some(search_response.pagination.total_pages);
+
         if search_response.results.is_empty() {
             break;
         }
 
         all_users.extend(search_response.results);
+
+        if let Some(max_pages) = max_pages
+            && max_pages == page
+        {
+            break;
+        }
+
         page += 1;
     }
 
