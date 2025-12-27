@@ -443,6 +443,17 @@ const UserDetailsModal = (props: { player: Player }) => {
           <LinkColor onClick={() => setViewPlaytime(true)}>
             View Playtime
           </LinkColor>
+          {"|"}
+          <LinkColor
+            onClick={() =>
+              window.open(
+                `https://forum.cm-ss13.com/search?q=${ckey}&search_type=users`,
+                "_blank"
+              )
+            }
+          >
+            Find Forum Account
+          </LinkColor>
           {playtime && (
             <Dialog
               open={playtime}
