@@ -61,6 +61,7 @@ struct AuthentikGroup {
     name: String,
     #[serde(default)]
     attributes: serde_json::Value,
+    #[serde(rename = "users_obj")]
     users: Vec<AuthentikUser>,
 }
 
