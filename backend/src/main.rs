@@ -5,15 +5,15 @@ use rocket::fairing::{Fairing, Info, Kind};
 use rocket::figment::value::Value;
 use rocket::fs::FileServer;
 use rocket::http::Header;
+use rocket::{Request, Response};
 use rocket::{
     fairing::AdHoc,
     figment::{
-        providers::{Format, Serialized, Toml},
         Figment,
+        providers::{Format, Serialized, Toml},
     },
 };
-use rocket::{Request, Response};
-use rocket_db_pools::{sqlx::MySqlPool, Database};
+use rocket_db_pools::{Database, sqlx::MySqlPool};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -255,7 +255,6 @@ async fn rocket() -> _ {
                 authentik::update_user_additional_titles,
                 authentik::get_admin_ranks_export,
                 authentik::get_discourse_user_id,
-                authentik::user_write_webhook
             ],
         )
         .mount(
