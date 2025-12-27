@@ -34,3 +34,13 @@ export type UpdateAdminRanksRequest = {
 	adminRanks: string[];
 	instanceName: string;
 };
+
+export type GroupDisplayNameResponse = {
+	groupName: string;
+	displayName: string | null;
+};
+
+export type UpdateDisplayNameRequest = {
+	groupName: string;
+	displayName: string;
+};

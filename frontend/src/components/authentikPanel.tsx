@@ -4,6 +4,7 @@ import { callApi } from "../helpers/api";
 import type {
   AuthentikError,
   GroupAdminRanksResponse,
+  GroupDisplayNameResponse,
   GroupMember,
   GroupMembersResponse,
 } from "../types/authentik";
@@ -324,6 +325,11 @@ const RanksPanel = (props: { selectedGroup: string }) => {
   const [ranksError, setRanksError] = useState<string | null>(null);
   const [ranksSaving, setRanksSaving] = useState(false);
 
+  const [displayName, setDisplayName] = useState<string | null>(null);
+  const [pendingDisplayName, setPendingDisplayName] = useState<string>("");
+  const [displayNameLoading, setDisplayNameLoading] = useState(false);
+  const [displayNameSaving, setDisplayNameSaving] = useState(false);
+
   const { selectedGroup } = props;
 
   // Fetch available instances on mount
@@ -400,6 +406,38 @@ const RanksPanel = (props: { selectedGroup: string }) => {
     }
   }, [selectedGroup, selectedInstance, fetchAdminRanks]);
 
+  // Fetch display name when group changes
+  const fetchDisplayName = useCallback(async (groupName: string) => {
+    setDisplayNameLoading(true);
+    try {
+      const response = await callApi(
+        `/Authentik/GroupDisplayName/${encodeURIComponent(groupName)}`
+      );
+      if (!response.ok) {
+        if (response.status === 403) {
+          setDisplayName(null);
+          setPendingDisplayName("");
+          return;
+        }
+        throw new Error("Failed to fetch display name");
+      }
+      const data: GroupDisplayNameResponse = await response.json();
+      setDisplayName(data.displayName);
+      setPendingDisplayName(data.displayName ?? "");
+    } catch {
+      setDisplayName(null);
+      setPendingDisplayName("");
+    } finally {
+      setDisplayNameLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedGroup) {
+      fetchDisplayName(selectedGroup);
+    }
+  }, [selectedGroup, fetchDisplayName]);
+
   const handleToggleRank = (rank: string) => {
     setPendingRanks((prev) =>
       prev.includes(rank) ? prev.filter((r) => r !== rank) : [...prev, rank]
@@ -441,9 +479,45 @@ const RanksPanel = (props: { selectedGroup: string }) => {
     setPendingRanks(adminRanks);
   };
 
+  const handleSaveDisplayName = async () => {
+    setDisplayNameSaving(true);
+    try {
+      const response = await callApi("/Authentik/GroupDisplayName", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groupName: selectedGroup,
+          displayName: pendingDisplayName,
+        }),
+      });
+
+      if (!response.ok) {
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to update display name");
+      }
+
+      setDisplayName(pendingDisplayName);
+      global?.updateAndShowToast(
+        `Updated display name for ${selectedGroup}`
+      );
+    } catch (err) {
+      global?.updateAndShowToast(
+        err instanceof Error ? err.message : "Failed to update display name"
+      );
+    } finally {
+      setDisplayNameSaving(false);
+    }
+  };
+
+  const handleResetDisplayName = () => {
+    setPendingDisplayName(displayName ?? "");
+  };
+
   const ranksChanged =
     JSON.stringify([...adminRanks].sort()) !==
     JSON.stringify([...pendingRanks].sort());
+
+  const displayNameChanged = pendingDisplayName !== (displayName ?? "");
 
   // Don't show panel if no instances available (user lacks permissions)
   if (instancesLoading) {
@@ -455,8 +529,49 @@ const RanksPanel = (props: { selectedGroup: string }) => {
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <h2 className="text-lg font-semibold">Admin Ranks</h2>
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold">Display Name</h2>
+        {displayNameLoading ? (
+          <div>Loading display name...</div>
+        ) : (
+          <>
+            <div className="flex flex-row gap-2 items-center">
+              <input
+                type="text"
+                value={pendingDisplayName}
+                onChange={(e) => setPendingDisplayName(e.target.value)}
+                placeholder="Enter display name..."
+                disabled={displayNameSaving}
+                className="bg-[#2a2a2a] border border-[#3f3f3f] rounded px-2 py-1 text-white flex-1"
+              />
+            </div>
+            {displayNameChanged && (
+              <div className="flex flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={handleSaveDisplayName}
+                  disabled={displayNameSaving}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-4 py-2 rounded"
+                >
+                  {displayNameSaving ? "Saving..." : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetDisplayName}
+                  disabled={displayNameSaving}
+                  className="bg-gray-600 hover:bg-gray-700 disabled:bg-gray-600 px-4 py-2 rounded"
+                >
+                  Reset
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <h2 className="text-lg font-semibold">Admin Ranks</h2>
 
       <div className="flex flex-row gap-2 items-center">
         <span>Instance:</span>
@@ -523,6 +638,7 @@ const RanksPanel = (props: { selectedGroup: string }) => {
       ) : (
         <div className="text-gray-400">No ranks configured</div>
       )}
+      </div>
     </div>
   );
 };
