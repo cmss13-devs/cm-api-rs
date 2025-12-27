@@ -21,6 +21,8 @@ pub struct DiscourseConfig {
     pub api_username: String,
     /// the identity provider name as configured in Discourse (e.g., "oidc", "oauth2_basic")
     pub provider_name: String,
+    /// Optional webhook secret for authenticating incoming Authentik webhooks
+    pub webhook_secret: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -321,7 +323,7 @@ pub async fn add_user_to_group(
             )
         })?;
 
-    let user_pk = get_user_by_ckey(&http_client, authentik_config, &request.ckey)
+    let authentik_user = get_user_by_ckey(&http_client, authentik_config, &request.ckey)
         .await
         .map_err(|e| {
             (
@@ -331,10 +333,9 @@ pub async fn add_user_to_group(
                     message: e,
                 }),
             )
-        })?
-        .pk;
+        })?;
 
-    add_user_to_authentik_group(&http_client, authentik_config, user_pk, &group.pk)
+    add_user_to_authentik_group(&http_client, authentik_config, authentik_user.pk, &group.pk)
         .await
         .map_err(|e| {
             (
@@ -345,6 +346,55 @@ pub async fn add_user_to_group(
                 }),
             )
         })?;
+
+    if let Some(discourse_config) = &authentik_config.discourse {
+        // Get the Discourse user by their Authentik uid
+        let discourse_user = get_discourse_user_by_external_id(
+            &http_client,
+            discourse_config,
+            &authentik_user.uid.to_string(),
+        )
+        .await
+        .map_err(|e| {
+            (
+                Status::BadRequest,
+                Json(AuthentikError {
+                    error: "discourse_user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+        let discourse_group =
+            get_discourse_group_by_name(&http_client, discourse_config, &request.group_name)
+                .await
+                .map_err(|e| {
+                    (
+                        Status::BadRequest,
+                        Json(AuthentikError {
+                            error: "discourse_group_not_found".to_string(),
+                            message: e,
+                        }),
+                    )
+                })?;
+
+        add_user_to_discourse_group(
+            &http_client,
+            discourse_config,
+            discourse_group.id,
+            &discourse_user.username,
+        )
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "discourse_add_to_group_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+    }
 
     let _ = log_external(
         config,
@@ -363,6 +413,39 @@ pub async fn add_user_to_group(
             request.ckey, request.group_name
         ),
     }))
+}
+
+/// find an Authentik user by their pk (primary key / ID)
+async fn get_user_by_pk(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    pk: &str,
+) -> Result<AuthentikUser, String> {
+    let url = format!(
+        "{}/api/v3/core/users/{}/",
+        config.base_url.trim_end_matches('/'),
+        pk
+    );
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Authentik API returned error {}: {}", status, body));
+    }
+
+    let user: AuthentikUser = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+
+    Ok(user)
 }
 
 /// find an Authentik user by their ckey attribute
@@ -562,7 +645,7 @@ pub async fn remove_user_from_group(
             )
         })?;
 
-    let user_pk = get_user_by_ckey(&http_client, authentik_config, &request.ckey)
+    let authentik_user = get_user_by_ckey(&http_client, authentik_config, &request.ckey)
         .await
         .map_err(|e| {
             (
@@ -572,10 +655,9 @@ pub async fn remove_user_from_group(
                     message: e,
                 }),
             )
-        })?
-        .pk;
+        })?;
 
-    remove_user_from_authentik_group(&http_client, authentik_config, user_pk, &group.pk)
+    remove_user_from_authentik_group(&http_client, authentik_config, authentik_user.pk, &group.pk)
         .await
         .map_err(|e| {
             (
@@ -586,6 +668,54 @@ pub async fn remove_user_from_group(
                 }),
             )
         })?;
+
+    if let Some(discourse_config) = &authentik_config.discourse {
+        let discourse_user = get_discourse_user_by_external_id(
+            &http_client,
+            discourse_config,
+            &authentik_user.uid.to_string(),
+        )
+        .await
+        .map_err(|e| {
+            (
+                Status::BadRequest,
+                Json(AuthentikError {
+                    error: "discourse_user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+        let discourse_group =
+            get_discourse_group_by_name(&http_client, discourse_config, &request.group_name)
+                .await
+                .map_err(|e| {
+                    (
+                        Status::BadRequest,
+                        Json(AuthentikError {
+                            error: "discourse_group_not_found".to_string(),
+                            message: e,
+                        }),
+                    )
+                })?;
+
+        remove_user_from_discourse_group(
+            &http_client,
+            discourse_config,
+            discourse_group.id,
+            &discourse_user.username,
+        )
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "discourse_remove_from_group_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+    }
 
     let _ = log_external(
         config,
@@ -1533,6 +1663,121 @@ async fn get_discourse_user_by_external_id(
     Ok(user_response.user)
 }
 
+/// Response from the Discourse API when getting a group
+#[derive(Debug, Deserialize)]
+struct DiscourseGroupResponse {
+    group: DiscourseGroup,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscourseGroup {
+    id: i64,
+}
+
+/// Get a Discourse group by name
+async fn get_discourse_group_by_name(
+    client: &reqwest::Client,
+    config: &DiscourseConfig,
+    group_name: &str,
+) -> Result<DiscourseGroup, String> {
+    let url = format!(
+        "{}/groups/{}.json",
+        config.base_url.trim_end_matches('/'),
+        urlencoding::encode(group_name)
+    );
+
+    let response = client
+        .get(&url)
+        .header("Api-Key", &config.api_key)
+        .header("Api-Username", &config.api_username)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to query Discourse API: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Discourse API returned error {}: {}", status, body));
+    }
+
+    let group_response: DiscourseGroupResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Discourse response: {}", e))?;
+
+    Ok(group_response.group)
+}
+
+/// Add a user to a Discourse group
+async fn add_user_to_discourse_group(
+    client: &reqwest::Client,
+    config: &DiscourseConfig,
+    group_id: i64,
+    username: &str,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/groups/{}/members.json",
+        config.base_url.trim_end_matches('/'),
+        group_id
+    );
+
+    let response = client
+        .put(&url)
+        .header("Api-Key", &config.api_key)
+        .header("Api-Username", &config.api_username)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({ "usernames": username }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to add user to Discourse group: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to add user to Discourse group (status {}): {}",
+            status, body
+        ));
+    }
+
+    Ok(())
+}
+
+/// Remove a user from a Discourse group
+async fn remove_user_from_discourse_group(
+    client: &reqwest::Client,
+    config: &DiscourseConfig,
+    group_id: i64,
+    username: &str,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/groups/{}/members.json",
+        config.base_url.trim_end_matches('/'),
+        group_id
+    );
+
+    let response = client
+        .delete(&url)
+        .header("Api-Key", &config.api_key)
+        .header("Api-Username", &config.api_username)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({ "usernames": username }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to remove user from Discourse group: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to remove user from Discourse group (status {}): {}",
+            status, body
+        ));
+    }
+
+    Ok(())
+}
+
 /// GET /Authentik/DiscourseUserId/<ckey> - get a user's Discourse user ID by their ckey
 /// looks up the user in Authentik by ckey, then uses their uid to find them in Discourse
 #[get("/DiscourseUser/<ckey>")]
@@ -1594,5 +1839,220 @@ pub async fn get_discourse_user_id(
         ckey,
         discourse_user_id: discourse_user.id,
         discourse_username: discourse_user.username,
+    }))
+}
+
+/// webhook payload from Authentik for user_write events
+/// this expects a custom webhook body mapping in Authentik that includes:
+/// - pk: the Authentik user's pk
+/// - name: the user's display name to sync (optional)
+/// - username: the user's username to sync (optional)
+/// - webhook_secret: optional secret for authentication
+#[derive(Debug, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct UserWriteWebhookPayload {
+    pub pk: String,
+    pub name: Option<String>,
+    pub username: Option<String>,
+    pub webhook_secret: Option<String>,
+}
+
+/// update a Discourse user's name
+async fn update_discourse_name(
+    client: &reqwest::Client,
+    config: &DiscourseConfig,
+    username: &str,
+    name: &str,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/u/{}.json",
+        config.base_url.trim_end_matches('/'),
+        urlencoding::encode(username)
+    );
+
+    let response = client
+        .put(&url)
+        .header("Api-Key", &config.api_key)
+        .header("Api-Username", &config.api_username)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({ "name": name }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to update Discourse user: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to update Discourse user name (status {}): {}",
+            status, body
+        ));
+    }
+
+    Ok(())
+}
+
+/// update a Discourse user's username
+async fn update_discourse_username(
+    client: &reqwest::Client,
+    config: &DiscourseConfig,
+    current_username: &str,
+    new_username: &str,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/u/{}/preferences/username.json",
+        config.base_url.trim_end_matches('/'),
+        urlencoding::encode(current_username)
+    );
+
+    let response = client
+        .put(&url)
+        .header("Api-Key", &config.api_key)
+        .header("Api-Username", &config.api_username)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({ "new_username": new_username }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to update Discourse username: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to update Discourse username (status {}): {}",
+            status, body
+        ));
+    }
+
+    Ok(())
+}
+
+/// POST /Authentik/UserWriteWebhook - webhook endpoint for Authentik user_write events
+/// syncs user name and username changes from Authentik to Discourse
+#[post("/UserWriteWebhook", format = "json", data = "<payload>")]
+pub async fn user_write_webhook(
+    config: &State<Config>,
+    payload: Json<UserWriteWebhookPayload>,
+) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let discourse_config = authentik_config.discourse.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Discourse integration is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    if let Some(expected_secret) = &discourse_config.webhook_secret {
+        let provided_secret = payload.webhook_secret.as_deref().unwrap_or("");
+        if provided_secret != expected_secret {
+            return Err((
+                Status::Unauthorized,
+                Json(AuthentikError {
+                    error: "unauthorized".to_string(),
+                    message: "Invalid or missing webhook secret".to_string(),
+                }),
+            ));
+        }
+    }
+
+    if payload.name.is_none() && payload.username.is_none() {
+        return Err((
+            Status::BadRequest,
+            Json(AuthentikError {
+                error: "no_fields_to_update".to_string(),
+                message: "At least one of 'name' or 'username' must be provided".to_string(),
+            }),
+        ));
+    }
+
+    let http_client = reqwest::Client::new();
+
+    let authentik_user = get_user_by_pk(&http_client, authentik_config, &payload.pk)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "authentik_user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let discourse_user =
+        get_discourse_user_by_external_id(&http_client, discourse_config, &authentik_user.uid)
+            .await
+            .map_err(|e| {
+                (
+                    Status::NotFound,
+                    Json(AuthentikError {
+                        error: "discourse_user_not_found".to_string(),
+                        message: e,
+                    }),
+                )
+            })?;
+
+    let mut updates: Vec<String> = Vec::new();
+
+    let current_username = if let Some(new_username) = &payload.username {
+        if new_username != &discourse_user.username {
+            update_discourse_username(
+                &http_client,
+                discourse_config,
+                &discourse_user.username,
+                new_username,
+            )
+            .await
+            .map_err(|e| {
+                (
+                    Status::InternalServerError,
+                    Json(AuthentikError {
+                        error: "username_update_failed".to_string(),
+                        message: e,
+                    }),
+                )
+            })?;
+            updates.push(format!("username to '{}'", new_username));
+            new_username.clone()
+        } else {
+            discourse_user.username.clone()
+        }
+    } else {
+        discourse_user.username.clone()
+    };
+
+    if let Some(name) = &payload.name {
+        update_discourse_name(&http_client, discourse_config, &current_username, name)
+            .await
+            .map_err(|e| {
+                (
+                    Status::InternalServerError,
+                    Json(AuthentikError {
+                        error: "name_update_failed".to_string(),
+                        message: e,
+                    }),
+                )
+            })?;
+        updates.push(format!("name to '{}'", name));
+    }
+
+    Ok(Json(AuthentikSuccess {
+        message: format!(
+            "Successfully updated Discourse user '{}': {}",
+            discourse_user.username,
+            updates.join(", ")
+        ),
     }))
 }

@@ -254,7 +254,8 @@ async fn rocket() -> _ {
                 authentik::get_user_additional_titles,
                 authentik::update_user_additional_titles,
                 authentik::get_admin_ranks_export,
-                authentik::get_discourse_user_id
+                authentik::get_discourse_user_id,
+                authentik::user_write_webhook
             ],
         )
         .mount(
