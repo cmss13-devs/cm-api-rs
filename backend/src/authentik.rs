@@ -889,8 +889,8 @@ pub async fn update_group_admin_ranks(
         config,
         "User Manager: Group Admin Ranks Updated".to_string(),
         format!(
-            "{} updated admin_ranks for group '{}' to: {:?}",
-            user.username, request.group_name, request.admin_ranks
+            "{} updated admin_ranks for group '{}' on instance '{}' to: {:?}",
+            user.username, request.group_name, request.instance_name, request.admin_ranks
         ),
         true,
     )
