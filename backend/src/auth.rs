@@ -32,8 +32,8 @@ pub struct OidcConfig {
     pub redirect_uri: String,
     #[serde(default = "default_scopes")]
     pub scopes: Vec<String>,
-    pub staff_group: String,
-    pub management_group: String,
+    pub staff_groups: Vec<String>,
+    pub management_groups: Vec<String>,
     pub session_secret: String,
     #[serde(default = "default_session_duration")]
     pub session_duration_hours: u64,
@@ -396,15 +396,12 @@ pub async fn callback(
         .unwrap();
 
     // Check if user has required admin group
-    if !groups.contains(&oidc.config.staff_group) {
+    if !oidc.config.staff_groups.iter().any(|x| oidc.config.staff_groups.contains(x)) {
         return Err((
             Status::Forbidden,
             Json(AuthError {
                 error: "forbidden".to_string(),
-                message: format!(
-                    "Access denied. You must be a member of the '{}' group.",
-                    oidc.config.staff_group
-                ),
+                message: "Access denied. You must be a member of a staff group.".to_string(),
             }),
         ));
     }
