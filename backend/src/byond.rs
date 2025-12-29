@@ -54,11 +54,11 @@ pub struct GameStatus {
     cpu: f32,
 }
 
+/// Fetches the current round information from the Topic API. **This is a public endpoint**.
 #[get("/")]
 pub async fn round(
     cache: &State<ByondTopic>,
     config: &State<Config>,
-    _admin: AuthenticatedUser<Staff>,
 ) -> Option<Json<GameResponse>> {
     {
         let mutexed: MutexGuard<'_, Option<DateTime<Utc>>> = match cache.cache_time.lock() {
