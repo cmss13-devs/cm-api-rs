@@ -1,15 +1,37 @@
 use sqlx::{Error, prelude::FromRow};
 use std::sync::Mutex;
-use std::{net::ToSocketAddrs, sync::MutexGuard};
+use std::{io::Cursor, net::ToSocketAddrs, sync::MutexGuard};
 
 use chrono::{DateTime, Duration, Utc};
 use http2byond::ByondTopicValue;
-use rocket::{State, serde::json::Json};
+use rocket::{
+    Request, Response, State,
+    http::{ContentType, Header, Status},
+    response::{self, Responder},
+    serde::json::Json,
+};
 use rocket_db_pools::Connection;
 use sqlx::query_as;
 
 use crate::admin::AuthenticatedUser;
 use crate::{Cmdb, Config, admin::Staff};
+
+/// sets `Access-Control-Allow-Origin: *` to allow requests from any origin.
+pub struct PublicCors<T>(pub T);
+
+impl<'r, T: serde::Serialize> Responder<'r, 'static> for PublicCors<T> {
+    fn respond_to(self, _request: &'r Request<'_>) -> response::Result<'static> {
+        let json = serde_json::to_string(&self.0).map_err(|_| Status::InternalServerError)?;
+
+        Response::build()
+            .header(ContentType::JSON)
+            .header(Header::new("Access-Control-Allow-Origin", "*"))
+            .header(Header::new("Access-Control-Allow-Methods", "GET, OPTIONS"))
+            .header(Header::new("Access-Control-Allow-Headers", "*"))
+            .sized_body(Some(json.len()), Cursor::new(json))
+            .ok()
+    }
+}
 
 #[derive(Default)]
 pub struct ByondTopic {
@@ -59,7 +81,7 @@ pub struct GameStatus {
 pub async fn round(
     cache: &State<ByondTopic>,
     config: &State<Config>,
-) -> Option<Json<GameResponse>> {
+) -> Option<PublicCors<GameResponse>> {
     {
         let mutexed: MutexGuard<'_, Option<DateTime<Utc>>> = match cache.cache_time.lock() {
             Ok(real) => real,
@@ -71,7 +93,9 @@ pub async fn round(
             let five_minutes_ago = chrono::Utc::now() - Duration::seconds(60);
 
             if cache_time > five_minutes_ago {
-                return Some(Json(cache.cached_status.lock().unwrap().clone().unwrap()));
+                return Some(PublicCors(
+                    cache.cached_status.lock().unwrap().clone().unwrap(),
+                ));
             }
         }
     }
@@ -122,7 +146,7 @@ pub async fn round(
     *cache.cached_status.lock().unwrap() = Some(byond_json.clone());
     *cache.cache_time.lock().unwrap() = Some(chrono::Utc::now());
 
-    Some(Json(byond_json))
+    Some(PublicCors(byond_json))
 }
 
 #[derive(serde::Serialize, FromRow)]
