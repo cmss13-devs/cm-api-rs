@@ -93,6 +93,31 @@ pub struct AuthentikUser {
     pub attributes: serde_json::Value,
 }
 
+/// OAuth source object from Authentik (nested in UserOAuthSourceConnection)
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub struct OAuthSource {
+    pub pk: String,
+    pub name: String,
+    pub slug: String,
+}
+
+/// User OAuth source connection from Authentik
+#[derive(Debug, Deserialize, Clone)]
+#[allow(dead_code)]
+pub struct UserOAuthSourceConnection {
+    pub pk: i64,
+    pub user: i64,
+    pub source: OAuthSource,
+    pub identifier: String,
+}
+
+/// Response from Authentik OAuth source connections API
+#[derive(Debug, Deserialize)]
+struct UserOAuthSourceConnectionsResponse {
+    pub results: Vec<UserOAuthSourceConnection>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct GroupMember {
@@ -542,6 +567,50 @@ async fn update_user_attributes(
     }
 
     Ok(())
+}
+
+/// Get a user's connected OAuth sources from Authentik
+pub async fn get_user_oauth_sources(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    user_pk: i64,
+) -> Result<Vec<UserOAuthSourceConnection>, String> {
+    let url = format!(
+        "{}/api/v3/sources/user_connections/oauth/?user={}",
+        config.base_url.trim_end_matches('/'),
+        user_pk
+    );
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Authentik API returned error {}: {}", status, body));
+    }
+
+    let connections_response: UserOAuthSourceConnectionsResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+
+    Ok(connections_response.results)
+}
+
+#[allow(dead_code)]
+pub async fn user_has_oauth_source(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    user_pk: i64,
+    source_slug: &str,
+) -> Result<bool, String> {
+    let sources = get_user_oauth_sources(client, config, user_pk).await?;
+    Ok(sources.iter().any(|s| s.source.slug == source_slug))
 }
 
 /// find an Authentik group by name and return its UUID

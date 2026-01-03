@@ -5,7 +5,7 @@ use sqlx::{Row, query};
 
 use crate::{
     Cmdb, Config,
-    authentik::get_user_by_attribute,
+    authentik::{get_user_by_attribute, get_user_oauth_sources},
     player::{AuthorizationHeader, validate_auth_header},
 };
 
@@ -85,13 +85,21 @@ pub async fn get_user_by_discord(
                 .and_then(|v| v.as_str())
                 .map(String::from);
 
-            if let Some(ckey) = ckey {
-                return Ok(Json(DiscordUserResponse {
-                    source: "authentik".to_string(),
-                    ckey,
-                    discord_id,
-                    authentik_username: Some(authentik_user.username),
-                }));
+            if let Some(ckey) = ckey
+                && let Ok(oauth_sources) =
+                    get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk).await
+            {
+                let has_byond = oauth_sources.iter().any(|s| s.source.slug == "byond");
+                let has_discord = oauth_sources.iter().any(|s| s.source.slug == "discord");
+
+                if has_byond && has_discord {
+                    return Ok(Json(DiscordUserResponse {
+                        source: "authentik".to_string(),
+                        ckey,
+                        discord_id,
+                        authentik_username: Some(authentik_user.username),
+                    }));
+                }
             }
         }
     }
