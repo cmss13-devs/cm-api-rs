@@ -15,18 +15,19 @@ WORKDIR /usr/src/app
 COPY backend/Cargo.toml Cargo.toml
 COPY backend/Cargo.lock Cargo.lock
 
+# Create dummy src to build dependencies
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 RUN cargo build --release
-RUN rm -rf src
 
+# Copy actual source and rebuild (only recompiles app code, not dependencies)
 COPY backend/src/ src/
-RUN touch src/main.rs && cargo install --path .
+RUN touch src/main.rs && cargo build --release
 
 # Stage 3: Runtime
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y libssl-dev ca-certificates && rm -rf /var/lib/apt/lists/*
 
-COPY --from=backend-builder /usr/local/cargo/bin/cm-api-rs /usr/local/bin/cm-api-rs
+COPY --from=backend-builder /usr/src/app/target/release/cm-api-rs /usr/local/bin/cm-api-rs
 COPY --from=frontend-builder /app/dist /var/www/static
 
 CMD ["cm-api-rs"]
