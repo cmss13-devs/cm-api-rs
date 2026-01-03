@@ -2,17 +2,21 @@ use std::collections::HashMap;
 
 use chrono::TimeZone;
 use rocket::{
+    Request, State,
     form::Form,
     futures::TryStreamExt,
     http::Status,
     request::{FromRequest, Outcome},
-    serde::{json::Json, Serialize},
-    Request, State,
+    serde::{Serialize, json::Json},
 };
 use rocket_db_pools::Connection;
 use sqlx::{MySqlConnection, Row, prelude::FromRow, query, query_as, types::BigDecimal};
 
-use crate::{Cmdb, Config, admin::{Staff, AuthenticatedUser}, logging::log_external};
+use crate::{
+    Cmdb, Config,
+    admin::{AuthenticatedUser, Staff},
+    logging::log_external,
+};
 
 /// Request guard for extracting the Authorization header
 pub struct AuthorizationHeader(pub String);
@@ -41,9 +45,7 @@ pub fn validate_auth_header(auth_header: Option<&str>, config: &Config) -> bool 
     };
 
     // Support both "Bearer <token>" and raw "<token>" formats
-    let token = auth_value
-        .strip_prefix("Bearer ")
-        .unwrap_or(auth_value);
+    let token = auth_value.strip_prefix("Bearer ").unwrap_or(auth_value);
 
     token == api_auth.token
 }
@@ -161,7 +163,11 @@ async fn get_player_notes(db: &mut MySqlConnection, id: i64) -> Option<Vec<Note>
 }
 
 #[get("/<id>/AppliedNotes")]
-pub async fn applied_notes(mut db: Connection<Cmdb>, _admin: AuthenticatedUser<Staff>, id: i64) -> Json<Vec<Note>> {
+pub async fn applied_notes(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Staff>,
+    id: i64,
+) -> Json<Vec<Note>> {
     let mut user_notes: Vec<Note> = match query_as("SELECT * FROM player_notes WHERE admin_id = ?")
         .bind(id)
         .fetch_all(&mut **db)
@@ -276,7 +282,11 @@ pub async fn index(
 }
 
 #[get("/<id>")]
-pub async fn id(mut db: Connection<Cmdb>, _admin: AuthenticatedUser<Staff>, id: i32) -> Option<Json<Player>> {
+pub async fn id(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Staff>,
+    id: i32,
+) -> Option<Json<Player>> {
     let user: Player = match query_as("SELECT * FROM players WHERE id = ?")
         .bind(id)
         .fetch_one(&mut **db)
@@ -376,7 +386,11 @@ pub struct Playtime {
 }
 
 #[get("/<id>/Playtime")]
-pub async fn get_playtime(mut db: Connection<Cmdb>, _admin: AuthenticatedUser<Staff>, id: i64) -> Json<Vec<Playtime>> {
+pub async fn get_playtime(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Staff>,
+    id: i64,
+) -> Json<Vec<Playtime>> {
     match query_as("SELECT * FROM player_playtime WHERE player_id = ?")
         .bind(id)
         .fetch_all(&mut **db)
@@ -384,6 +398,24 @@ pub async fn get_playtime(mut db: Connection<Cmdb>, _admin: AuthenticatedUser<St
     {
         Ok(some) => Json(some),
         Err(_) => Json(Vec::new()),
+    }
+}
+
+pub async fn query_total_playtime_minutes(db: &mut Connection<Cmdb>, ckey: &str) -> Option<i32> {
+    match query(r"SELECT SUM(player_playtime.total_minutes) AS playtime FROM players INNER JOIN player_playtime ON players.id = player_playtime.player_id WHERE players.ckey = ? AND player_playtime.role_id != 'Observer'")
+        .bind(ckey)
+        .fetch_one(&mut ***db)
+        .await
+    {
+        Ok(row) => {
+            if let Ok(decimal) = row.try_get::<BigDecimal, _>("playtime") {
+                use std::str::FromStr;
+                i32::from_str(&decimal.to_string()).ok()
+            } else {
+                Some(0)
+            }
+        }
+        Err(_) => Some(0),
     }
 }
 
@@ -403,20 +435,9 @@ pub async fn get_total_playtime(
         return Err(Status::Unauthorized);
     }
 
-    match query(r"SELECT SUM(player_playtime.total_minutes) AS playtime FROM players INNER JOIN player_playtime ON players.id = player_playtime.player_id WHERE players.ckey = ? AND player_playtime.role_id != 'Observer'")
-        .bind(ckey)
-        .fetch_one(&mut **db)
-        .await 
-    {
-        Ok(some) => {
-            if let Ok(decimal) = some.try_get::<BigDecimal, _>("playtime") {
-                Ok(Json(decimal.to_string()))
-            } else {
-                Ok(Json("0".to_string()))
-            }
-
-        },
-        Err(_) => Ok(Json("0".to_string()))
+    match query_total_playtime_minutes(&mut db, &ckey).await {
+        Some(minutes) => Ok(Json(minutes.to_string())),
+        None => Ok(Json("0".to_string())),
     }
 }
 
@@ -466,12 +487,12 @@ pub async fn get_recent_playtime(
     let mut playtime_structs = Vec::new();
 
     for playtime in playtimes.iter().enumerate() {
-        let minutes = playtime.1 .1 / 600;
+        let minutes = playtime.1.1 / 600;
 
         playtime_structs.push(Playtime {
             id: playtime.0 as i64,
             player_id: id,
-            role_id: playtime.1 .0.to_string(),
+            role_id: playtime.1.0.to_string(),
             total_minutes: minutes as i32,
         });
     }

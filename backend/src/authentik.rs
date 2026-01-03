@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 
 use rocket::{State, http::Status, serde::json::Json};
+use rocket_db_pools::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use serenity::all::{GuildId, Http, RoleId, UserId};
 
 use crate::{
-    Config, DiscordBotConfig,
+    Cmdb, Config, DiscordBotConfig, ServerRoleConfig,
     admin::{AuthenticatedUser, Management, Staff},
     logging::log_external,
-    player::AuthorizationHeader,
+    player::{AuthorizationHeader, query_total_playtime_minutes},
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -1985,6 +1986,94 @@ fn validate_webhook_secret(secret_header: &str, config: &AuthentikConfig) -> boo
 }
 
 #[derive(Debug, Default)]
+pub struct VerificationEligibility {
+    pub reason: Option<String>,
+    pub ckey: Option<String>,
+    pub discord_id: Option<String>,
+    pub total_playtime_minutes: Option<i32>,
+    pub server_eligibility: HashMap<String, bool>,
+}
+
+pub async fn check_verification_eligibility(
+    db: &mut Connection<Cmdb>,
+    linked_sources: &[String],
+    ckey: Option<&str>,
+    discord_id: Option<&str>,
+    discord_config: &DiscordBotConfig,
+) -> VerificationEligibility {
+    let mut result = VerificationEligibility::default();
+
+    let has_byond = linked_sources.iter().any(|s| s == "byond");
+    let has_discord = linked_sources.iter().any(|s| s == "discord");
+
+    if !has_byond {
+        result.reason = Some("BYOND source is not linked".to_string());
+        return result;
+    }
+
+    if !has_discord {
+        result.reason = Some("Discord source is not linked".to_string());
+        return result;
+    }
+
+    let ckey = match ckey {
+        Some(c) if !c.is_empty() => c,
+        _ => {
+            result.reason = Some("ckey attribute is missing or empty".to_string());
+            return result;
+        }
+    };
+    result.ckey = Some(ckey.to_string());
+
+    let discord_id = match discord_id {
+        Some(d) if !d.is_empty() => d,
+        _ => {
+            result.reason = Some("discord_id attribute is missing or empty".to_string());
+            return result;
+        }
+    };
+    result.discord_id = Some(discord_id.to_string());
+
+    result.total_playtime_minutes = query_total_playtime_minutes(db, ckey).await;
+
+    let mut all_servers_eligible = true;
+    let mut ineligible_servers: Vec<String> = Vec::new();
+
+    for (guild_id, role_config) in &discord_config.unlink_role_changes {
+        let server_eligible = check_server_eligibility(&result, role_config);
+        result
+            .server_eligibility
+            .insert(guild_id.clone(), server_eligible);
+
+        if !server_eligible {
+            all_servers_eligible = false;
+            ineligible_servers.push(guild_id.clone());
+        }
+    }
+
+    if !all_servers_eligible {
+        result.reason = Some(format!(
+            "Insufficient playtime for server(s): {}. Required playtime not met.",
+            ineligible_servers.join(", ")
+        ));
+    }
+
+    result
+}
+
+fn check_server_eligibility(
+    eligibility: &VerificationEligibility,
+    role_config: &ServerRoleConfig,
+) -> bool {
+    let Some(minimum_playtime) = role_config.minimum_playtime_minutes else {
+        return true;
+    };
+
+    let user_playtime = eligibility.total_playtime_minutes.unwrap_or(0);
+    user_playtime >= minimum_playtime
+}
+
+#[derive(Debug, Default)]
 pub struct RoleUpdateResult {
     pub roles_added: Vec<String>,
     pub roles_removed: Vec<String>,
@@ -2095,6 +2184,7 @@ async fn update_discord_roles_on_unlink(
 async fn update_discord_roles_on_link(
     discord_config: &DiscordBotConfig,
     discord_id: &str,
+    server_eligibility: &HashMap<String, bool>,
 ) -> Result<RoleUpdateResult, String> {
     let http = Http::new(&discord_config.token);
 
@@ -2106,6 +2196,19 @@ async fn update_discord_roles_on_link(
     let mut result = RoleUpdateResult::default();
 
     for (guild_id_str, role_config) in &discord_config.unlink_role_changes {
+        // Skip servers where user is not eligible
+        if !server_eligibility
+            .get(guild_id_str)
+            .copied()
+            .unwrap_or(false)
+        {
+            eprintln!(
+                "Skipping role updates for guild {} - user not eligible",
+                guild_id_str
+            );
+            continue;
+        }
+
         let guild_id: u64 = match guild_id_str.parse() {
             Ok(id) => id,
             Err(e) => {
@@ -2118,6 +2221,7 @@ async fn update_discord_roles_on_link(
         };
         let guild_id = GuildId::new(guild_id);
 
+        // Inverse logic: add roles that would be removed on unlink
         for role_id_str in &role_config.roles_to_remove {
             let role_id: u64 = match role_id_str.parse() {
                 Ok(id) => id,
@@ -2267,6 +2371,7 @@ pub async fn webhook_user_unlinked(
 pub async fn webhook_user_linked(
     webhook_secret: WebhookSecretHeader,
     config: &State<Config>,
+    mut db: Connection<Cmdb>,
     payload: Json<UserLinkWebhook>,
 ) -> Result<Json<WebhookResponse>, (Status, Json<AuthentikError>)> {
     let authentik_config = config.authentik.as_ref().ok_or_else(|| {
@@ -2289,29 +2394,6 @@ pub async fn webhook_user_linked(
         ));
     }
 
-    let has_byond = payload.linked_sources.iter().any(|s| s == "byond");
-    let has_discord = payload.linked_sources.iter().any(|s| s == "discord");
-
-    if !has_byond || !has_discord {
-        return Ok(Json(WebhookResponse {
-            success: true,
-            message: format!(
-                "User '{}' linked sources but missing byond ({}) or discord ({}). No role changes made.",
-                payload.username, has_byond, has_discord
-            ),
-        }));
-    }
-
-    let discord_id = payload.discord_id.as_ref().ok_or_else(|| {
-        (
-            Status::BadRequest,
-            Json(AuthentikError {
-                error: "missing_discord_id".to_string(),
-                message: "Discord ID is required when discord source is linked".to_string(),
-            }),
-        )
-    })?;
-
     let discord_config = config.discord_bot.as_ref().ok_or_else(|| {
         (
             Status::InternalServerError,
@@ -2322,25 +2404,81 @@ pub async fn webhook_user_linked(
         )
     })?;
 
-    let role_changes = update_discord_roles_on_link(discord_config, discord_id)
-        .await
-        .map_err(|e| {
-            (
-                Status::InternalServerError,
-                Json(AuthentikError {
-                    error: "role_update_failed".to_string(),
-                    message: e,
-                }),
-            )
-        })?;
+    // Check user eligibility for verification
+    let eligibility = check_verification_eligibility(
+        &mut db,
+        &payload.linked_sources,
+        payload.ckey.as_deref(),
+        payload.discord_id.as_deref(),
+        discord_config,
+    )
+    .await;
+
+    // If no servers are eligible, return early with reason
+    if eligibility.server_eligibility.values().all(|&v| !v) {
+        return Ok(Json(WebhookResponse {
+            success: true,
+            message: format!(
+                "User '{}' is not eligible for role updates: {}",
+                payload.username,
+                eligibility
+                    .reason
+                    .unwrap_or_else(|| "Unknown reason".to_string())
+            ),
+        }));
+    }
+
+    let discord_id = eligibility.discord_id.as_ref().ok_or_else(|| {
+        (
+            Status::BadRequest,
+            Json(AuthentikError {
+                error: "missing_discord_id".to_string(),
+                message: "Discord ID is required when discord source is linked".to_string(),
+            }),
+        )
+    })?;
+
+    let role_changes =
+        update_discord_roles_on_link(discord_config, discord_id, &eligibility.server_eligibility)
+            .await
+            .map_err(|e| {
+                (
+                    Status::InternalServerError,
+                    Json(AuthentikError {
+                        error: "role_update_failed".to_string(),
+                        message: e,
+                    }),
+                )
+            })?;
+
+    let ineligible_servers: Vec<_> = eligibility
+        .server_eligibility
+        .iter()
+        .filter(|(_, v)| !**v)
+        .map(|(k, _)| k.as_str())
+        .collect();
+
+    let mut message = format!(
+        "Processed link event for user '{}'. Added {} role(s), removed {} role(s).",
+        payload.username,
+        role_changes.roles_added.len(),
+        role_changes.roles_removed.len()
+    );
+
+    if !ineligible_servers.is_empty() {
+        message.push_str(&format!(
+            " Skipped {} server(s) due to insufficient playtime: {}",
+            ineligible_servers.len(),
+            ineligible_servers.join(", ")
+        ));
+    }
+
+    if let Some(playtime) = eligibility.total_playtime_minutes {
+        message.push_str(&format!(" (playtime: {} minutes)", playtime));
+    }
 
     Ok(Json(WebhookResponse {
         success: true,
-        message: format!(
-            "Processed link event for user '{}'. Added {} role(s), removed {} role(s).",
-            payload.username,
-            role_changes.roles_added.len(),
-            role_changes.roles_removed.len()
-        ),
+        message,
     }))
 }

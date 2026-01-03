@@ -96,6 +96,10 @@ pub struct ServerRoleConfig {
     pub roles_to_add: Vec<String>,
     #[serde(default)]
     pub roles_to_remove: Vec<String>,
+    /// Minimum playtime in minutes required to be eligible for role changes.
+    /// If the user has a database discord link, this requirement is bypassed.
+    #[serde(default)]
+    pub minimum_playtime_minutes: Option<i32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -280,7 +284,7 @@ async fn rocket() -> _ {
         )
         .mount(
             format!("{}/Discord", base_url),
-            routes![discord::get_user_by_discord],
+            routes![discord::get_user_by_discord, discord::check_verified],
         )
         .mount(
             "/",
