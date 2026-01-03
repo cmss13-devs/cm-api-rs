@@ -23,9 +23,20 @@ pub struct DiscordUserResponse {
     pub ckey: String,
     pub discord_id: String,
     pub authentik_username: Option<String>,
-    /// Role IDs that should be added based on the player's whitelist status
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub whitelist_roles: Vec<String>,
+}
+
+/// Response for the Verified endpoint, includes role changes based on verification status
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct VerifiedUserResponse {
+    pub source: String,
+    pub ckey: String,
+    pub discord_id: String,
+    pub authentik_username: Option<String>,
+    /// Role IDs that should be added to the user
+    pub roles_to_add: Vec<String>,
+    /// Role IDs that should be removed from the user
+    pub roles_to_remove: Vec<String>,
 }
 
 async fn get_ckey_by_discord_id_from_db(
@@ -66,6 +77,65 @@ pub async fn get_whitelist_status_by_ckey(db: &mut Connection<Cmdb>, ckey: &str)
     {
         Ok(row) => row.get::<Option<String>, _>("whitelist_status"),
         Err(_) => None,
+    }
+}
+
+pub struct RoleChanges {
+    pub roles_to_add: Vec<String>,
+    pub roles_to_remove: Vec<String>,
+}
+
+pub fn resolve_role_changes(
+    whitelist_status: Option<&str>,
+    role_config: &ServerRoleConfig,
+) -> RoleChanges {
+    let mut roles_to_add = role_config.roles_to_add.clone();
+    let mut roles_to_remove = role_config.roles_to_remove.clone();
+
+    let all_whitelist_roles: Vec<String> = role_config
+        .whitelist_roles
+        .values()
+        .flatten()
+        .cloned()
+        .collect();
+
+    let earned_whitelist_roles: Vec<String> = if let Some(status) = whitelist_status {
+        if !status.is_empty() {
+            let player_whitelists: Vec<&str> = status.split('|').map(|s| s.trim()).collect();
+
+            role_config
+                .whitelist_roles
+                .iter()
+                .filter(|(whitelist_name, _role_ids)| {
+                    player_whitelists.contains(&whitelist_name.as_str())
+                })
+                .flat_map(|(_whitelist_name, role_ids)| role_ids.clone())
+                .collect()
+        } else {
+            Vec::new()
+        }
+    } else {
+        Vec::new()
+    };
+
+    roles_to_add.extend(earned_whitelist_roles.clone());
+
+    let unearned_whitelist_roles: Vec<String> = all_whitelist_roles
+        .into_iter()
+        .filter(|role| !earned_whitelist_roles.contains(role))
+        .collect();
+    roles_to_remove.extend(unearned_whitelist_roles);
+
+    roles_to_add.sort();
+    roles_to_add.dedup();
+    roles_to_remove.sort();
+    roles_to_remove.dedup();
+
+    roles_to_remove.retain(|role| !roles_to_add.contains(role));
+
+    RoleChanges {
+        roles_to_add,
+        roles_to_remove,
     }
 }
 
@@ -127,7 +197,6 @@ pub async fn get_user_by_discord(
                     ckey,
                     discord_id,
                     authentik_username: Some(authentik_user.username),
-                    whitelist_roles: Vec::new(),
                 }));
             }
         }
@@ -139,7 +208,6 @@ pub async fn get_user_by_discord(
             ckey,
             discord_id,
             authentik_username: None,
-            whitelist_roles: Vec::new(),
         })),
         Err(e) => Err((
             Status::NotFound,
@@ -158,7 +226,7 @@ pub async fn check_verified(
     config: &State<Config>,
     discord_id: String,
     guild_id: String,
-) -> Result<Json<DiscordUserResponse>, (Status, Json<DiscordError>)> {
+) -> Result<Json<VerifiedUserResponse>, (Status, Json<DiscordError>)> {
     if !validate_auth_header(Some(auth_header.0.as_str()), config) {
         return Err((
             Status::Unauthorized,
@@ -225,15 +293,16 @@ pub async fn check_verified(
                             get_whitelist_status_by_ckey(&mut db, &ckey_str).await;
                         let role_config =
                             discord_config.unlink_role_changes.get(&guild_id).unwrap();
-                        let whitelist_roles =
-                            resolve_whitelist_roles(whitelist_status.as_deref(), role_config);
+                        let role_changes =
+                            resolve_role_changes(whitelist_status.as_deref(), role_config);
 
-                        return Ok(Json(DiscordUserResponse {
+                        return Ok(Json(VerifiedUserResponse {
                             source: "authentik".to_string(),
                             ckey: ckey_str,
                             discord_id,
                             authentik_username: Some(authentik_user.username),
-                            whitelist_roles,
+                            roles_to_add: role_changes.roles_to_add,
+                            roles_to_remove: role_changes.roles_to_remove,
                         }));
                     }
                     Some(false) | None => {
@@ -260,14 +329,15 @@ pub async fn check_verified(
         Ok(ckey) => {
             let whitelist_status = get_whitelist_status_by_ckey(&mut db, &ckey).await;
             let role_config = discord_config.unlink_role_changes.get(&guild_id).unwrap();
-            let whitelist_roles = resolve_whitelist_roles(whitelist_status.as_deref(), role_config);
+            let role_changes = resolve_role_changes(whitelist_status.as_deref(), role_config);
 
-            Ok(Json(DiscordUserResponse {
+            Ok(Json(VerifiedUserResponse {
                 source: "database".to_string(),
                 ckey,
                 discord_id,
                 authentik_username: None,
-                whitelist_roles,
+                roles_to_add: role_changes.roles_to_add,
+                roles_to_remove: role_changes.roles_to_remove,
             }))
         }
         Err(e) => Err((
