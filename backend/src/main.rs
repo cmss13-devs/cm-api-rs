@@ -102,6 +102,7 @@ pub struct ServerRoleConfig {
 pub struct DiscordBotConfig {
     pub token: String,
     /// mapping of server (guild) IDs to role configuration for unlink events
+    /// on link events, the inverse is applied (roles_to_add are removed, roles_to_remove are added)
     #[serde(default)]
     pub unlink_role_changes: std::collections::HashMap<String, ServerRoleConfig>,
 }
@@ -274,6 +275,7 @@ async fn rocket() -> _ {
                 authentik::get_admin_ranks_export,
                 authentik::get_discourse_user_id,
                 authentik::webhook_user_unlinked,
+                authentik::webhook_user_linked,
             ],
         )
         .mount(

@@ -1940,6 +1940,17 @@ pub struct UserUnlinkWebhook {
     pub discord_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(crate = "rocket::serde")]
+#[allow(dead_code)]
+pub struct UserLinkWebhook {
+    pub linked_sources: Vec<String>,
+    pub username: String,
+    pub pk: i64,
+    pub ckey: Option<String>,
+    pub discord_id: Option<String>,
+}
+
 /// Response for webhook endpoints
 #[derive(Debug, Serialize)]
 #[serde(crate = "rocket::serde")]
@@ -2069,7 +2080,108 @@ async fn update_discord_roles_on_unlink(
                         .push(format!("{}:{}", guild_id_str, role_id_str));
                 }
                 Err(e) => {
-                    // Log but don't fail - the user might not have the role or not be in the server
+                    eprintln!(
+                        "Warning: Failed to remove role {} from user {} in guild {}: {}",
+                        role_id_str, discord_id, guild_id_str, e
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+async fn update_discord_roles_on_link(
+    discord_config: &DiscordBotConfig,
+    discord_id: &str,
+) -> Result<RoleUpdateResult, String> {
+    let http = Http::new(&discord_config.token);
+
+    let user_id: u64 = discord_id
+        .parse()
+        .map_err(|e| format!("Invalid Discord user ID '{}': {}", discord_id, e))?;
+    let user_id = UserId::new(user_id);
+
+    let mut result = RoleUpdateResult::default();
+
+    for (guild_id_str, role_config) in &discord_config.unlink_role_changes {
+        let guild_id: u64 = match guild_id_str.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!(
+                    "Warning: Invalid guild ID '{}' in config: {}",
+                    guild_id_str, e
+                );
+                continue;
+            }
+        };
+        let guild_id = GuildId::new(guild_id);
+
+        for role_id_str in &role_config.roles_to_remove {
+            let role_id: u64 = match role_id_str.parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Invalid role ID '{}' in config: {}",
+                        role_id_str, e
+                    );
+                    continue;
+                }
+            };
+            let role_id = RoleId::new(role_id);
+
+            match http
+                .add_member_role(
+                    guild_id,
+                    user_id,
+                    role_id,
+                    Some("User linked byond and discord accounts in Authentik"),
+                )
+                .await
+            {
+                Ok(()) => {
+                    result
+                        .roles_added
+                        .push(format!("{}:{}", guild_id_str, role_id_str));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to add role {} to user {} in guild {}: {}",
+                        role_id_str, discord_id, guild_id_str, e
+                    );
+                }
+            }
+        }
+
+        for role_id_str in &role_config.roles_to_add {
+            let role_id: u64 = match role_id_str.parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Invalid role ID '{}' in config: {}",
+                        role_id_str, e
+                    );
+                    continue;
+                }
+            };
+            let role_id = RoleId::new(role_id);
+
+            match http
+                .remove_member_role(
+                    guild_id,
+                    user_id,
+                    role_id,
+                    Some("User linked byond and discord accounts in Authentik"),
+                )
+                .await
+            {
+                Ok(()) => {
+                    result
+                        .roles_removed
+                        .push(format!("{}:{}", guild_id_str, role_id_str));
+                }
+                Err(e) => {
                     eprintln!(
                         "Warning: Failed to remove role {} from user {} in guild {}: {}",
                         role_id_str, discord_id, guild_id_str, e
@@ -2145,6 +2257,88 @@ pub async fn webhook_user_unlinked(
         message: format!(
             "Processed unlink event for user '{}'. Added {} role(s), removed {} role(s).",
             payload.user_username,
+            role_changes.roles_added.len(),
+            role_changes.roles_removed.len()
+        ),
+    }))
+}
+
+#[post("/Webhook/UserLinked", format = "json", data = "<payload>")]
+pub async fn webhook_user_linked(
+    webhook_secret: WebhookSecretHeader,
+    config: &State<Config>,
+    payload: Json<UserLinkWebhook>,
+) -> Result<Json<WebhookResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    if !validate_webhook_secret(&webhook_secret.0, authentik_config) {
+        return Err((
+            Status::Unauthorized,
+            Json(AuthentikError {
+                error: "unauthorized".to_string(),
+                message: "Invalid webhook secret".to_string(),
+            }),
+        ));
+    }
+
+    let has_byond = payload.linked_sources.iter().any(|s| s == "byond");
+    let has_discord = payload.linked_sources.iter().any(|s| s == "discord");
+
+    if !has_byond || !has_discord {
+        return Ok(Json(WebhookResponse {
+            success: true,
+            message: format!(
+                "User '{}' linked sources but missing byond ({}) or discord ({}). No role changes made.",
+                payload.username, has_byond, has_discord
+            ),
+        }));
+    }
+
+    let discord_id = payload.discord_id.as_ref().ok_or_else(|| {
+        (
+            Status::BadRequest,
+            Json(AuthentikError {
+                error: "missing_discord_id".to_string(),
+                message: "Discord ID is required when discord source is linked".to_string(),
+            }),
+        )
+    })?;
+
+    let discord_config = config.discord_bot.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Discord bot is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let role_changes = update_discord_roles_on_link(discord_config, discord_id)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "role_update_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    Ok(Json(WebhookResponse {
+        success: true,
+        message: format!(
+            "Processed link event for user '{}'. Added {} role(s), removed {} role(s).",
+            payload.username,
             role_changes.roles_added.len(),
             role_changes.roles_removed.len()
         ),
