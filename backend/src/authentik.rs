@@ -94,7 +94,6 @@ pub struct AuthentikUser {
     pub attributes: serde_json::Value,
 }
 
-/// OAuth source object from Authentik (nested in UserOAuthSourceConnection)
 #[derive(Debug, Deserialize, Clone)]
 #[allow(dead_code)]
 pub struct OAuthSource {
@@ -103,17 +102,16 @@ pub struct OAuthSource {
     pub slug: String,
 }
 
-/// User OAuth source connection from Authentik
 #[derive(Debug, Deserialize, Clone)]
 #[allow(dead_code)]
 pub struct UserOAuthSourceConnection {
     pub pk: i64,
     pub user: i64,
+    #[serde(rename = "source_obj")]
     pub source: OAuthSource,
     pub identifier: String,
 }
 
-/// Response from Authentik OAuth source connections API
 #[derive(Debug, Deserialize)]
 struct UserOAuthSourceConnectionsResponse {
     pub results: Vec<UserOAuthSourceConnection>,
@@ -595,17 +593,11 @@ pub async fn get_user_oauth_sources(
         .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
 
     let status = response.status();
-    eprintln!(
-        "[get_user_oauth_sources] Response status: {}",
-        status
-    );
+    eprintln!("[get_user_oauth_sources] Response status: {}", status);
 
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
-        eprintln!(
-            "[get_user_oauth_sources] Error response body: {}",
-            body
-        );
+        eprintln!("[get_user_oauth_sources] Error response body: {}", body);
         return Err(format!("Authentik API returned error {}: {}", status, body));
     }
 
@@ -615,13 +607,10 @@ pub async fn get_user_oauth_sources(
         .await
         .map_err(|e| format!("Failed to read response body: {}", e))?;
 
-    eprintln!(
-        "[get_user_oauth_sources] Response body: {}",
-        body_text
-    );
+    eprintln!("[get_user_oauth_sources] Response body: {}", body_text);
 
-    let connections_response: UserOAuthSourceConnectionsResponse =
-        serde_json::from_str(&body_text).map_err(|e| {
+    let connections_response: UserOAuthSourceConnectionsResponse = serde_json::from_str(&body_text)
+        .map_err(|e| {
             eprintln!(
                 "[get_user_oauth_sources] Failed to parse JSON. Error: {}. Body was: {}",
                 e, body_text
