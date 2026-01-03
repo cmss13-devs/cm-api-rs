@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use rocket::{State, http::Status, serde::json::Json};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
+use serenity::all::{GuildId, Http, RoleId, UserId};
 
 use crate::{
-    Config,
+    Config, DiscordBotConfig,
     admin::{AuthenticatedUser, Management, Staff},
     logging::log_external,
     player::AuthorizationHeader,
@@ -44,8 +45,10 @@ pub struct AuthentikConfig {
     /// eg: allowed_instances = ["cm13-live", "cm13-rp"]
     #[serde(default)]
     pub allowed_instances: Vec<String>,
-    /// Discourse integration configuration for looking up forum user IDs
+    /// discourse integration configuration for looking up forum user IDs
     pub discourse: Option<DiscourseConfig>,
+    /// webhook secret for authenticating incoming Authentik webhooks (user unlink events, etc.)
+    pub webhook_secret: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1854,5 +1857,243 @@ pub async fn get_discourse_user_id(
         ckey,
         discourse_user_id: discourse_user.id,
         discourse_username: discourse_user.username,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct UserUnlinkWebhook {
+    pub action: String,
+    pub unlinked: String,
+    pub user_username: String,
+    pub user_email: String,
+    pub discord_id: String,
+}
+
+/// Response for webhook endpoints
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde")]
+pub struct WebhookResponse {
+    pub success: bool,
+    pub message: String,
+}
+
+pub struct WebhookSecretHeader(pub String);
+
+#[rocket::async_trait]
+impl<'r> rocket::request::FromRequest<'r> for WebhookSecretHeader {
+    type Error = ();
+
+    async fn from_request(
+        request: &'r rocket::Request<'_>,
+    ) -> rocket::request::Outcome<Self, Self::Error> {
+        match request.headers().get_one("X-Webhook-Secret") {
+            Some(value) => {
+                rocket::request::Outcome::Success(WebhookSecretHeader(value.to_string()))
+            }
+            None => rocket::request::Outcome::Forward(Status::Unauthorized),
+        }
+    }
+}
+
+fn validate_webhook_secret(secret_header: &str, config: &AuthentikConfig) -> bool {
+    match &config.webhook_secret {
+        Some(configured_secret) => secret_header == configured_secret,
+        None => false,
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct RoleUpdateResult {
+    pub roles_added: Vec<String>,
+    pub roles_removed: Vec<String>,
+}
+
+async fn update_discord_roles_on_unlink(
+    discord_config: &DiscordBotConfig,
+    discord_id: &str,
+) -> Result<RoleUpdateResult, String> {
+    let http = Http::new(&discord_config.token);
+
+    let user_id: u64 = discord_id
+        .parse()
+        .map_err(|e| format!("Invalid Discord user ID '{}': {}", discord_id, e))?;
+    let user_id = UserId::new(user_id);
+
+    let mut result = RoleUpdateResult::default();
+
+    for (guild_id_str, role_config) in &discord_config.unlink_role_changes {
+        let guild_id: u64 = match guild_id_str.parse() {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!(
+                    "Warning: Invalid guild ID '{}' in config: {}",
+                    guild_id_str, e
+                );
+                continue;
+            }
+        };
+        let guild_id = GuildId::new(guild_id);
+
+        for role_id_str in &role_config.roles_to_add {
+            let role_id: u64 = match role_id_str.parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Invalid role ID '{}' in config: {}",
+                        role_id_str, e
+                    );
+                    continue;
+                }
+            };
+            let role_id = RoleId::new(role_id);
+
+            match http
+                .add_member_role(
+                    guild_id,
+                    user_id,
+                    role_id,
+                    Some("User unlinked account from Authentik"),
+                )
+                .await
+            {
+                Ok(()) => {
+                    result
+                        .roles_added
+                        .push(format!("{}:{}", guild_id_str, role_id_str));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to add role {} to user {} in guild {}: {}",
+                        role_id_str, discord_id, guild_id_str, e
+                    );
+                }
+            }
+        }
+
+        for role_id_str in &role_config.roles_to_remove {
+            let role_id: u64 = match role_id_str.parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Invalid role ID '{}' in config: {}",
+                        role_id_str, e
+                    );
+                    continue;
+                }
+            };
+            let role_id = RoleId::new(role_id);
+
+            match http
+                .remove_member_role(
+                    guild_id,
+                    user_id,
+                    role_id,
+                    Some("User unlinked account from Authentik"),
+                )
+                .await
+            {
+                Ok(()) => {
+                    result
+                        .roles_removed
+                        .push(format!("{}:{}", guild_id_str, role_id_str));
+                }
+                Err(e) => {
+                    // Log but don't fail - the user might not have the role or not be in the server
+                    eprintln!(
+                        "Warning: Failed to remove role {} from user {} in guild {}: {}",
+                        role_id_str, discord_id, guild_id_str, e
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+#[post("/Webhook/UserUnlinked", format = "json", data = "<payload>")]
+pub async fn webhook_user_unlinked(
+    webhook_secret: WebhookSecretHeader,
+    config: &State<Config>,
+    payload: Json<UserUnlinkWebhook>,
+) -> Result<Json<WebhookResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    if !validate_webhook_secret(&webhook_secret.0, authentik_config) {
+        return Err((
+            Status::Unauthorized,
+            Json(AuthentikError {
+                error: "unauthorized".to_string(),
+                message: "Invalid webhook secret".to_string(),
+            }),
+        ));
+    }
+
+    if payload.action != "user-unlinked" {
+        return Err((
+            Status::BadRequest,
+            Json(AuthentikError {
+                error: "invalid_action".to_string(),
+                message: format!("Unsupported action type: {}", payload.action),
+            }),
+        ));
+    }
+
+    let discord_config = config.discord_bot.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Discord bot is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let role_changes = update_discord_roles_on_unlink(discord_config, &payload.discord_id)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "role_update_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let _ = log_external(
+        config,
+        "Authentik Webhook: User Unlinked".to_string(),
+        format!(
+            "User '{}' ({}) unlinked their {} account. Added {} role(s): {:?}, Removed {} role(s): {:?}",
+            payload.user_username,
+            payload.user_email,
+            payload.unlinked,
+            role_changes.roles_added.len(),
+            role_changes.roles_added,
+            role_changes.roles_removed.len(),
+            role_changes.roles_removed
+        ),
+        true,
+    )
+    .await;
+
+    Ok(Json(WebhookResponse {
+        success: true,
+        message: format!(
+            "Processed unlink event for user '{}'. Added {} role(s), removed {} role(s).",
+            payload.user_username,
+            role_changes.roles_added.len(),
+            role_changes.roles_removed.len()
+        ),
     }))
 }

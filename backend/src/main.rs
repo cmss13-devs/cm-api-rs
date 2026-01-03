@@ -90,6 +90,22 @@ struct ApiAuthConfig {
     token: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct ServerRoleConfig {
+    #[serde(default)]
+    pub roles_to_add: Vec<String>,
+    #[serde(default)]
+    pub roles_to_remove: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DiscordBotConfig {
+    pub token: String,
+    /// mapping of server (guild) IDs to role configuration for unlink events
+    #[serde(default)]
+    pub unlink_role_changes: std::collections::HashMap<String, ServerRoleConfig>,
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(crate = "rocket::serde")]
 #[derive(Default)]
@@ -100,6 +116,7 @@ struct Config {
     cors: Option<CorsConfig>,
     authentik: Option<AuthentikConfig>,
     api_auth: Option<ApiAuthConfig>,
+    discord_bot: Option<DiscordBotConfig>,
 }
 
 #[derive(Database)]
@@ -256,6 +273,7 @@ async fn rocket() -> _ {
                 authentik::update_user_additional_titles,
                 authentik::get_admin_ranks_export,
                 authentik::get_discourse_user_id,
+                authentik::webhook_user_unlinked,
             ],
         )
         .mount(
