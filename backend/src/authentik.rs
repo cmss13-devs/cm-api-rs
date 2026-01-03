@@ -1862,6 +1862,7 @@ pub async fn get_discourse_user_id(
 
 #[derive(Debug, Deserialize)]
 #[serde(crate = "rocket::serde")]
+#[allow(dead_code)]
 pub struct UserUnlinkWebhook {
     pub action: String,
     pub unlinked: String,
@@ -2069,23 +2070,6 @@ pub async fn webhook_user_unlinked(
                 }),
             )
         })?;
-
-    let _ = log_external(
-        config,
-        "Authentik Webhook: User Unlinked".to_string(),
-        format!(
-            "User '{}' ({}) unlinked their {} account. Added {} role(s): {:?}, Removed {} role(s): {:?}",
-            payload.user_username,
-            payload.user_email,
-            payload.unlinked,
-            role_changes.roles_added.len(),
-            role_changes.roles_added,
-            role_changes.roles_removed.len(),
-            role_changes.roles_removed
-        ),
-        true,
-    )
-    .await;
 
     Ok(Json(WebhookResponse {
         success: true,
