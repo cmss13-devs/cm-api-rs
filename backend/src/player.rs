@@ -229,10 +229,19 @@ async fn get_discord_id_from_player_id(db: &mut MySqlConnection, id: i64) -> Opt
 #[get("/?<ckey>&<discord_id>")]
 pub async fn index(
     mut db: Connection<Cmdb>,
-    _admin: AuthenticatedUser<Staff>,
+    admin: Option<AuthenticatedUser<Staff>>,
+    config: &State<Config>,
+    auth_header: Option<AuthorizationHeader>,
     ckey: Option<String>,
     discord_id: Option<String>,
-) -> Option<Json<Player>> {
+) -> Result<Json<Player>, Status> {
+    // Check if authorized via Staff guard or Authorization header
+    let is_authorized = admin.is_some()
+        || validate_auth_header(auth_header.as_ref().map(|h| h.0.as_str()), config.inner());
+
+    if !is_authorized {
+        return Err(Status::Unauthorized);
+    }
     let user_result: Result<Player, sqlx::Error>;
 
     if let Some(ckey) = ckey {
@@ -247,7 +256,7 @@ pub async fn index(
             .await
         {
             Ok(search) => search.get("player_id"),
-            Err(_) => return None,
+            Err(_) => return Err(Status::NotFound),
         };
 
         user_result = query_as("SELECT * FROM players WHERE id = ?")
@@ -255,15 +264,15 @@ pub async fn index(
             .fetch_one(&mut **db)
             .await;
     } else {
-        return None;
+        return Err(Status::BadRequest);
     }
 
     let user = match user_result {
         Ok(user) => user,
-        Err(_) => return None,
+        Err(_) => return Err(Status::NotFound),
     };
 
-    Some(Json(user.add_metadata(&mut db).await))
+    Ok(Json(user.add_metadata(&mut db).await))
 }
 
 #[get("/<id>")]
