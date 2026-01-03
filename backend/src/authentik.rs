@@ -56,8 +56,8 @@ pub struct UserGroupRequest {
 }
 
 #[derive(Debug, Deserialize)]
-struct AuthentikUserSearchResponse {
-    results: Vec<AuthentikUser>,
+pub struct AuthentikUserSearchResponse {
+    pub results: Vec<AuthentikUser>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,12 +82,12 @@ struct AuthentikGroup {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-struct AuthentikUser {
-    pk: i64,
-    uid: String,
-    username: String,
+pub struct AuthentikUser {
+    pub pk: i64,
+    pub uid: String,
+    pub username: String,
     #[serde(default)]
-    attributes: serde_json::Value,
+    pub attributes: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -455,10 +455,21 @@ async fn get_user_by_ckey(
     config: &AuthentikConfig,
     ckey: &str,
 ) -> Result<AuthentikUser, String> {
+    get_user_by_attribute(client, config, "ckey", ckey).await
+}
+
+/// find an Authentik user by a specific attribute key and value
+pub async fn get_user_by_attribute(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    attribute_key: &str,
+    attribute_value: &str,
+) -> Result<AuthentikUser, String> {
     let url = format!(
-        "{}/api/v3/core/users/?attributes={{\"ckey\": \"{}\"}}",
+        "{}/api/v3/core/users/?attributes={{\"{}\": \"{}\"}}",
         config.base_url.trim_end_matches('/'),
-        ckey
+        attribute_key,
+        attribute_value
     );
 
     let response = client
@@ -480,13 +491,16 @@ async fn get_user_by_ckey(
         .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
 
     if search_response.results.is_empty() {
-        return Err(format!("No user found with ckey '{}'", ckey));
+        return Err(format!(
+            "No user found with {} '{}'",
+            attribute_key, attribute_value
+        ));
     }
 
     if search_response.results.len() > 1 {
         return Err(format!(
-            "Multiple users found with ckey '{}', expected exactly one",
-            ckey
+            "Multiple users found with {} '{}', expected exactly one",
+            attribute_key, attribute_value
         ));
     }
 

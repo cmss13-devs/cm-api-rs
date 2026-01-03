@@ -28,6 +28,7 @@ mod auth;
 mod authentik;
 mod byond;
 mod connections;
+mod discord;
 mod logging;
 mod new_players;
 mod player;
@@ -256,6 +257,10 @@ async fn rocket() -> _ {
                 authentik::get_admin_ranks_export,
                 authentik::get_discourse_user_id,
             ],
+        )
+        .mount(
+            format!("{}/Discord", base_url),
+            routes![discord::get_user_by_discord],
         )
         .mount(
             "/",
