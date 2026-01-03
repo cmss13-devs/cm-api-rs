@@ -2176,38 +2176,40 @@ async fn update_discord_roles_on_unlink(
             }
         }
 
-        for role_id_str in role_config.whitelist_roles.values() {
-            let role_id: u64 = match role_id_str.parse() {
-                Ok(id) => id,
-                Err(e) => {
-                    eprintln!(
-                        "Warning: Invalid whitelist role ID '{}' in config: {}",
-                        role_id_str, e
-                    );
-                    continue;
-                }
-            };
-            let role_id = RoleId::new(role_id);
+        for role_ids in role_config.whitelist_roles.values() {
+            for role_id_str in role_ids {
+                let role_id: u64 = match role_id_str.parse() {
+                    Ok(id) => id,
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Invalid whitelist role ID '{}' in config: {}",
+                            role_id_str, e
+                        );
+                        continue;
+                    }
+                };
+                let role_id = RoleId::new(role_id);
 
-            match http
-                .remove_member_role(
-                    guild_id,
-                    user_id,
-                    role_id,
-                    Some("User unlinked account - removing whitelist role"),
-                )
-                .await
-            {
-                Ok(()) => {
-                    result
-                        .roles_removed
-                        .push(format!("{}:{} (whitelist)", guild_id_str, role_id_str));
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Warning: Failed to remove whitelist role {} from user {} in guild {}: {}",
-                        role_id_str, discord_id, guild_id_str, e
-                    );
+                match http
+                    .remove_member_role(
+                        guild_id,
+                        user_id,
+                        role_id,
+                        Some("User unlinked account - removing whitelist role"),
+                    )
+                    .await
+                {
+                    Ok(()) => {
+                        result
+                            .roles_removed
+                            .push(format!("{}:{} (whitelist)", guild_id_str, role_id_str));
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Failed to remove whitelist role {} from user {} in guild {}: {}",
+                            role_id_str, discord_id, guild_id_str, e
+                        );
+                    }
                 }
             }
         }

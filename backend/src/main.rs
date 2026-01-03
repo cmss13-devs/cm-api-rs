@@ -102,9 +102,9 @@ pub struct ServerRoleConfig {
     pub minimum_playtime_minutes: Option<i32>,
     /// mapping of whitelist status strings (e.g., "WHITELIST_SYNTHETIC") to role IDs.
     /// when a player has a whitelist_status containing one of these strings (separated by |),
-    /// the corresponding role will be added on link and removed on unlink.
+    /// the corresponding roles will be added on link and removed on unlink.
     #[serde(default)]
-    pub whitelist_roles: std::collections::HashMap<String, String>,
+    pub whitelist_roles: std::collections::HashMap<String, Vec<String>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

@@ -86,8 +86,8 @@ pub fn resolve_whitelist_roles(
     role_config
         .whitelist_roles
         .iter()
-        .filter(|(whitelist_name, _role_id)| player_whitelists.contains(&whitelist_name.as_str()))
-        .map(|(_whitelist_name, role_id)| role_id.clone())
+        .filter(|(whitelist_name, _role_ids)| player_whitelists.contains(&whitelist_name.as_str()))
+        .flat_map(|(_whitelist_name, role_ids)| role_ids.clone())
         .collect()
 }
 
