@@ -1,20 +1,26 @@
-# Stage 1: Build frontend
 FROM node:20-alpine AS frontend-builder
 WORKDIR /app
 
-COPY frontend/ .
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
 
+COPY frontend/ .
 ARG VITE_API_PATH=/api
 ENV VITE_API_PATH=${VITE_API_PATH}
-RUN npm ci && npm run build
+RUN npm run build
 
-# Stage 2: Build backend
 FROM rust:1.89 AS backend-builder
 WORKDIR /usr/src/app
-COPY backend/src/ src/
+
 COPY backend/Cargo.toml Cargo.toml
 COPY backend/Cargo.lock Cargo.lock
-RUN cargo install --path .
+
+RUN mkdir src && echo "fn main() {}" > src/main.rs
+RUN cargo build --release
+RUN rm -rf src
+
+COPY backend/src/ src/
+RUN touch src/main.rs && cargo install --path .
 
 # Stage 3: Runtime
 FROM debian:bookworm-slim
