@@ -89,8 +89,8 @@ pub fn resolve_role_changes(
     whitelist_status: Option<&str>,
     role_config: &ServerRoleConfig,
 ) -> RoleChanges {
-    let mut roles_to_add = role_config.roles_to_add.clone();
-    let mut roles_to_remove = role_config.roles_to_remove.clone();
+    let mut roles_to_add = role_config.roles_to_remove.clone();
+    let mut roles_to_remove = role_config.roles_to_add.clone();
 
     let all_whitelist_roles: Vec<String> = role_config
         .whitelist_roles
