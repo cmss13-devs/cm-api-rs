@@ -4,7 +4,7 @@ use serde::Serialize;
 use sqlx::{Row, query};
 
 use crate::{
-    Cmdb, Config,
+    Cmdb, Config, ServerRoleConfig,
     authentik::{check_verification_eligibility, get_user_by_attribute, get_user_oauth_sources},
     player::{AuthorizationHeader, validate_auth_header},
 };
@@ -23,6 +23,9 @@ pub struct DiscordUserResponse {
     pub ckey: String,
     pub discord_id: String,
     pub authentik_username: Option<String>,
+    /// Role IDs that should be added based on the player's whitelist status
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub whitelist_roles: Vec<String>,
 }
 
 async fn get_ckey_by_discord_id_from_db(
@@ -53,6 +56,39 @@ async fn get_ckey_by_discord_id_from_db(
     };
 
     Ok(ckey)
+}
+
+pub async fn get_whitelist_status_by_ckey(db: &mut Connection<Cmdb>, ckey: &str) -> Option<String> {
+    match query("SELECT whitelist_status FROM players WHERE ckey = ?")
+        .bind(ckey)
+        .fetch_one(&mut ***db)
+        .await
+    {
+        Ok(row) => row.get::<Option<String>, _>("whitelist_status"),
+        Err(_) => None,
+    }
+}
+
+pub fn resolve_whitelist_roles(
+    whitelist_status: Option<&str>,
+    role_config: &ServerRoleConfig,
+) -> Vec<String> {
+    let Some(status) = whitelist_status else {
+        return Vec::new();
+    };
+
+    if status.is_empty() {
+        return Vec::new();
+    }
+
+    let player_whitelists: Vec<&str> = status.split('|').map(|s| s.trim()).collect();
+
+    role_config
+        .whitelist_roles
+        .iter()
+        .filter(|(whitelist_name, _role_id)| player_whitelists.contains(&whitelist_name.as_str()))
+        .map(|(_whitelist_name, role_id)| role_id.clone())
+        .collect()
 }
 
 #[get("/User/<discord_id>")]
@@ -91,6 +127,7 @@ pub async fn get_user_by_discord(
                     ckey,
                     discord_id,
                     authentik_username: Some(authentik_user.username),
+                    whitelist_roles: Vec::new(),
                 }));
             }
         }
@@ -102,6 +139,7 @@ pub async fn get_user_by_discord(
             ckey,
             discord_id,
             authentik_username: None,
+            whitelist_roles: Vec::new(),
         })),
         Err(e) => Err((
             Status::NotFound,
@@ -182,11 +220,20 @@ pub async fn check_verified(
 
                 match eligibility.server_eligibility.get(&guild_id) {
                     Some(true) => {
+                        let ckey_str = eligibility.ckey.clone().unwrap_or_default();
+                        let whitelist_status =
+                            get_whitelist_status_by_ckey(&mut db, &ckey_str).await;
+                        let role_config =
+                            discord_config.unlink_role_changes.get(&guild_id).unwrap();
+                        let whitelist_roles =
+                            resolve_whitelist_roles(whitelist_status.as_deref(), role_config);
+
                         return Ok(Json(DiscordUserResponse {
                             source: "authentik".to_string(),
-                            ckey: eligibility.ckey.unwrap_or_default(),
+                            ckey: ckey_str,
                             discord_id,
                             authentik_username: Some(authentik_user.username),
+                            whitelist_roles,
                         }));
                     }
                     Some(false) | None => {
@@ -210,12 +257,19 @@ pub async fn check_verified(
     }
 
     match get_ckey_by_discord_id_from_db(&mut db, &discord_id).await {
-        Ok(ckey) => Ok(Json(DiscordUserResponse {
-            source: "database".to_string(),
-            ckey,
-            discord_id,
-            authentik_username: None,
-        })),
+        Ok(ckey) => {
+            let whitelist_status = get_whitelist_status_by_ckey(&mut db, &ckey).await;
+            let role_config = discord_config.unlink_role_changes.get(&guild_id).unwrap();
+            let whitelist_roles = resolve_whitelist_roles(whitelist_status.as_deref(), role_config);
+
+            Ok(Json(DiscordUserResponse {
+                source: "database".to_string(),
+                ckey,
+                discord_id,
+                authentik_username: None,
+                whitelist_roles,
+            }))
+        }
         Err(e) => Err((
             Status::NotFound,
             Json(DiscordError {

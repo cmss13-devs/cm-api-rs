@@ -9,6 +9,7 @@ use serenity::all::{GuildId, Http, RoleId, UserId};
 use crate::{
     Cmdb, Config, DiscordBotConfig, ServerRoleConfig,
     admin::{AuthenticatedUser, Management, Staff},
+    discord::{get_whitelist_status_by_ckey, resolve_whitelist_roles},
     logging::log_external,
     player::{AuthorizationHeader, query_total_playtime_minutes},
 };
@@ -2174,6 +2175,42 @@ async fn update_discord_roles_on_unlink(
                 }
             }
         }
+
+        for role_id_str in role_config.whitelist_roles.values() {
+            let role_id: u64 = match role_id_str.parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Invalid whitelist role ID '{}' in config: {}",
+                        role_id_str, e
+                    );
+                    continue;
+                }
+            };
+            let role_id = RoleId::new(role_id);
+
+            match http
+                .remove_member_role(
+                    guild_id,
+                    user_id,
+                    role_id,
+                    Some("User unlinked account - removing whitelist role"),
+                )
+                .await
+            {
+                Ok(()) => {
+                    result
+                        .roles_removed
+                        .push(format!("{}:{} (whitelist)", guild_id_str, role_id_str));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to remove whitelist role {} from user {} in guild {}: {}",
+                        role_id_str, discord_id, guild_id_str, e
+                    );
+                }
+            }
+        }
     }
 
     Ok(result)
@@ -2183,6 +2220,7 @@ async fn update_discord_roles_on_link(
     discord_config: &DiscordBotConfig,
     discord_id: &str,
     server_eligibility: &HashMap<String, bool>,
+    whitelist_status: Option<&str>,
 ) -> Result<RoleUpdateResult, String> {
     let http = Http::new(&discord_config.token);
 
@@ -2286,6 +2324,43 @@ async fn update_discord_roles_on_link(
                 Err(e) => {
                     eprintln!(
                         "Warning: Failed to remove role {} from user {} in guild {}: {}",
+                        role_id_str, discord_id, guild_id_str, e
+                    );
+                }
+            }
+        }
+
+        let whitelist_role_ids = resolve_whitelist_roles(whitelist_status, role_config);
+        for role_id_str in &whitelist_role_ids {
+            let role_id: u64 = match role_id_str.parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Invalid whitelist role ID '{}' in config: {}",
+                        role_id_str, e
+                    );
+                    continue;
+                }
+            };
+            let role_id = RoleId::new(role_id);
+
+            match http
+                .add_member_role(
+                    guild_id,
+                    user_id,
+                    role_id,
+                    Some("User has whitelist status"),
+                )
+                .await
+            {
+                Ok(()) => {
+                    result
+                        .roles_added
+                        .push(format!("{}:{} (whitelist)", guild_id_str, role_id_str));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to add whitelist role {} to user {} in guild {}: {}",
                         role_id_str, discord_id, guild_id_str, e
                     );
                 }
@@ -2436,18 +2511,27 @@ pub async fn webhook_user_linked(
         )
     })?;
 
-    let role_changes =
-        update_discord_roles_on_link(discord_config, discord_id, &eligibility.server_eligibility)
-            .await
-            .map_err(|e| {
-                (
-                    Status::InternalServerError,
-                    Json(AuthentikError {
-                        error: "role_update_failed".to_string(),
-                        message: e,
-                    }),
-                )
-            })?;
+    let whitelist_status = match eligibility.ckey.as_deref() {
+        Some(ckey) => get_whitelist_status_by_ckey(&mut db, ckey).await,
+        None => None,
+    };
+
+    let role_changes = update_discord_roles_on_link(
+        discord_config,
+        discord_id,
+        &eligibility.server_eligibility,
+        whitelist_status.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "role_update_failed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
 
     let ineligible_servers: Vec<_> = eligibility
         .server_eligibility

@@ -96,10 +96,15 @@ pub struct ServerRoleConfig {
     pub roles_to_add: Vec<String>,
     #[serde(default)]
     pub roles_to_remove: Vec<String>,
-    /// Minimum playtime in minutes required to be eligible for role changes.
-    /// If the user has a database discord link, this requirement is bypassed.
+    /// minimum playtime in minutes required to be eligible for role changes.
+    /// if the user has a database discord link, this requirement is bypassed.
     #[serde(default)]
     pub minimum_playtime_minutes: Option<i32>,
+    /// mapping of whitelist status strings (e.g., "WHITELIST_SYNTHETIC") to role IDs.
+    /// when a player has a whitelist_status containing one of these strings (separated by |),
+    /// the corresponding role will be added on link and removed on unlink.
+    #[serde(default)]
+    pub whitelist_roles: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
