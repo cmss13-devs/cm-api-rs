@@ -31,7 +31,7 @@ impl<'r> FromRequest<'r> for AuthorizationHeader {
 
 /// Validates the Authorization header against the configured API auth token.
 /// Returns true if the header is valid, false otherwise.
-fn validate_auth_header(auth_header: Option<&str>, config: &Config) -> bool {
+pub fn validate_auth_header(auth_header: Option<&str>, config: &Config) -> bool {
     let Some(auth_value) = auth_header else {
         return false;
     };

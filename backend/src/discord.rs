@@ -5,8 +5,8 @@ use sqlx::{Row, query};
 
 use crate::{
     Cmdb, Config,
-    admin::{AuthenticatedUser, Staff},
     authentik::get_user_by_attribute,
+    player::{AuthorizationHeader, validate_auth_header},
 };
 
 #[derive(Debug, Serialize)]
@@ -57,12 +57,21 @@ async fn get_ckey_by_discord_id_from_db(
 
 #[get("/User/<discord_id>")]
 pub async fn get_user_by_discord(
-    _user: AuthenticatedUser<Staff>,
+    auth_header: AuthorizationHeader,
     mut db: Connection<Cmdb>,
     config: &State<Config>,
     discord_id: String,
 ) -> Result<Json<DiscordUserResponse>, (Status, Json<DiscordError>)> {
-    // Try Authentik first if configured
+    if !validate_auth_header(Some(auth_header.0.as_str()), config) {
+        return Err((
+            Status::Unauthorized,
+            Json(DiscordError {
+                error: "unauthorized".to_string(),
+                message: "Not authorized to access this resource.".to_string(),
+            }),
+        ));
+    }
+
     if let Some(authentik_config) = config.authentik.as_ref() {
         let http_client = reqwest::Client::new();
 

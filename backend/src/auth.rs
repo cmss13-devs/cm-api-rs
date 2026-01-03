@@ -396,7 +396,12 @@ pub async fn callback(
         .unwrap();
 
     // Check if user has required admin group
-    if !oidc.config.staff_groups.iter().any(|x| oidc.config.staff_groups.contains(x)) {
+    if !oidc
+        .config
+        .staff_groups
+        .iter()
+        .any(|x| oidc.config.staff_groups.contains(x))
+    {
         return Err((
             Status::Forbidden,
             Json(AuthError {
@@ -495,8 +500,6 @@ async fn fetch_user_groups(
         .json()
         .await
         .map_err(|e| format!("Failed to parse userinfo JSON: {}", e))?;
-
-    eprintln!("JSON response: {:?}", &json);
 
     // Extract groups from the JSON response
     // Authentik typically returns groups as an array of strings
