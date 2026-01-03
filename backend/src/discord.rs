@@ -154,109 +154,59 @@ pub async fn check_verified(
     if let Some(authentik_config) = config.authentik.as_ref() {
         let http_client = reqwest::Client::new();
 
-        eprintln!(
-            "[check_verified] Looking up Authentik user with discord_id='{}'",
-            discord_id
-        );
-
-        match get_user_by_attribute(&http_client, authentik_config, "discord_id", &discord_id).await
+        if let Ok(authentik_user) =
+            get_user_by_attribute(&http_client, authentik_config, "discord_id", &discord_id).await
         {
-            Ok(authentik_user) => {
-                eprintln!(
-                    "[check_verified] Found Authentik user: pk={}, username='{}', attributes={:?}",
-                    authentik_user.pk, authentik_user.username, authentik_user.attributes
-                );
+            let ckey = authentik_user
+                .attributes
+                .get("ckey")
+                .and_then(|v| v.as_str())
+                .map(String::from);
 
-                let ckey = authentik_user
-                    .attributes
-                    .get("ckey")
-                    .and_then(|v| v.as_str())
-                    .map(String::from);
+            if let Ok(oauth_sources) =
+                get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk).await
+            {
+                let linked_sources: Vec<String> = oauth_sources
+                    .iter()
+                    .map(|s| s.source.slug.clone())
+                    .collect();
 
-                eprintln!("[check_verified] Extracted ckey: {:?}", ckey);
+                let eligibility = check_verification_eligibility(
+                    &mut db,
+                    &linked_sources,
+                    ckey.as_deref(),
+                    Some(&discord_id),
+                    discord_config,
+                )
+                .await;
 
-                match get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk)
-                    .await
-                {
-                    Ok(oauth_sources) => {
-                        let linked_sources: Vec<String> = oauth_sources
-                            .iter()
-                            .map(|s| s.source.slug.clone())
-                            .collect();
-
-                        eprintln!(
-                            "[check_verified] OAuth sources for user: {:?}",
-                            linked_sources
-                        );
-
-                        let eligibility = check_verification_eligibility(
-                            &mut db,
-                            &linked_sources,
-                            ckey.as_deref(),
-                            Some(&discord_id),
-                            discord_config,
-                        )
-                        .await;
-
-                        eprintln!(
-                            "[check_verified] Eligibility result: reason={:?}, ckey={:?}, playtime={:?}, server_eligibility={:?}",
-                            eligibility.reason,
-                            eligibility.ckey,
-                            eligibility.total_playtime_minutes,
-                            eligibility.server_eligibility
-                        );
-
-                        match eligibility.server_eligibility.get(&guild_id) {
-                            Some(true) => {
-                                eprintln!(
-                                    "[check_verified] User is eligible for guild '{}'",
-                                    guild_id
-                                );
-                                return Ok(Json(DiscordUserResponse {
-                                    source: "authentik".to_string(),
-                                    ckey: eligibility.ckey.unwrap_or_default(),
-                                    discord_id,
-                                    authentik_username: Some(authentik_user.username),
-                                }));
-                            }
-                            Some(false) | None => {
-                                let reason = eligibility.reason.unwrap_or_else(|| {
-                                    format!(
-                                        "User does not meet verification requirements for guild '{}'",
-                                        guild_id
-                                    )
-                                });
-                                eprintln!(
-                                    "[check_verified] User is NOT eligible for guild '{}': {}",
-                                    guild_id, reason
-                                );
-                                return Err((
-                                    Status::Forbidden,
-                                    Json(DiscordError {
-                                        error: "not_eligible".to_string(),
-                                        message: reason,
-                                    }),
-                                ));
-                            }
-                        }
+                match eligibility.server_eligibility.get(&guild_id) {
+                    Some(true) => {
+                        return Ok(Json(DiscordUserResponse {
+                            source: "authentik".to_string(),
+                            ckey: eligibility.ckey.unwrap_or_default(),
+                            discord_id,
+                            authentik_username: Some(authentik_user.username),
+                        }));
                     }
-                    Err(e) => {
-                        eprintln!(
-                            "[check_verified] Failed to get OAuth sources for user pk={}: {}",
-                            authentik_user.pk, e
-                        );
+                    Some(false) | None => {
+                        let reason = eligibility.reason.unwrap_or_else(|| {
+                            format!(
+                                "User does not meet verification requirements for guild '{}'",
+                                guild_id
+                            )
+                        });
+                        return Err((
+                            Status::Forbidden,
+                            Json(DiscordError {
+                                error: "not_eligible".to_string(),
+                                message: reason,
+                            }),
+                        ));
                     }
                 }
             }
-            Err(e) => {
-                eprintln!(
-                    "[check_verified] Failed to find Authentik user with discord_id='{}': {}",
-                    discord_id, e
-                );
-            }
         }
-    } else {
-        eprintln!("[check_verified] Authentik not configured, skipping Authentik lookup");
     }
 
     match get_ckey_by_discord_id_from_db(&mut db, &discord_id).await {

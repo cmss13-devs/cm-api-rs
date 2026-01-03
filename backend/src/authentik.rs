@@ -580,11 +580,6 @@ pub async fn get_user_oauth_sources(
         user_pk
     );
 
-    eprintln!(
-        "[get_user_oauth_sources] Fetching OAuth sources for user pk={} from: {}",
-        user_pk, url
-    );
-
     let response = client
         .get(&url)
         .header("Authorization", format!("Bearer {}", config.token))
@@ -592,36 +587,16 @@ pub async fn get_user_oauth_sources(
         .await
         .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
 
-    let status = response.status();
-    eprintln!("[get_user_oauth_sources] Response status: {}", status);
-
-    if !status.is_success() {
+    if !response.status().is_success() {
+        let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        eprintln!("[get_user_oauth_sources] Error response body: {}", body);
         return Err(format!("Authentik API returned error {}: {}", status, body));
     }
 
-    // Get the response body as text first for debugging
-    let body_text = response
-        .text()
+    let connections_response: UserOAuthSourceConnectionsResponse = response
+        .json()
         .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?;
-
-    eprintln!("[get_user_oauth_sources] Response body: {}", body_text);
-
-    let connections_response: UserOAuthSourceConnectionsResponse = serde_json::from_str(&body_text)
-        .map_err(|e| {
-            eprintln!(
-                "[get_user_oauth_sources] Failed to parse JSON. Error: {}. Body was: {}",
-                e, body_text
-            );
-            format!("Failed to parse Authentik response: {}", e)
-        })?;
-
-    eprintln!(
-        "[get_user_oauth_sources] Successfully parsed {} OAuth source connections",
-        connections_response.results.len()
-    );
+        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
 
     Ok(connections_response.results)
 }
