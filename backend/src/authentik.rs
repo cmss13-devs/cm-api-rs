@@ -1606,7 +1606,7 @@ fn validate_auth_header(auth_header: &str, config: &Config) -> bool {
     token == api_auth.token
 }
 
-/// GET /Authentik/AdminRanksExport - export all users with admin ranks and their groups
+/// GET /Authentik/Admins - export all users with admin ranks and their groups
 #[get("/Admins")]
 pub async fn get_admin_ranks_export(
     auth_header: AuthorizationHeader,
@@ -1677,12 +1677,13 @@ pub async fn get_admin_ranks_export(
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty());
 
-                let (display_name, additional_title) = match (&group.display_name, additional_titles) {
-                    (Some(dn), Some(at)) => (dn.clone(), Some(at.to_string())),
-                    (Some(dn), None) => (dn.clone(), None),
-                    (None, Some(at)) => (at.to_string(), None),
-                    (None, None) => (group.name.clone(), None),
-                };
+                let (display_name, additional_title) =
+                    match (&group.display_name, additional_titles) {
+                        (Some(dn), Some(at)) => (dn.clone(), Some(at.to_string())),
+                        (Some(dn), None) => (dn.clone(), None),
+                        (None, Some(at)) => (at.to_string(), None),
+                        (None, None) => (group.name.clone(), None),
+                    };
 
                 users_map.insert(
                     ckey.clone(),
