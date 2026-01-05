@@ -196,7 +196,7 @@ pub struct UpdateAdditionalTitlesRequest {
 pub struct AdminRanksUser {
     pub ckey: String,
     pub primary_group: String,
-    pub display_name: Option<String>,
+    pub display_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_title: Option<String>,
 }
@@ -1678,10 +1678,10 @@ pub async fn get_admin_ranks_export(
                     .filter(|s| !s.is_empty());
 
                 let (display_name, additional_title) = match (&group.display_name, additional_titles) {
-                    (Some(dn), Some(at)) => (Some(dn.clone()), Some(at.to_string())),
-                    (Some(dn), None) => (Some(dn.clone()), None),
-                    (None, Some(at)) => (Some(at.to_string()), None),
-                    (None, None) => (None, None),
+                    (Some(dn), Some(at)) => (dn.clone(), Some(at.to_string())),
+                    (Some(dn), None) => (dn.clone(), None),
+                    (None, Some(at)) => (at.to_string(), None),
+                    (None, None) => (group.name.clone(), None),
                 };
 
                 users_map.insert(
