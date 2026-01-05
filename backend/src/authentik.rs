@@ -1272,7 +1272,7 @@ pub async fn get_user_additional_titles(
 /// POST /Authentik/UserAdditionalTitles - update the additional_titles attribute for a user
 #[post("/UserAdditionalTitles", format = "json", data = "<request>")]
 pub async fn update_user_additional_titles(
-    user: AuthenticatedUser<Staff>,
+    user: AuthenticatedUser<Management>,
     config: &State<Config>,
     request: Json<UpdateAdditionalTitlesRequest>,
 ) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
