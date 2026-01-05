@@ -1677,8 +1677,11 @@ pub async fn get_admin_ranks_export(
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty());
 
+                let display_name_opt = group.display_name.as_ref().filter(|s| !s.is_empty());
+                let additional_titles_opt = additional_titles.as_ref().filter(|s| !s.is_empty());
+
                 let (display_name, additional_title) =
-                    match (&group.display_name, additional_titles) {
+                    match (display_name_opt, additional_titles_opt) {
                         (Some(dn), Some(at)) => (dn.clone(), Some(at.to_string())),
                         (Some(dn), None) => (dn.clone(), None),
                         (None, Some(at)) => (at.to_string(), None),
