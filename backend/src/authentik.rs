@@ -2041,7 +2041,7 @@ pub async fn check_verification_eligibility(
     let mut all_servers_eligible = true;
     let mut ineligible_servers: Vec<String> = Vec::new();
 
-    for (guild_id, role_config) in &discord_config.unlink_role_changes {
+    for (guild_id, role_config) in &discord_config.link_role_changes {
         let server_eligible = check_server_eligibility(&result, role_config);
         result
             .server_eligibility
@@ -2094,7 +2094,7 @@ async fn update_discord_roles_on_unlink(
 
     let mut result = RoleUpdateResult::default();
 
-    for (guild_id_str, role_config) in &discord_config.unlink_role_changes {
+    for (guild_id_str, role_config) in &discord_config.link_role_changes {
         let guild_id: u64 = match guild_id_str.parse() {
             Ok(id) => id,
             Err(e) => {
@@ -2107,43 +2107,8 @@ async fn update_discord_roles_on_unlink(
         };
         let guild_id = GuildId::new(guild_id);
 
+        // Inverse logic: on unlink, remove roles that would be added on link
         for role_id_str in &role_config.roles_to_add {
-            let role_id: u64 = match role_id_str.parse() {
-                Ok(id) => id,
-                Err(e) => {
-                    eprintln!(
-                        "Warning: Invalid role ID '{}' in config: {}",
-                        role_id_str, e
-                    );
-                    continue;
-                }
-            };
-            let role_id = RoleId::new(role_id);
-
-            match http
-                .add_member_role(
-                    guild_id,
-                    user_id,
-                    role_id,
-                    Some("User unlinked account from Authentik"),
-                )
-                .await
-            {
-                Ok(()) => {
-                    result
-                        .roles_added
-                        .push(format!("{}:{}", guild_id_str, role_id_str));
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Warning: Failed to add role {} to user {} in guild {}: {}",
-                        role_id_str, discord_id, guild_id_str, e
-                    );
-                }
-            }
-        }
-
-        for role_id_str in &role_config.roles_to_remove {
             let role_id: u64 = match role_id_str.parse() {
                 Ok(id) => id,
                 Err(e) => {
@@ -2173,6 +2138,43 @@ async fn update_discord_roles_on_unlink(
                 Err(e) => {
                     eprintln!(
                         "Warning: Failed to remove role {} from user {} in guild {}: {}",
+                        role_id_str, discord_id, guild_id_str, e
+                    );
+                }
+            }
+        }
+
+        // Inverse logic: on unlink, add roles that would be removed on link
+        for role_id_str in &role_config.roles_to_remove {
+            let role_id: u64 = match role_id_str.parse() {
+                Ok(id) => id,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Invalid role ID '{}' in config: {}",
+                        role_id_str, e
+                    );
+                    continue;
+                }
+            };
+            let role_id = RoleId::new(role_id);
+
+            match http
+                .add_member_role(
+                    guild_id,
+                    user_id,
+                    role_id,
+                    Some("User unlinked account from Authentik"),
+                )
+                .await
+            {
+                Ok(()) => {
+                    result
+                        .roles_added
+                        .push(format!("{}:{}", guild_id_str, role_id_str));
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to add role {} to user {} in guild {}: {}",
                         role_id_str, discord_id, guild_id_str, e
                     );
                 }
@@ -2236,7 +2238,7 @@ async fn update_discord_roles_on_link(
 
     let mut result = RoleUpdateResult::default();
 
-    for (guild_id_str, role_config) in &discord_config.unlink_role_changes {
+    for (guild_id_str, role_config) in &discord_config.link_role_changes {
         // Skip servers where user is not eligible
         if !server_eligibility
             .get(guild_id_str)
@@ -2262,8 +2264,8 @@ async fn update_discord_roles_on_link(
         };
         let guild_id = GuildId::new(guild_id);
 
-        // Inverse logic: add roles that would be removed on unlink
-        for role_id_str in &role_config.roles_to_remove {
+        // Direct logic: on link, add roles_to_add
+        for role_id_str in &role_config.roles_to_add {
             let role_id: u64 = match role_id_str.parse() {
                 Ok(id) => id,
                 Err(e) => {
@@ -2299,7 +2301,8 @@ async fn update_discord_roles_on_link(
             }
         }
 
-        for role_id_str in &role_config.roles_to_add {
+        // Direct logic: on link, remove roles_to_remove
+        for role_id_str in &role_config.roles_to_remove {
             let role_id: u64 = match role_id_str.parse() {
                 Ok(id) => id,
                 Err(e) => {

@@ -91,9 +91,9 @@ pub fn resolve_role_changes(
     is_linked: bool,
 ) -> RoleChanges {
     let (mut roles_to_add, mut roles_to_remove) = if is_linked {
-        (role_config.roles_to_remove.clone(), role_config.roles_to_add.clone())
-    } else {
         (role_config.roles_to_add.clone(), role_config.roles_to_remove.clone())
+    } else {
+        (role_config.roles_to_remove.clone(), role_config.roles_to_add.clone())
     };
 
     let all_whitelist_roles: Vec<String> = role_config
@@ -251,7 +251,7 @@ pub async fn check_verified(
         )
     })?;
 
-    if !discord_config.unlink_role_changes.contains_key(&guild_id) {
+    if !discord_config.link_role_changes.contains_key(&guild_id) {
         return Err((
             Status::BadRequest,
             Json(DiscordError {
@@ -296,7 +296,7 @@ pub async fn check_verified(
                         let whitelist_status =
                             get_whitelist_status_by_ckey(&mut db, &ckey_str).await;
                         let role_config =
-                            discord_config.unlink_role_changes.get(&guild_id).unwrap();
+                            discord_config.link_role_changes.get(&guild_id).unwrap();
                         let role_changes =
                             resolve_role_changes(whitelist_status.as_deref(), role_config, true);
 
@@ -332,7 +332,7 @@ pub async fn check_verified(
     match get_ckey_by_discord_id_from_db(&mut db, &discord_id).await {
         Ok(ckey) => {
             let whitelist_status = get_whitelist_status_by_ckey(&mut db, &ckey).await;
-            let role_config = discord_config.unlink_role_changes.get(&guild_id).unwrap();
+            let role_config = discord_config.link_role_changes.get(&guild_id).unwrap();
             let role_changes = resolve_role_changes(whitelist_status.as_deref(), role_config, true);
 
             Ok(Json(VerifiedUserResponse {
@@ -345,8 +345,8 @@ pub async fn check_verified(
             }))
         }
         Err(_) => {
-            // User not found - return unlink role changes as if they had delinked
-            let role_config = discord_config.unlink_role_changes.get(&guild_id).unwrap();
+            // User not found - return role changes as if they had unlinked
+            let role_config = discord_config.link_role_changes.get(&guild_id).unwrap();
             let role_changes = resolve_role_changes(None, role_config, false);
 
             Ok(Json(VerifiedUserResponse {

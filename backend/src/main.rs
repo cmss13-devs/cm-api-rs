@@ -110,10 +110,10 @@ pub struct ServerRoleConfig {
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct DiscordBotConfig {
     pub token: String,
-    /// mapping of server (guild) IDs to role configuration for unlink events
-    /// on link events, the inverse is applied (roles_to_add are removed, roles_to_remove are added)
+    /// mapping of server (guild) IDs to role configuration for link events
+    /// on unlink events, the inverse is applied (roles_to_add are removed, roles_to_remove are added)
     #[serde(default)]
-    pub unlink_role_changes: std::collections::HashMap<String, ServerRoleConfig>,
+    pub link_role_changes: std::collections::HashMap<String, ServerRoleConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
