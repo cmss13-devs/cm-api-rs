@@ -1651,8 +1651,9 @@ pub async fn get_admin_ranks_export(
         groups_map.insert(group.name.clone(), group.admin_ranks.clone());
     }
 
-    let mut users_map: HashMap<String, AdminRanksUser> = HashMap::new();
-    let mut user_max_priority: HashMap<String, i64> = HashMap::new();
+    // Collect all groups for each user, keyed by ckey
+    let mut user_groups: HashMap<String, Vec<&GroupWithPriority>> = HashMap::new();
+    let mut user_additional_titles: HashMap<String, Option<String>> = HashMap::new();
 
     for group in &groups_with_ranks {
         for user in &group.users {
@@ -1665,44 +1666,70 @@ pub async fn get_admin_ranks_export(
                 continue;
             };
 
-            let should_update = match user_max_priority.get(&ckey) {
-                None => true,
-                Some(&existing_priority) => group.priority > existing_priority,
-            };
+            user_groups.entry(ckey.clone()).or_default().push(group);
 
-            if should_update {
+            // Store additional_titles from user attributes (same for all groups)
+            if !user_additional_titles.contains_key(&ckey) {
                 let additional_titles = user
                     .attributes
                     .get("additional_titles")
                     .and_then(|v| v.as_str())
-                    .filter(|s| !s.is_empty());
-
-                let display_name_opt = group.display_name.as_ref().filter(|s| !s.is_empty());
-                let additional_titles_opt = additional_titles.as_ref().filter(|s| !s.is_empty());
-
-                let (display_name, additional_title) =
-                    match (display_name_opt, additional_titles_opt) {
-                        (Some(dn), Some(at)) => (dn.clone(), Some(at.to_string())),
-                        (Some(dn), None) => (dn.clone(), None),
-                        (None, Some(at)) => (at.to_string(), None),
-                        (None, None) => (group.name.clone(), None),
-                    };
-
-                users_map.insert(
-                    ckey.clone(),
-                    AdminRanksUser {
-                        ckey: ckey.clone(),
-                        primary_group: group.name.to_string(),
-                        display_name,
-                        additional_title,
-                    },
-                );
-                user_max_priority.insert(ckey, group.priority);
+                    .filter(|s| !s.is_empty())
+                    .map(String::from);
+                user_additional_titles.insert(ckey, additional_titles);
             }
         }
     }
 
-    let users: Vec<AdminRanksUser> = users_map.into_values().collect();
+    let mut users: Vec<AdminRanksUser> = Vec::new();
+
+    for (ckey, mut groups) in user_groups {
+        // Sort by priority descending (highest priority first)
+        groups.sort_by(|a, b| b.priority.cmp(&a.priority));
+
+        let primary_group = groups[0];
+
+        // Collect display names from lower priority groups (index 1 onwards)
+        let secondary_titles: Vec<String> = groups
+            .iter()
+            .skip(1)
+            .filter_map(|g| {
+                g.display_name
+                    .as_ref()
+                    .filter(|s| !s.is_empty())
+                    .cloned()
+                    .or_else(|| Some(g.name.clone()))
+            })
+            .collect();
+
+        let user_additional_title = user_additional_titles.get(&ckey).and_then(|v| v.clone());
+
+        // Build the final additional_title: secondary group titles + user's additional_titles
+        let additional_title = match (secondary_titles.is_empty(), &user_additional_title) {
+            (true, None) => None,
+            (true, Some(at)) => Some(at.clone()),
+            (false, None) => Some(secondary_titles.join(" & ")),
+            (false, Some(at)) => Some(format!("{} & {}", secondary_titles.join(" & "), at)),
+        };
+
+        let display_name_opt = primary_group
+            .display_name
+            .as_ref()
+            .filter(|s| !s.is_empty());
+
+        let display_name = match (display_name_opt, &user_additional_title) {
+            (Some(dn), _) => dn.clone(),
+            (None, Some(at)) => at.clone(),
+            (None, None) => primary_group.name.clone(),
+        };
+
+        users.push(AdminRanksUser {
+            ckey,
+            primary_group: primary_group.name.clone(),
+            display_name,
+            additional_title,
+        });
+    }
 
     Ok(Json(AdminRanksExportResponse {
         users,
