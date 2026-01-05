@@ -88,9 +88,13 @@ pub struct RoleChanges {
 pub fn resolve_role_changes(
     whitelist_status: Option<&str>,
     role_config: &ServerRoleConfig,
+    is_linked: bool,
 ) -> RoleChanges {
-    let mut roles_to_add = role_config.roles_to_remove.clone();
-    let mut roles_to_remove = role_config.roles_to_add.clone();
+    let (mut roles_to_add, mut roles_to_remove) = if is_linked {
+        (role_config.roles_to_remove.clone(), role_config.roles_to_add.clone())
+    } else {
+        (role_config.roles_to_add.clone(), role_config.roles_to_remove.clone())
+    };
 
     let all_whitelist_roles: Vec<String> = role_config
         .whitelist_roles
@@ -294,7 +298,7 @@ pub async fn check_verified(
                         let role_config =
                             discord_config.unlink_role_changes.get(&guild_id).unwrap();
                         let role_changes =
-                            resolve_role_changes(whitelist_status.as_deref(), role_config);
+                            resolve_role_changes(whitelist_status.as_deref(), role_config, true);
 
                         return Ok(Json(VerifiedUserResponse {
                             source: "authentik".to_string(),
@@ -329,7 +333,7 @@ pub async fn check_verified(
         Ok(ckey) => {
             let whitelist_status = get_whitelist_status_by_ckey(&mut db, &ckey).await;
             let role_config = discord_config.unlink_role_changes.get(&guild_id).unwrap();
-            let role_changes = resolve_role_changes(whitelist_status.as_deref(), role_config);
+            let role_changes = resolve_role_changes(whitelist_status.as_deref(), role_config, true);
 
             Ok(Json(VerifiedUserResponse {
                 source: "database".to_string(),
@@ -340,12 +344,19 @@ pub async fn check_verified(
                 roles_to_remove: role_changes.roles_to_remove,
             }))
         }
-        Err(e) => Err((
-            Status::NotFound,
-            Json(DiscordError {
-                error: "user_not_found".to_string(),
-                message: e,
-            }),
-        )),
+        Err(_) => {
+            // User not found - return unlink role changes as if they had delinked
+            let role_config = discord_config.unlink_role_changes.get(&guild_id).unwrap();
+            let role_changes = resolve_role_changes(None, role_config, false);
+
+            Ok(Json(VerifiedUserResponse {
+                source: "not_found".to_string(),
+                ckey: String::new(),
+                discord_id,
+                authentik_username: None,
+                roles_to_add: role_changes.roles_to_add,
+                roles_to_remove: role_changes.roles_to_remove,
+            }))
+        }
     }
 }
