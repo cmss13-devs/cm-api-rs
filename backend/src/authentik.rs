@@ -197,6 +197,8 @@ pub struct AdminRanksUser {
     pub ckey: String,
     pub primary_group: String,
     pub display_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub additional_title: Option<String>,
 }
 
 /// Response for the admin ranks export endpoint
@@ -1605,8 +1607,7 @@ fn validate_auth_header(auth_header: &str, config: &Config) -> bool {
 }
 
 /// GET /Authentik/AdminRanksExport - export all users with admin ranks and their groups
-/// This endpoint uses Authorization header instead of session-based auth
-#[get("/AdminRanksExport")]
+#[get("/Admins")]
 pub async fn get_admin_ranks_export(
     auth_header: AuthorizationHeader,
     config: &State<Config>,
@@ -1676,11 +1677,11 @@ pub async fn get_admin_ranks_export(
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty());
 
-                let display_name = match (group.display_name.clone(), additional_titles) {
-                    (Some(dn), Some(at)) => Some(format!("{} - {}", dn, at)),
-                    (Some(dn), None) => Some(dn),
-                    (None, Some(at)) => Some(at.to_string()),
-                    (None, None) => None,
+                let (display_name, additional_title) = match (&group.display_name, additional_titles) {
+                    (Some(dn), Some(at)) => (Some(dn.clone()), Some(at.to_string())),
+                    (Some(dn), None) => (Some(dn.clone()), None),
+                    (None, Some(at)) => (Some(at.to_string()), None),
+                    (None, None) => (None, None),
                 };
 
                 users_map.insert(
@@ -1689,6 +1690,7 @@ pub async fn get_admin_ranks_export(
                         ckey: ckey.clone(),
                         primary_group: group.name.to_string(),
                         display_name,
+                        additional_title,
                     },
                 );
                 user_max_priority.insert(ckey, group.priority);
