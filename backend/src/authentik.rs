@@ -1668,16 +1668,13 @@ pub async fn get_admin_ranks_export(
 
             user_groups.entry(ckey.clone()).or_default().push(group);
 
-            // Store additional_titles from user attributes (same for all groups)
-            if !user_additional_titles.contains_key(&ckey) {
-                let additional_titles = user
-                    .attributes
+            user_additional_titles.entry(ckey).or_insert_with(|| {
+                user.attributes
                     .get("additional_titles")
                     .and_then(|v| v.as_str())
                     .filter(|s| !s.is_empty())
-                    .map(String::from);
-                user_additional_titles.insert(ckey, additional_titles);
-            }
+                    .map(String::from)
+            });
         }
     }
 
@@ -1704,23 +1701,29 @@ pub async fn get_admin_ranks_export(
 
         let user_additional_title = user_additional_titles.get(&ckey).and_then(|v| v.clone());
 
-        // Build the final additional_title: secondary group titles + user's additional_titles
-        let additional_title = match (secondary_titles.is_empty(), &user_additional_title) {
-            (true, None) => None,
-            (true, Some(at)) => Some(at.clone()),
-            (false, None) => Some(secondary_titles.join(" & ")),
-            (false, Some(at)) => Some(format!("{} & {}", secondary_titles.join(" & "), at)),
-        };
-
         let display_name_opt = primary_group
             .display_name
             .as_ref()
             .filter(|s| !s.is_empty());
 
+        let using_additional_title_as_display =
+            display_name_opt.is_none() && user_additional_title.is_some();
+
         let display_name = match (display_name_opt, &user_additional_title) {
             (Some(dn), _) => dn.clone(),
             (None, Some(at)) => at.clone(),
             (None, None) => primary_group.name.clone(),
+        };
+
+        let additional_title = match (
+            secondary_titles.is_empty(),
+            &user_additional_title,
+            using_additional_title_as_display,
+        ) {
+            (true, _, _) => None,
+            (false, None, _) => Some(secondary_titles.join(" & ")),
+            (false, Some(_), true) => Some(secondary_titles.join(" & ")),
+            (false, Some(at), false) => Some(format!("{} & {}", secondary_titles.join(" & "), at)),
         };
 
         users.push(AdminRanksUser {
