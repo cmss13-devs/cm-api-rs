@@ -83,7 +83,7 @@ pub fn refresh_admins(config: &Config) -> Result<(), String> {
         .ok_or_else(|| "Topic config not available".to_string())?;
 
     let topic = serde_json::to_string(&GameRequest {
-        query: "refresh-admins".to_string(),
+        query: "refresh_admins".to_string(),
         auth: topic_config.auth,
         source: "cm-api-rs".to_string(),
     })
