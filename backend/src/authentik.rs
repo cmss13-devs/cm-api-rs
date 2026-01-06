@@ -196,7 +196,7 @@ pub struct UpdateAdditionalTitlesRequest {
 #[serde(crate = "rocket::serde")]
 pub struct AdminRanksUser {
     pub ckey: String,
-    pub primary_group: String,
+    pub groups: Vec<String>,
     pub display_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub additional_title: Option<String>,
@@ -1692,12 +1692,11 @@ pub async fn get_admin_ranks_export(
     let mut users: Vec<AdminRanksUser> = Vec::new();
 
     for (ckey, mut groups) in user_groups {
-        // Sort by priority descending (highest priority first)
         groups.sort_by(|a, b| b.priority.cmp(&a.priority));
 
         let primary_group = groups[0];
+        let group_names: Vec<String> = groups.iter().map(|g| g.name.clone()).collect();
 
-        // Collect display names from lower priority groups (index 1 onwards)
         let secondary_titles: Vec<String> = groups
             .iter()
             .skip(1)
@@ -1739,7 +1738,7 @@ pub async fn get_admin_ranks_export(
 
         users.push(AdminRanksUser {
             ckey,
-            primary_group: primary_group.name.clone(),
+            groups: group_names,
             display_name,
             additional_title,
         });
