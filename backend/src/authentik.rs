@@ -9,6 +9,7 @@ use serenity::all::{GuildId, Http, RoleId, UserId};
 use crate::{
     Cmdb, Config, DiscordBotConfig, ServerRoleConfig,
     admin::{AuthenticatedUser, Management, Staff},
+    byond::refresh_admins,
     discord::{get_whitelist_status_by_ckey, resolve_whitelist_roles},
     logging::log_external,
     player::{AuthorizationHeader, query_total_playtime_minutes},
@@ -437,6 +438,8 @@ pub async fn add_user_to_group(
     )
     .await;
 
+    let _ = refresh_admins(config);
+
     Ok(Json(AuthentikSuccess {
         message: format!(
             "Successfully added user with ckey '{}' to group '{}'",
@@ -816,6 +819,8 @@ pub async fn remove_user_from_group(
         true,
     )
     .await;
+
+    let _ = refresh_admins(config);
 
     Ok(Json(AuthentikSuccess {
         message: format!(
@@ -1218,6 +1223,8 @@ pub async fn update_group_display_name(
     )
     .await;
 
+    let _ = refresh_admins(config);
+
     Ok(Json(AuthentikSuccess {
         message: format!(
             "Successfully updated display_name for group '{}'",
@@ -1343,6 +1350,8 @@ pub async fn update_user_additional_titles(
         true,
     )
     .await;
+
+    let _ = refresh_admins(config);
 
     Ok(Json(AuthentikSuccess {
         message: format!(
@@ -1481,6 +1490,8 @@ pub async fn update_group_admin_ranks(
         true,
     )
     .await;
+
+    let _ = refresh_admins(config);
 
     Ok(Json(AuthentikSuccess {
         message: format!(
@@ -2470,6 +2481,8 @@ pub async fn webhook_user_unlinked(
             )
         })?;
 
+    let _ = refresh_admins(config);
+
     Ok(Json(WebhookResponse {
         success: true,
         message: format!(
@@ -2599,6 +2612,8 @@ pub async fn webhook_user_linked(
     if let Some(playtime) = eligibility.total_playtime_minutes {
         message.push_str(&format!(" (playtime: {} minutes)", playtime));
     }
+
+    let _ = refresh_admins(config);
 
     Ok(Json(WebhookResponse {
         success: true,

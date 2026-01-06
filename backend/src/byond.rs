@@ -76,6 +76,32 @@ pub struct GameStatus {
     cpu: f32,
 }
 
+pub fn refresh_admins(config: &Config) -> Result<(), String> {
+    let topic_config = config
+        .topic
+        .clone()
+        .ok_or_else(|| "Topic config not available".to_string())?;
+
+    let topic = serde_json::to_string(&GameRequest {
+        query: "refresh-admins".to_string(),
+        auth: topic_config.auth,
+        source: "cm-api-rs".to_string(),
+    })
+    .map_err(|e| format!("Failed to serialize request: {e}"))?;
+
+    let addr = topic_config
+        .host
+        .ok_or_else(|| "Topic host not configured".to_string())?
+        .to_socket_addrs()
+        .map_err(|e| format!("Failed to resolve host: {e}"))?
+        .next()
+        .ok_or_else(|| "No socket address found".to_string())?;
+
+    http2byond::send_byond(&addr, &topic).map_err(|e| format!("Failed to send topic: {e}"))?;
+
+    Ok(())
+}
+
 /// Fetches the current round information from the Topic API. **This is a public endpoint**.
 #[get("/")]
 pub async fn round(
