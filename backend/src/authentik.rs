@@ -2083,7 +2083,7 @@ pub async fn check_verification_eligibility(
     result.total_playtime_minutes = query_total_playtime_minutes(db, ckey).await;
 
     let mut all_servers_eligible = true;
-    let mut ineligible_servers: Vec<String> = Vec::new();
+    let mut ineligible_servers: Vec<(String, i32)> = Vec::new();
 
     for (guild_id, role_config) in &discord_config.link_role_changes {
         let server_eligible = check_server_eligibility(&result, role_config);
@@ -2093,14 +2093,20 @@ pub async fn check_verification_eligibility(
 
         if !server_eligible {
             all_servers_eligible = false;
-            ineligible_servers.push(guild_id.clone());
+            if let Some(min_playtime) = role_config.minimum_playtime_minutes {
+                ineligible_servers.push((guild_id.clone(), min_playtime));
+            }
         }
     }
 
     if !all_servers_eligible {
+        let server_details: Vec<String> = ineligible_servers
+            .iter()
+            .map(|(server, minutes)| format!("{} (requires {} minutes)", server, minutes))
+            .collect();
         result.reason = Some(format!(
-            "Insufficient playtime for server(s): {}. Required playtime not met.",
-            ineligible_servers.join(", ")
+            "Insufficient playtime for server(s): {}.",
+            server_details.join(", ")
         ));
     }
 
