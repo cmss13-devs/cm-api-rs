@@ -2083,18 +2083,18 @@ pub async fn check_verification_eligibility(
     result.total_playtime_minutes = query_total_playtime_minutes(db, ckey).await;
 
     let mut all_servers_eligible = true;
-    let mut ineligible_servers: Vec<(String, i32)> = Vec::new();
+    let mut ineligible_servers: Vec<(String, i32, i32)> = Vec::new(); // (guild_id, required, user_playtime)
 
     for (guild_id, role_config) in &discord_config.link_role_changes {
-        let server_eligible = check_server_eligibility(&result, role_config);
+        let eligibility_result = check_server_eligibility(&result, role_config);
         result
             .server_eligibility
-            .insert(guild_id.clone(), server_eligible);
+            .insert(guild_id.clone(), eligibility_result.eligible);
 
-        if !server_eligible {
+        if !eligibility_result.eligible {
             all_servers_eligible = false;
-            if let Some(min_playtime) = role_config.minimum_playtime_minutes {
-                ineligible_servers.push((guild_id.clone(), min_playtime));
+            if let Some(required) = eligibility_result.required_playtime {
+                ineligible_servers.push((guild_id.clone(), required, eligibility_result.user_playtime));
             }
         }
     }
@@ -2102,7 +2102,9 @@ pub async fn check_verification_eligibility(
     if !all_servers_eligible {
         let server_details: Vec<String> = ineligible_servers
             .iter()
-            .map(|(server, minutes)| format!("{} (requires {} minutes)", server, minutes))
+            .map(|(server, required, user_playtime)| {
+                format!("{} (requires {} minutes, you have {})", server, required, user_playtime)
+            })
             .collect();
         result.reason = Some(format!(
             "Insufficient playtime for server(s): {}.",
@@ -2113,16 +2115,31 @@ pub async fn check_verification_eligibility(
     result
 }
 
+struct ServerEligibilityResult {
+    eligible: bool,
+    user_playtime: i32,
+    required_playtime: Option<i32>,
+}
+
 fn check_server_eligibility(
     eligibility: &VerificationEligibility,
     role_config: &ServerRoleConfig,
-) -> bool {
+) -> ServerEligibilityResult {
+    let user_playtime = eligibility.total_playtime_minutes.unwrap_or(0);
+
     let Some(minimum_playtime) = role_config.minimum_playtime_minutes else {
-        return true;
+        return ServerEligibilityResult {
+            eligible: true,
+            user_playtime,
+            required_playtime: None,
+        };
     };
 
-    let user_playtime = eligibility.total_playtime_minutes.unwrap_or(0);
-    user_playtime >= minimum_playtime
+    ServerEligibilityResult {
+        eligible: user_playtime >= minimum_playtime,
+        user_playtime,
+        required_playtime: Some(minimum_playtime),
+    }
 }
 
 #[derive(Debug, Default)]
