@@ -71,7 +71,6 @@ pub struct Player {
     migrated_bans: Option<i32>,
     migrated_jobbans: Option<i32>,
     stickyban_whitelisted: Option<i32>,
-    discord_link_id: Option<i64>,
     whitelist_status: Option<String>,
     byond_account_age: Option<String>,
     first_join_date: Option<String>,
