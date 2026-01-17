@@ -12,7 +12,7 @@ rust_decimal = "1.39.0"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.132"
 urlencoding = "2.1"
-sqlx = { version = "0.7", features = ["mysql", "runtime-async-std", "chrono", "bigdecimal"] }
+sqlx = { version = "0.7", features = ["mysql", "runtime-tokio", "chrono", "bigdecimal"] }
 
 # OIDC/OAuth2 authentication
 openidconnect = "3.5"
