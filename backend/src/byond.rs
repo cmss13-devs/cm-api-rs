@@ -1,6 +1,6 @@
 use sqlx::{Error, prelude::FromRow};
 use std::sync::Mutex;
-use std::{io::Cursor, net::ToSocketAddrs, sync::MutexGuard};
+use std::{io::Cursor, net::ToSocketAddrs};
 
 use chrono::{DateTime, Duration, Utc};
 use http2byond::ByondTopicValue;
@@ -14,7 +14,7 @@ use rocket_db_pools::Connection;
 use sqlx::query_as;
 
 use crate::admin::AuthenticatedUser;
-use crate::{Cmdb, Config, admin::Staff};
+use crate::{Cmdb, Config, ServerConfig, admin::Staff};
 
 /// sets `Access-Control-Allow-Origin: *` to allow requests from any origin.
 pub struct PublicCors<T>(pub T);
@@ -35,7 +35,7 @@ impl<'r, T: serde::Serialize> Responder<'r, 'static> for PublicCors<T> {
 
 #[derive(Default)]
 pub struct ByondTopic {
-    cached_status: Mutex<Option<GameResponse>>,
+    cached_status: Mutex<Option<ServersResponse>>,
     cache_time: Mutex<Option<DateTime<Utc>>>,
 }
 
@@ -76,103 +76,175 @@ pub struct GameStatus {
     cpu: f32,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct ServerStatusResponse {
+    name: String,
+    status: String,
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    details: Option<GameResponse>,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct ServersResponse {
+    servers: Vec<ServerStatusResponse>,
+}
+
 pub fn refresh_admins(config: &Config) -> Result<(), String> {
     let topic_config = config
         .topic
         .clone()
         .ok_or_else(|| "Topic config not available".to_string())?;
 
-    let topic = serde_json::to_string(&GameRequest {
-        query: "refresh_admins".to_string(),
-        auth: topic_config.auth,
-        source: "cm-api-rs".to_string(),
-    })
-    .map_err(|e| format!("Failed to serialize request: {e}"))?;
+    for server in topic_config.servers.iter().filter(|s| s.refresh_admins) {
+        let topic = serde_json::to_string(&GameRequest {
+            query: "refresh_admins".to_string(),
+            auth: Some(server.auth.clone()),
+            source: "cm-api-rs".to_string(),
+        })
+        .map_err(|e| format!("Failed to serialize request: {e}"))?;
 
-    let addr = topic_config
-        .host
-        .ok_or_else(|| "Topic host not configured".to_string())?
-        .to_socket_addrs()
-        .map_err(|e| format!("Failed to resolve host: {e}"))?
-        .next()
-        .ok_or_else(|| "No socket address found".to_string())?;
+        let addr = server
+            .host
+            .to_socket_addrs()
+            .map_err(|e| format!("Failed to resolve host {}: {e}", server.name))?
+            .next()
+            .ok_or_else(|| format!("No socket address found for {}", server.name))?;
 
-    http2byond::send_byond(&addr, &topic).map_err(|e| format!("Failed to send topic: {e}"))?;
+        if let Err(e) = http2byond::send_byond(&addr, &topic) {
+            eprintln!("Failed to send refresh_admins to {}: {e}", server.name);
+        }
+    }
 
     Ok(())
 }
 
-/// Fetches the current round information from the Topic API. **This is a public endpoint**.
+/// Fetches the current round information from all configured servers. **This is a public endpoint**.
 #[get("/")]
 pub async fn round(
     cache: &State<ByondTopic>,
     config: &State<Config>,
-) -> Option<PublicCors<GameResponse>> {
+) -> Option<PublicCors<ServersResponse>> {
     {
-        let mutexed: MutexGuard<'_, Option<DateTime<Utc>>> = match cache.cache_time.lock() {
+        let cache_time_guard = match cache.cache_time.lock() {
             Ok(real) => real,
             Err(poisoned) => poisoned.into_inner(),
         };
 
-        if mutexed.is_some() {
-            let cache_time = mutexed.unwrap();
-            let five_minutes_ago = chrono::Utc::now() - Duration::seconds(60);
-
-            if cache_time > five_minutes_ago {
-                return Some(PublicCors(
-                    cache.cached_status.lock().unwrap().clone().unwrap(),
-                ));
+        if let Some(cache_time) = *cache_time_guard {
+            let cache_expiry = chrono::Utc::now() - Duration::seconds(60);
+            if cache_time > cache_expiry {
+                let cached = match cache.cached_status.lock() {
+                    Ok(real) => real,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                if let Some(response) = cached.clone() {
+                    return Some(PublicCors(response));
+                }
             }
         }
     }
 
-    let topic_config_option = config.topic.clone();
+    let topic_config = config.topic.clone()?;
 
-    let topic_config = match topic_config_option {
-        Some(config_result) => config_result,
-        None => return None,
+    if topic_config.servers.is_empty() {
+        return None;
+    }
+
+    let handles: Vec<_> = topic_config
+        .servers
+        .into_iter()
+        .map(|server| tokio::task::spawn_blocking(move || query_server(server)))
+        .collect();
+
+    let mut server_statuses = Vec::new();
+    for handle in handles {
+        if let Ok(status) = handle.await {
+            server_statuses.push(status);
+        }
+    }
+
+    let response = ServersResponse {
+        servers: server_statuses,
     };
 
-    let topic = serde_json::to_string(&GameRequest {
-        query: "status".to_string(),
-        auth: Some(topic_config.auth.unwrap()),
-        source: "cm-api-rs".to_string(),
-    })
-    .unwrap();
+    *cache.cached_status.lock().unwrap() = Some(response.clone());
+    *cache.cache_time.lock().unwrap() = Some(chrono::Utc::now());
 
-    let byond = match http2byond::send_byond(
-        &topic_config
-            .host
-            .unwrap()
-            .to_socket_addrs()
-            .unwrap()
-            .next()
-            .unwrap(),
-        &topic,
-    ) {
-        Ok(byond) => byond,
-        Err(_) => return None,
+    Some(PublicCors(response))
+}
+
+fn query_server(server: ServerConfig) -> ServerStatusResponse {
+    let topic = match serde_json::to_string(&GameRequest {
+        query: "status".to_string(),
+        auth: Some(server.auth.clone()),
+        source: "cm-api-rs".to_string(),
+    }) {
+        Ok(t) => t,
+        Err(_) => {
+            return ServerStatusResponse {
+                name: server.name,
+                status: "unavailable".to_string(),
+                details: None,
+            };
+        }
+    };
+
+    let addr = match server.host.to_socket_addrs() {
+        Ok(mut addrs) => match addrs.next() {
+            Some(a) => a,
+            None => {
+                return ServerStatusResponse {
+                    name: server.name,
+                    status: "unavailable".to_string(),
+                    details: None,
+                };
+            }
+        },
+        Err(_) => {
+            return ServerStatusResponse {
+                name: server.name,
+                status: "unavailable".to_string(),
+                details: None,
+            };
+        }
+    };
+
+    let byond = match http2byond::send_byond(&addr, &topic) {
+        Ok(b) => b,
+        Err(_) => {
+            return ServerStatusResponse {
+                name: server.name,
+                status: "unavailable".to_string(),
+                details: None,
+            };
+        }
     };
 
     let mut byond_string = match byond {
-        ByondTopicValue::String(string) => string,
-        ByondTopicValue::None => return None,
-        ByondTopicValue::Number(_) => return None,
+        ByondTopicValue::String(s) => s,
+        _ => {
+            return ServerStatusResponse {
+                name: server.name,
+                status: "unavailable".to_string(),
+                details: None,
+            };
+        }
     };
 
     byond_string.pop();
 
-    let byond_value = serde_json::from_str::<GameResponse>(&byond_string);
-
-    let byond_json = match byond_value {
-        Ok(value) => value,
-        Err(error) => panic!("{error:?} {byond_string}"),
-    };
-
-    *cache.cached_status.lock().unwrap() = Some(byond_json.clone());
-    *cache.cache_time.lock().unwrap() = Some(chrono::Utc::now());
-
-    Some(PublicCors(byond_json))
+    match serde_json::from_str::<GameResponse>(&byond_string) {
+        Ok(game_response) => ServerStatusResponse {
+            name: server.name,
+            status: "available".to_string(),
+            details: Some(game_response),
+        },
+        Err(_) => ServerStatusResponse {
+            name: server.name,
+            status: "unavailable".to_string(),
+            details: None,
+        },
+    }
 }
 
 #[derive(serde::Serialize, FromRow)]

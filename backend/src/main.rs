@@ -73,9 +73,17 @@ impl Fairing for Cors {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct ServerConfig {
+    pub name: String,
+    pub host: String,
+    pub auth: String,
+    #[serde(default)]
+    pub refresh_admins: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 struct TopicConfig {
-    host: Option<String>,
-    auth: Option<String>,
+    servers: Vec<ServerConfig>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

@@ -1,7 +1,7 @@
 import React, { PropsWithChildren, useEffect, useState } from "react";
 import { callApi } from "../helpers/api";
 
-type RoundData = {
+type GameStatus = {
 	mode: string;
 	vote: number;
 	ai: boolean;
@@ -22,32 +22,57 @@ type RoundData = {
 	cpu: number;
 };
 
-export const RoundData: React.FC = () => {
-	const [roundData, setRoundData] = useState<RoundData | null>(null);
+type ServerStatus = {
+	name: string;
+	status: "available" | "unavailable";
+	statuscode?: number;
+	response?: string;
+	data?: GameStatus;
+};
 
+type ServersResponse = {
+	servers: ServerStatus[];
+};
+
+export const RoundData: React.FC = () => {
+	const [serversData, setServersData] = useState<ServersResponse | null>(null);
 	const [errored, setErrored] = useState(false);
 
 	useEffect(() => {
-		if (!roundData) {
+		if (!serversData) {
 			callApi(`/Round`)
 				.then((value) =>
 					value
 						.json()
-						.then((json) => setRoundData(json.data))
+						.then((json: ServersResponse) => setServersData(json))
 						.catch(() => setErrored(true)),
 				)
 				.catch(() => setErrored(true));
 		}
-	}, [roundData, setRoundData]);
+	}, [serversData, setServersData]);
 
 	if (errored) {
 		return <div></div>;
 	}
 
-	if (!roundData) {
+	if (!serversData) {
 		return <div>Loading...</div>;
 	}
 
+	return (
+		<div className="flex flex-col justify-center mt-20 gap-4">
+			{serversData.servers.map((server) => (
+				<ServerCard key={server.name} server={server} />
+			))}
+		</div>
+	);
+};
+
+interface ServerCardProps {
+	server: ServerStatus;
+}
+
+const ServerCard: React.FC<ServerCardProps> = ({ server }) => {
 	const formatGameState = (gameState: number) => {
 		switch (gameState) {
 			case 0:
@@ -78,23 +103,45 @@ export const RoundData: React.FC = () => {
 			.join(", ");
 	};
 
+	if (server.status === "unavailable") {
+		return (
+			<div className="border border-[#3f3f3f] rounded shadow-xl p-5">
+				<div className="text-2xl font-bold mb-2">{server.name}</div>
+				<div className="text-red-400">Server Unavailable</div>
+			</div>
+		);
+	}
+
+	const roundData = server.data;
+	if (!roundData) {
+		return (
+			<div className="border border-[#3f3f3f] rounded shadow-xl p-5">
+				<div className="text-2xl font-bold mb-2">{server.name}</div>
+				<div className="text-yellow-400">No data available</div>
+			</div>
+		);
+	}
+
 	return (
-		<div className="flex flex-col justify-center mt-20 gap-2">
-			<div className="flex flex-col md:flex-row justify-center gap-3">
-				<InfoBox label="Round ID">{roundData.round_id}</InfoBox>
-				<InfoBox label="Players">{roundData.players}</InfoBox>
-				<InfoBox label="Admins">{roundData.admins}</InfoBox>
-			</div>
-			<div className="flex flex-col md:flex-row gap-3">
-				<InfoBox label="Map Name">{roundData.map_name}</InfoBox>
-				<InfoBox label="Game State">
-					{formatGameState(roundData.gamestate)}
-				</InfoBox>
-			</div>
-			<div className="flex flex-row gap-3">
-				<InfoBox label="Duration">
-					{formatDuration(roundData.round_duration * 100)}
-				</InfoBox>
+		<div className="border border-[#3f3f3f] rounded shadow-xl p-5">
+			<div className="text-2xl font-bold mb-4">{server.name}</div>
+			<div className="flex flex-col gap-2">
+				<div className="flex flex-col md:flex-row justify-center gap-3">
+					<InfoBox label="Round ID">{roundData.round_id}</InfoBox>
+					<InfoBox label="Players">{roundData.players}</InfoBox>
+					<InfoBox label="Admins">{roundData.admins}</InfoBox>
+				</div>
+				<div className="flex flex-col md:flex-row gap-3">
+					<InfoBox label="Map Name">{roundData.map_name}</InfoBox>
+					<InfoBox label="Game State">
+						{formatGameState(roundData.gamestate)}
+					</InfoBox>
+				</div>
+				<div className="flex flex-row gap-3">
+					<InfoBox label="Duration">
+						{formatDuration(roundData.round_duration * 100)}
+					</InfoBox>
+				</div>
 			</div>
 		</div>
 	);
