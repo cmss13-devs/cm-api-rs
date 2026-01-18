@@ -79,6 +79,7 @@ pub struct GameStatus {
 #[derive(serde::Serialize, Clone)]
 pub struct ServerStatusResponse {
     name: String,
+    url: String,
     status: String,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     details: Option<GameResponse>,
@@ -174,6 +175,8 @@ pub async fn round(
 }
 
 fn query_server(server: ServerConfig) -> ServerStatusResponse {
+    let url = server.host.clone();
+
     let topic = match serde_json::to_string(&GameRequest {
         query: "status".to_string(),
         auth: Some(server.auth.clone()),
@@ -183,6 +186,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
         Err(_) => {
             return ServerStatusResponse {
                 name: server.name,
+                url,
                 status: "unavailable".to_string(),
                 details: None,
             };
@@ -195,6 +199,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
             None => {
                 return ServerStatusResponse {
                     name: server.name,
+                    url,
                     status: "unavailable".to_string(),
                     details: None,
                 };
@@ -203,6 +208,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
         Err(_) => {
             return ServerStatusResponse {
                 name: server.name,
+                url,
                 status: "unavailable".to_string(),
                 details: None,
             };
@@ -214,6 +220,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
         Err(_) => {
             return ServerStatusResponse {
                 name: server.name,
+                url,
                 status: "unavailable".to_string(),
                 details: None,
             };
@@ -225,6 +232,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
         _ => {
             return ServerStatusResponse {
                 name: server.name,
+                url,
                 status: "unavailable".to_string(),
                 details: None,
             };
@@ -236,11 +244,13 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
     match serde_json::from_str::<GameResponse>(&byond_string) {
         Ok(game_response) => ServerStatusResponse {
             name: server.name,
+            url,
             status: "available".to_string(),
             details: Some(game_response),
         },
         Err(_) => ServerStatusResponse {
             name: server.name,
+            url,
             status: "unavailable".to_string(),
             details: None,
         },

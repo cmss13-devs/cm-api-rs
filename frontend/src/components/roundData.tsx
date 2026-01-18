@@ -24,6 +24,7 @@ type GameStatus = {
 
 type ServerStatus = {
 	name: string;
+	url: string;
 	status: "available" | "unavailable";
 	statuscode?: number;
 	response?: string;
