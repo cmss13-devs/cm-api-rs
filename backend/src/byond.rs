@@ -83,6 +83,8 @@ pub struct ServerStatusResponse {
     status: String,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     details: Option<GameResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recommended_byond_version: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -176,6 +178,7 @@ pub async fn round(
 
 fn query_server(server: ServerConfig) -> ServerStatusResponse {
     let url = server.host.clone();
+    let recommended_byond_version = server.recommended_byond_version.clone();
 
     let topic = match serde_json::to_string(&GameRequest {
         query: "status".to_string(),
@@ -189,6 +192,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 url,
                 status: "unavailable".to_string(),
                 details: None,
+                recommended_byond_version,
             };
         }
     };
@@ -202,6 +206,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                     url,
                     status: "unavailable".to_string(),
                     details: None,
+                    recommended_byond_version,
                 };
             }
         },
@@ -211,6 +216,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 url,
                 status: "unavailable".to_string(),
                 details: None,
+                recommended_byond_version,
             };
         }
     };
@@ -223,6 +229,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 url,
                 status: "unavailable".to_string(),
                 details: None,
+                recommended_byond_version,
             };
         }
     };
@@ -235,6 +242,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 url,
                 status: "unavailable".to_string(),
                 details: None,
+                recommended_byond_version,
             };
         }
     };
@@ -247,12 +255,14 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
             url,
             status: "available".to_string(),
             details: Some(game_response),
+            recommended_byond_version,
         },
         Err(_) => ServerStatusResponse {
             name: server.name,
             url,
             status: "unavailable".to_string(),
             details: None,
+            recommended_byond_version,
         },
     }
 }

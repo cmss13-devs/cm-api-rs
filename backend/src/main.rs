@@ -79,6 +79,7 @@ pub struct ServerConfig {
     pub auth: String,
     #[serde(default)]
     pub refresh_admins: bool,
+    pub recommended_byond_version: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
