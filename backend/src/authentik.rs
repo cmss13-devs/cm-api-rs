@@ -624,27 +624,53 @@ pub async fn create_user_with_steam_id(
         .await
         .map_err(|e| format!("Failed to parse user creation response: {}", e))?;
 
+    let source_url = format!(
+        "{}/api/v3/sources/oauth/steam/",
+        config.base_url.trim_end_matches('/')
+    );
+
+    let source_response = client
+        .get(&source_url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch Steam source: {}", e))?;
+
+    if !source_response.status().is_success() {
+        let status = source_response.status();
+        let body = source_response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to fetch Steam source (status {}): {}",
+            status, body
+        ));
+    }
+
+    let steam_source: OAuthSource = source_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Steam source response: {}", e))?;
+
     let source_connection_url = format!(
         "{}/api/v3/sources/user_connections/oauth/",
         config.base_url.trim_end_matches('/')
     );
 
-    let source_response = client
+    let connection_response = client
         .post(&source_connection_url)
         .header("Authorization", format!("Bearer {}", config.token))
         .header("Content-Type", "application/json")
         .json(&serde_json::json!({
             "user": user.pk,
-            "source": "steam",
+            "source": steam_source.pk,
             "identifier": steam_id
         }))
         .send()
         .await
         .map_err(|e| format!("Failed to create source connection: {}", e))?;
 
-    if !source_response.status().is_success() {
-        let status = source_response.status();
-        let body = source_response.text().await.unwrap_or_default();
+    if !connection_response.status().is_success() {
+        let status = connection_response.status();
+        let body = connection_response.text().await.unwrap_or_default();
         return Err(format!(
             "Failed to create Steam source connection (status {}): {}",
             status, body
