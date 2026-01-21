@@ -669,10 +669,15 @@ pub async fn generate_token_for_user(
         key: String,
     }
 
-    let token_response: TokenResponse = response
-        .json()
+    let body = response
+        .text()
         .await
-        .map_err(|e| format!("Failed to parse token response: {}", e))?;
+        .map_err(|e| format!("Failed to read token response body: {}", e))?;
+    // Log the raw body for debugging
+    println!("Authentik token response body: {}", body);
+
+    let token_response: TokenResponse = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse token response: {} (body: {})", e, body))?;
 
     Ok(token_response.key)
 }
