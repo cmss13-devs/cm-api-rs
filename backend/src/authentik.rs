@@ -649,6 +649,10 @@ pub async fn generate_token_for_user(
             "user": user_pk,
             "intent": "api",
             "expiring": true,
+            "expires": chrono::Utc::now()
+                .checked_add_signed(chrono::Duration::hours(6))
+                .unwrap()
+                .to_rfc3339(),
             "description": "Steam authentication token"
         }))
         .send()
@@ -664,22 +668,39 @@ pub async fn generate_token_for_user(
         ));
     }
 
+    let view_key_url = format!(
+        "{}/api/v3/core/tokens/{}/view_key/",
+        config.base_url.trim_end_matches('/'),
+        urlencoding::encode(&token_identifier)
+    );
+
+    let key_response = client
+        .get(&view_key_url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to retrieve token key: {}", e))?;
+
+    if !key_response.status().is_success() {
+        let status = key_response.status();
+        let body = key_response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to retrieve token key (status {}): {}",
+            status, body
+        ));
+    }
+
     #[derive(Deserialize)]
-    struct TokenResponse {
+    struct TokenKeyResponse {
         key: String,
     }
 
-    let body = response
-        .text()
+    let key_json: TokenKeyResponse = key_response
+        .json()
         .await
-        .map_err(|e| format!("Failed to read token response body: {}", e))?;
-    // Log the raw body for debugging
-    println!("Authentik token response body: {}", body);
+        .map_err(|e| format!("Failed to parse token key response: {}", e))?;
 
-    let token_response: TokenResponse = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse token response: {} (body: {})", e, body))?;
-
-    Ok(token_response.key)
+    Ok(key_json.key)
 }
 
 /// Get a user's connected OAuth sources from Authentik
