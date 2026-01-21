@@ -2831,3 +2831,145 @@ pub async fn webhook_user_linked(
         message,
     }))
 }
+
+#[derive(Debug, Deserialize)]
+struct UserMeResponse {
+    pk: i64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct TokenUserInfoResponse {
+    pub pk: i64,
+    pub uid: String,
+    pub username: String,
+    pub attributes: serde_json::Value,
+}
+
+/// Validates an Authentik API token and returns the user info including attributes.
+/// The token should be passed in the Authorization header as "Bearer <token>".
+#[get("/TokenUserInfo")]
+pub async fn get_token_user_info(
+    auth_header: AuthorizationHeader,
+    config: &State<Config>,
+) -> Result<Json<TokenUserInfoResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    // Extract the token from the Authorization header
+    let token = auth_header.0.strip_prefix("Bearer ").ok_or_else(|| {
+        (
+            Status::Unauthorized,
+            Json(AuthentikError {
+                error: "invalid_authorization".to_string(),
+                message: "Authorization header must be in format: Bearer <token>".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let me_url = format!(
+        "{}/api/v3/core/users/me/",
+        authentik_config.base_url.trim_end_matches('/')
+    );
+
+    let me_response = http_client
+        .get(&me_url)
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "request_failed".to_string(),
+                    message: format!("Failed to validate token: {}", e),
+                }),
+            )
+        })?;
+
+    if !me_response.status().is_success() {
+        let status_code = me_response.status();
+        return Err((
+            if status_code.as_u16() == 401 || status_code.as_u16() == 403 {
+                Status::Unauthorized
+            } else {
+                Status::InternalServerError
+            },
+            Json(AuthentikError {
+                error: "token_invalid".to_string(),
+                message: "The provided token is invalid or expired".to_string(),
+            }),
+        ));
+    }
+
+    let me_user: UserMeResponse = me_response.json().await.map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "parse_failed".to_string(),
+                message: format!("Failed to parse user me response: {}", e),
+            }),
+        )
+    })?;
+
+    let user_url = format!(
+        "{}/api/v3/core/users/{}/",
+        authentik_config.base_url.trim_end_matches('/'),
+        me_user.pk
+    );
+
+    let user_response = http_client
+        .get(&user_url)
+        .header(
+            "Authorization",
+            format!("Bearer {}", authentik_config.token),
+        )
+        .send()
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "request_failed".to_string(),
+                    message: format!("Failed to fetch user details: {}", e),
+                }),
+            )
+        })?;
+
+    if !user_response.status().is_success() {
+        let status = user_response.status();
+        let body = user_response.text().await.unwrap_or_default();
+        return Err((
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "user_fetch_failed".to_string(),
+                message: format!("Failed to fetch user details (status {}): {}", status, body),
+            }),
+        ));
+    }
+
+    let user: AuthentikUser = user_response.json().await.map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "parse_failed".to_string(),
+                message: format!("Failed to parse user info: {}", e),
+            }),
+        )
+    })?;
+
+    Ok(Json(TokenUserInfoResponse {
+        pk: user.pk,
+        uid: user.uid,
+        username: user.username,
+        attributes: user.attributes,
+    }))
+}
