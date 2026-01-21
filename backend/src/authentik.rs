@@ -2833,6 +2833,11 @@ pub async fn webhook_user_linked(
 }
 
 #[derive(Debug, Deserialize)]
+struct MeResponse {
+    user: UserMeResponse,
+}
+
+#[derive(Debug, Deserialize)]
 struct UserMeResponse {
     pk: i64,
 }
@@ -2920,7 +2925,7 @@ pub async fn get_token_user_info(
         )
     })?;
 
-    let me_user: UserMeResponse = serde_json::from_str(&me_body).map_err(|e| {
+    let me_user: MeResponse = serde_json::from_str(&me_body).map_err(|e| {
         (
             Status::InternalServerError,
             Json(AuthentikError {
@@ -2936,7 +2941,7 @@ pub async fn get_token_user_info(
     let user_url = format!(
         "{}/api/v3/core/users/{}/",
         authentik_config.base_url.trim_end_matches('/'),
-        me_user.pk
+        me_user.user.pk
     );
 
     let user_response = http_client
