@@ -33,6 +33,9 @@ pub struct DiscourseConfig {
 pub struct AuthentikConfig {
     pub token: String,
     pub base_url: String,
+    /// OIDC issuer URL for validating access tokens (e.g., "https://auth.example.com/application/o/myapp/")
+    /// Used to construct the userinfo endpoint for token validation
+    pub oidc_issuer_url: Option<String>,
     /// mapping of permission role names to the Authentik groups they can manage, eg:
     /// [authentik.group_permissions]
     /// staff_management = [ "admins", "moderators" ]
@@ -572,6 +575,106 @@ async fn update_user_attributes(
     }
 
     Ok(())
+}
+
+pub async fn create_user_with_steam_id(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    username: &str,
+    steam_id: &str,
+) -> Result<AuthentikUser, String> {
+    let url = format!(
+        "{}/api/v3/core/users/",
+        config.base_url.trim_end_matches('/')
+    );
+
+    let unique_username = format!(
+        "{}_{}",
+        username,
+        &steam_id[steam_id.len().saturating_sub(4)..]
+    );
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "username": unique_username,
+            "name": username,
+            "is_active": true,
+            "attributes": {
+                "steam_id": steam_id
+            }
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to create user: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to create user (status {}): {}",
+            status, body
+        ));
+    }
+
+    let user: AuthentikUser = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse user creation response: {}", e))?;
+
+    Ok(user)
+}
+
+/// Generate an access token for a user via Authentik's token endpoint
+pub async fn generate_token_for_user(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    user_pk: i64,
+) -> Result<String, String> {
+    let url = format!(
+        "{}/api/v3/core/tokens/",
+        config.base_url.trim_end_matches('/')
+    );
+
+    let token_identifier = format!("steam-auth-{}-{}", user_pk, chrono::Utc::now().timestamp());
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "identifier": token_identifier,
+            "user": user_pk,
+            "intent": "api",
+            "expiring": true,
+            "description": "Steam authentication token"
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to create token: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to create token (status {}): {}",
+            status, body
+        ));
+    }
+
+    #[derive(Deserialize)]
+    struct TokenResponse {
+        key: String,
+    }
+
+    let token_response: TokenResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse token response: {}", e))?;
+
+    Ok(token_response.key)
 }
 
 /// Get a user's connected OAuth sources from Authentik
@@ -2093,7 +2196,11 @@ pub async fn check_verification_eligibility(
         if !eligibility_result.eligible {
             all_servers_eligible = false;
             if let Some(required) = eligibility_result.required_playtime {
-                ineligible_servers.push((guild_id.clone(), required, eligibility_result.user_playtime));
+                ineligible_servers.push((
+                    guild_id.clone(),
+                    required,
+                    eligibility_result.user_playtime,
+                ));
             }
         }
     }
@@ -2102,7 +2209,10 @@ pub async fn check_verification_eligibility(
         let server_details: Vec<String> = ineligible_servers
             .iter()
             .map(|(server, required, user_playtime)| {
-                format!("{} (requires {} minutes, you have {})", server, required, user_playtime)
+                format!(
+                    "{} (requires {} minutes, you have {})",
+                    server, required, user_playtime
+                )
             })
             .collect();
         result.reason = Some(format!(

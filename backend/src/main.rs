@@ -33,6 +33,7 @@ mod logging;
 mod new_players;
 mod player;
 mod spa;
+mod steam;
 mod stickyban;
 mod ticket;
 mod twofactor;
@@ -136,6 +137,7 @@ struct Config {
     authentik: Option<AuthentikConfig>,
     api_auth: Option<ApiAuthConfig>,
     discord_bot: Option<DiscordBotConfig>,
+    steam: Option<steam::SteamConfig>,
 }
 
 #[derive(Database)]
@@ -299,6 +301,10 @@ async fn rocket() -> _ {
         .mount(
             format!("{}/Discord", base_url),
             routes![discord::get_user_by_discord, discord::check_verified],
+        )
+        .mount(
+            format!("{}/Steam", base_url),
+            routes![steam::authenticate],
         )
         .mount(
             "/",
