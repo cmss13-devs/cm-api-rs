@@ -53,7 +53,7 @@ export default function App(): React.ReactElement {
             // Not authenticated, redirect to login
             const currentPath = window.location.pathname + window.location.hash;
             window.location.href = `/api/auth/login?redirect=${encodeURIComponent(
-              currentPath
+              currentPath,
             )}`;
             return null;
           }
@@ -85,13 +85,15 @@ export default function App(): React.ReactElement {
           }
           return response.json();
         })
-        .then((json) => {
-          if (json) {
-            setUser((exitingUser) => ({
-            ...exitingUser!,
-            manageable: json.manageable
-          }));
-          }
+        .then((json: { manageable: string[] }) => {
+          setUser((exitingUser) => {
+            if (exitingUser) {
+              return {
+                ...exitingUser,
+                manageable: json.manageable,
+              };
+            }
+          });
         })
         .catch((error) => {
           console.error("Auth error:", error);
