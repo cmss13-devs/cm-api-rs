@@ -2915,25 +2915,12 @@ pub async fn get_token_user_info(
         ));
     }
 
-    let me_body = me_response.text().await.map_err(|e| {
-        (
-            Status::InternalServerError,
-            Json(AuthentikError {
-                error: "request_failed".to_string(),
-                message: format!("Failed to read user me response body: {}", e),
-            }),
-        )
-    })?;
-
-    let me_user: MeResponse = serde_json::from_str(&me_body).map_err(|e| {
+    let me_user: MeResponse = me_response.json().await.map_err(|e| {
         (
             Status::InternalServerError,
             Json(AuthentikError {
                 error: "parse_failed".to_string(),
-                message: format!(
-                    "Failed to parse user me response: {} - body: {}",
-                    e, me_body
-                ),
+                message: format!("Failed to parse user me response: {}", e),
             }),
         )
     })?;

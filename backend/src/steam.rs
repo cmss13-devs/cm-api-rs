@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rocket::{State, http::Status, serde::json::Json};
 use serde::{Deserialize, Serialize};
 
@@ -11,7 +13,7 @@ use crate::{
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct SteamConfig {
     pub web_api_key: String,
-    pub app_id: u32,
+    pub app_id: HashMap<String, u32>,
     pub linking_url: String,
 }
 
@@ -23,6 +25,7 @@ pub struct SteamAuthRequest {
     pub display_name: String,
     #[serde(default)]
     pub create_account_if_missing: bool,
+    pub instance: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -73,12 +76,17 @@ struct SteamTicketError {
 async fn validate_steam_ticket(
     client: &reqwest::Client,
     config: &SteamConfig,
+    app_to_use: &str,
     ticket: &str,
     expected_steam_id: &str,
 ) -> Result<SteamTicketParams, String> {
+    let Some(id_to_use) = config.app_id.get(app_to_use) else {
+        return Err("Incorrect App ID request.".to_string());
+    };
+
     let url = format!(
         "https://api.steampowered.com/ISteamUserAuth/AuthenticateUserTicket/v1/?key={}&appid={}&ticket={}",
-        config.web_api_key, config.app_id, ticket
+        config.web_api_key, id_to_use, ticket
     );
 
     let response = client
@@ -166,6 +174,7 @@ pub async fn authenticate(
     let _ticket_params = validate_steam_ticket(
         &http_client,
         steam_config,
+        &request.instance,
         &request.ticket,
         &request.steam_id,
     )
