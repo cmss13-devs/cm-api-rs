@@ -94,6 +94,7 @@ struct AuthentikGroup {
 pub struct AuthentikUser {
     pub pk: i64,
     pub uid: String,
+    pub user: String,
     pub username: String,
     #[serde(default)]
     pub attributes: serde_json::Value,
@@ -2846,6 +2847,7 @@ struct UserMeResponse {
 pub struct TokenUserInfoResponse {
     pub pk: i64,
     pub uid: String,
+    pub user: String,
     pub username: String,
     pub attributes: serde_json::Value,
 }
@@ -2974,6 +2976,7 @@ pub async fn get_token_user_info(
     Ok(Json(TokenUserInfoResponse {
         pk: user.pk,
         uid: user.uid,
+        user: user.user,
         username: user.username,
         attributes: user.attributes,
     }))
