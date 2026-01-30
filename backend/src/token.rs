@@ -129,7 +129,7 @@ pub async fn get_token_user_info(
     Ok(Json(TokenUserInfoResponse {
         pk: user.pk,
         uid: user.uid,
-        uuid: user.uuid,
+        uuid: user.uuid.unwrap(),
         name: user.name,
         username: user.username,
         attributes: user.attributes,
