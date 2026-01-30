@@ -94,7 +94,7 @@ struct AuthentikGroup {
 pub struct AuthentikUser {
     pub pk: i64,
     pub uid: String,
-    pub uuid: String,
+    pub uuid: Option<String>,
     pub name: String,
     pub username: String,
     #[serde(default)]
