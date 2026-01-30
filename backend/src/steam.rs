@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
 use rocket::{State, http::Status, serde::json::Json};
+use rocket_db_pools::Connection;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Config,
+    Cmapi, Config,
     authentik::{
-        AuthentikError, create_user_with_steam_id, generate_token_for_user, get_user_by_attribute,
+        AuthentikError, create_user_with_steam_id, get_user_by_attribute,
     },
+    token::create_token,
 };
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -146,6 +148,7 @@ async fn validate_steam_ticket(
 #[post("/Authenticate", format = "json", data = "<request>")]
 pub async fn authenticate(
     config: &State<Config>,
+    mut db: Connection<Cmapi>,
     request: Json<SteamAuthRequest>,
 ) -> Result<Json<SteamAuthResponse>, (Status, Json<AuthentikError>)> {
     let steam_config = config.steam.as_ref().ok_or_else(|| {
@@ -199,9 +202,9 @@ pub async fn authenticate(
     .await;
 
     match user_result {
-        Ok(user) => {
-            // User exists, generate access token
-            let token = generate_token_for_user(&http_client, authentik_config, user.pk)
+        Ok(_user) => {
+            // User exists, generate access token using cm-api database
+            let token = create_token(&mut db, &request.steam_id)
                 .await
                 .map_err(|e| {
                     (
@@ -226,7 +229,7 @@ pub async fn authenticate(
             // User not found
             if request.create_account_if_missing {
                 // Create new user with Steam persona name as username
-                let user = create_user_with_steam_id(
+                let _user = create_user_with_steam_id(
                     &http_client,
                     authentik_config,
                     &request.display_name,
@@ -243,8 +246,8 @@ pub async fn authenticate(
                     )
                 })?;
 
-                // Generate token for new user
-                let token = generate_token_for_user(&http_client, authentik_config, user.pk)
+                // Generate token for new user using cm-api database
+                let token = create_token(&mut db, &request.steam_id)
                     .await
                     .map_err(|e| {
                         (

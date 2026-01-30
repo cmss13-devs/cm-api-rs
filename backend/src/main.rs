@@ -36,6 +36,7 @@ mod spa;
 mod steam;
 mod stickyban;
 mod ticket;
+mod token;
 mod twofactor;
 mod whitelist;
 
@@ -144,6 +145,10 @@ struct Config {
 #[database("cmdb")]
 pub struct Cmdb(MySqlPool);
 
+#[derive(Database)]
+#[database("cmapi")]
+pub struct Cmapi(MySqlPool);
+
 #[launch]
 async fn rocket() -> _ {
     let figment = Figment::from(rocket::Config::default())
@@ -199,6 +204,7 @@ async fn rocket() -> _ {
     let mut rocket_builder = rocket::custom(figment)
         .manage(byond::ByondTopic::default())
         .attach(Cmdb::init())
+        .attach(Cmapi::init())
         .attach(AdHoc::config::<Config>())
         .attach(Cors::new(allowed_origin));
 
@@ -296,7 +302,7 @@ async fn rocket() -> _ {
                 authentik::get_discourse_user_id,
                 authentik::webhook_user_unlinked,
                 authentik::webhook_user_linked,
-                authentik::get_token_user_info,
+                token::get_token_user_info,
             ],
         )
         .mount(
