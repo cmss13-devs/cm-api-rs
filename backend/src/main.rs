@@ -139,6 +139,7 @@ struct Config {
     api_auth: Option<ApiAuthConfig>,
     discord_bot: Option<DiscordBotConfig>,
     steam: Option<steam::SteamConfig>,
+    byond_hashes: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Database)]
@@ -309,9 +310,10 @@ async fn rocket() -> _ {
             format!("{}/Discord", base_url),
             routes![discord::get_user_by_discord, discord::check_verified],
         )
+        .mount(format!("{}/Steam", base_url), routes![steam::authenticate])
         .mount(
-            format!("{}/Steam", base_url),
-            routes![steam::authenticate],
+            format!("{}/ByondHash", base_url),
+            routes![byond::byond_hash],
         )
         .mount(
             "/",

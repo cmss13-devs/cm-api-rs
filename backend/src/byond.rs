@@ -288,3 +288,22 @@ pub async fn recent(
         Err(_) => Json(Vec::new()),
     }
 }
+
+#[derive(serde::Serialize)]
+pub struct ByondHashResponse {
+    sha256: Option<String>,
+}
+
+/// Returns the expected SHA256 hash for a given BYOND version. **This is a public endpoint**.
+#[get("/?<byond_ver>")]
+pub async fn byond_hash(
+    config: &State<Config>,
+    byond_ver: &str,
+) -> PublicCors<ByondHashResponse> {
+    let sha256 = config
+        .byond_hashes
+        .as_ref()
+        .and_then(|hashes| hashes.get(byond_ver).cloned());
+
+    PublicCors(ByondHashResponse { sha256 })
+}
