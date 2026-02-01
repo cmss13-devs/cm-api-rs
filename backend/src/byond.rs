@@ -134,7 +134,7 @@ pub async fn round(
         };
 
         if let Some(cache_time) = *cache_time_guard {
-            let cache_expiry = chrono::Utc::now() - Duration::seconds(60);
+            let cache_expiry = chrono::Utc::now() - Duration::seconds(20);
             if cache_time > cache_expiry {
                 let cached = match cache.cached_status.lock() {
                     Ok(real) => real,
