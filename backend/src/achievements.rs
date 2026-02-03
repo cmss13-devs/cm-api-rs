@@ -19,6 +19,13 @@ pub struct AchievementsResponse {
 pub struct SetAchievementRequest {
     pub ckey: String,
     pub achievement: String,
+    /// Steam app instance to use (e.g., "default", "playtest"). Defaults to "default".
+    #[serde(default = "default_instance")]
+    pub instance: String,
+}
+
+fn default_instance() -> String {
+    "default".to_string()
 }
 
 #[derive(Debug, Serialize)]
@@ -249,16 +256,19 @@ async fn get_user_by_uuid(
     Ok(search_response.results.into_iter().next().unwrap())
 }
 
-/// GET /Achievements?ckey=<ckey> - Get uncompleted achievements for a player
+/// GET /Achievements?ckey=<ckey>&instance=<instance> - Get uncompleted achievements for a player
 ///
 /// Returns list of uncompleted achievement keys.
 /// Requires Bearer token authorization.
-#[get("/?<ckey>")]
+/// `instance` parameter selects which Steam app to query (e.g., "default", "playtest"). Defaults to "default".
+#[get("/?<ckey>&<instance>")]
 pub async fn get_achievements(
     auth_header: AuthorizationHeader,
     config: &State<Config>,
     ckey: &str,
+    instance: Option<&str>,
 ) -> Result<Json<AchievementsResponse>, (Status, Json<AuthentikError>)> {
+    let instance = instance.unwrap_or("default");
     // Validate auth token
     if !validate_auth_header(Some(&auth_header.0), config) {
         return Err((
@@ -313,7 +323,7 @@ pub async fn get_achievements(
     };
 
     // Get achievements from Steam
-    let achievements = get_steam_achievements(&http_client, steam_config, &steam_id, "default")
+    let achievements = get_steam_achievements(&http_client, steam_config, &steam_id, instance)
         .await
         .map_err(|e| {
             (
@@ -407,7 +417,7 @@ pub async fn set_achievement(
         steam_config,
         &steam_id,
         &request.achievement,
-        "default",
+        &request.instance,
     )
     .await
     {
