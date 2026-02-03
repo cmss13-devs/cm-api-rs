@@ -42,7 +42,10 @@ pub struct Staff;
 
 impl PermissionLevel for Staff {
     fn is_authorized(claims: &SessionClaims, oidc: &OidcClient) -> bool {
-        oidc.config.staff_groups.iter().any(|x| claims.groups.contains(x))
+        oidc.config
+            .staff_groups
+            .iter()
+            .any(|x| claims.groups.contains(x))
     }
 
     fn debug_username() -> &'static str {
@@ -59,8 +62,15 @@ pub struct Management;
 
 impl PermissionLevel for Management {
     fn is_authorized(claims: &SessionClaims, oidc: &OidcClient) -> bool {
-        oidc.config.staff_groups.iter().any(|x| claims.groups.contains(x))
-            && oidc.config.management_groups.iter().any(|x| claims.groups.contains(x))
+        oidc.config
+            .staff_groups
+            .iter()
+            .any(|x| claims.groups.contains(x))
+            && oidc
+                .config
+                .management_groups
+                .iter()
+                .any(|x| claims.groups.contains(x))
     }
 
     fn debug_username() -> &'static str {

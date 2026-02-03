@@ -5,7 +5,7 @@ use sqlx::{prelude::FromRow, query_as};
 
 use crate::{
     Cmdb,
-    admin::{Staff, AuthenticatedUser},
+    admin::{AuthenticatedUser, Staff},
 };
 
 #[derive(Serialize, FromRow)]

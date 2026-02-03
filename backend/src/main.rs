@@ -23,6 +23,7 @@ use crate::authentik::AuthentikConfig;
 #[macro_use]
 extern crate rocket;
 
+mod achievements;
 mod admin;
 mod auth;
 mod authentik;
@@ -314,6 +315,13 @@ async fn rocket() -> _ {
         .mount(
             format!("{}/ByondHash", base_url),
             routes![byond::byond_hash],
+        )
+        .mount(
+            format!("{}/Achievements", base_url),
+            routes![
+                achievements::get_achievements,
+                achievements::set_achievement
+            ],
         )
         .mount(
             "/",

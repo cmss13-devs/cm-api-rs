@@ -6,9 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Cmapi, Config,
-    authentik::{
-        AuthentikError, create_user_with_steam_id, get_user_by_attribute,
-    },
+    authentik::{AuthentikError, create_user_with_steam_id, get_user_by_attribute},
     token::create_token,
 };
 

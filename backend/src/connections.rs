@@ -7,7 +7,7 @@ use sqlx::{MySqlConnection, prelude::FromRow, query_as};
 
 use crate::{
     Cmdb,
-    admin::{Staff, AuthenticatedUser},
+    admin::{AuthenticatedUser, Staff},
 };
 
 #[derive(serde::Serialize, FromRow, Hash, Eq, PartialEq)]

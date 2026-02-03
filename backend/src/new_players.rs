@@ -4,7 +4,7 @@ use sqlx::query_as;
 
 use crate::{
     Cmdb,
-    admin::{Staff, AuthenticatedUser},
+    admin::{AuthenticatedUser, Staff},
     player::Player,
 };
 

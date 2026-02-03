@@ -91,9 +91,15 @@ pub fn resolve_role_changes(
     is_linked: bool,
 ) -> RoleChanges {
     let (mut roles_to_add, mut roles_to_remove) = if is_linked {
-        (role_config.roles_to_add.clone(), role_config.roles_to_remove.clone())
+        (
+            role_config.roles_to_add.clone(),
+            role_config.roles_to_remove.clone(),
+        )
     } else {
-        (role_config.roles_to_remove.clone(), role_config.roles_to_add.clone())
+        (
+            role_config.roles_to_remove.clone(),
+            role_config.roles_to_add.clone(),
+        )
     };
 
     let all_whitelist_roles: Vec<String> = role_config
@@ -295,8 +301,7 @@ pub async fn check_verified(
                         let ckey_str = eligibility.ckey.clone().unwrap_or_default();
                         let whitelist_status =
                             get_whitelist_status_by_ckey(&mut db, &ckey_str).await;
-                        let role_config =
-                            discord_config.link_role_changes.get(&guild_id).unwrap();
+                        let role_config = discord_config.link_role_changes.get(&guild_id).unwrap();
                         let role_changes =
                             resolve_role_changes(whitelist_status.as_deref(), role_config, true);
 
