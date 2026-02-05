@@ -632,7 +632,7 @@ async fn fetch_user_groups(
     user_pk: i64,
 ) -> Result<Vec<String>, String> {
     let url = format!(
-        "{}/api/v3/core/groups/?member_by_pk={}",
+        "{}/api/v3/core/groups/?members_by_pk={}",
         config.base_url.trim_end_matches('/'),
         user_pk
     );

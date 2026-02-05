@@ -2,6 +2,7 @@ import type React from "react";
 import type { PropsWithChildren } from "react";
 import { useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
+import { AuthentikLookup } from "./authentikLookup";
 import { CidLookup } from "./cidLookup";
 import { Dialog } from "./dialog";
 import { IpLookup } from "./ipLookup";
@@ -21,6 +22,7 @@ export default function HomePage(): React.ReactElement {
           <LookupOption type="ip">Lookup IP</LookupOption>
           <LookupOption type="cid">Lookup CID</LookupOption>
           <LookupOption type="discordId">Lookup Discord</LookupOption>
+          <LookupOption type="authentikUuid">Lookup Authentik</LookupOption>
         </div>
 
         <Link
@@ -57,7 +59,7 @@ export default function HomePage(): React.ReactElement {
 }
 
 interface LookupProps extends PropsWithChildren {
-  type: "lookup" | "ip" | "cid" | "discordId";
+  type: "lookup" | "ip" | "cid" | "discordId" | "authentikUuid";
 }
 
 const LookupOption = (props: LookupProps) => {
@@ -128,6 +130,9 @@ const LookupOption = (props: LookupProps) => {
           )}
           {type === "cid" && <CidLookup initialCid={value} close={close} />}
           {type === "ip" && <IpLookup initialIp={value} close={close} />}
+          {type === "authentikUuid" && (
+            <AuthentikLookup initialUuid={value} close={close} />
+          )}
         </Dialog>
       )}
     </>
