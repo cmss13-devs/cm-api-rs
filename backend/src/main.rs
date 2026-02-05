@@ -39,6 +39,7 @@ mod stickyban;
 mod ticket;
 mod token;
 mod twofactor;
+mod utils;
 mod whitelist;
 
 /// CORS fairing with configurable allowed origin

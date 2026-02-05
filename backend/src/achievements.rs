@@ -6,6 +6,7 @@ use crate::{
     authentik::{AuthentikConfig, AuthentikError, get_user_by_attribute},
     player::{AuthorizationHeader, validate_auth_header},
     steam::SteamConfig,
+    utils::normalize_uuid,
 };
 
 #[derive(Debug, Serialize)]
@@ -225,6 +226,7 @@ async fn get_user_by_uuid(
     config: &AuthentikConfig,
     uuid: &str,
 ) -> Result<crate::authentik::AuthentikUser, String> {
+    let uuid = normalize_uuid(uuid).ok_or_else(|| format!("Invalid UUID format: '{}'", uuid))?;
     let url = format!(
         "{}/api/v3/core/users/?uuid={}",
         config.base_url.trim_end_matches('/'),
