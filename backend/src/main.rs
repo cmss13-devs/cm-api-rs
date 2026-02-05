@@ -305,6 +305,7 @@ async fn rocket() -> _ {
                 authentik::get_discourse_user_id,
                 authentik::webhook_user_unlinked,
                 authentik::webhook_user_linked,
+                authentik::get_user_by_uuid,
                 token::get_token_user_info,
             ],
         )

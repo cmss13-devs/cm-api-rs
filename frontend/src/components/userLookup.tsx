@@ -9,6 +9,7 @@ import React, {
 import { useLoaderData, useNavigate, useSearchParams } from "react-router-dom";
 import { useDebounce } from "use-debounce";
 import { callApi } from "../helpers/api";
+import type { AuthentikUserFullResponse } from "../types/authentik";
 import { GlobalContext } from "../types/global";
 import type { ConnectionHistory } from "../types/loginTriplet";
 import type { Ticket } from "../types/ticket";
@@ -497,9 +498,191 @@ const UserDetailsModal = (props: { player: Player }) => {
             vpnWhitelist={vpnWhitelist}
             setVpnWhitelist={setVpnWhitelist}
           />
+          {"|"}
+          <AuthentikUserLookup />
         </div>
       </div>
     </>
+  );
+};
+
+const AuthentikUserLookup = () => {
+  const [open, setOpen] = useState(false);
+  const [uuid, setUuid] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [userData, setUserData] = useState<AuthentikUserFullResponse | null>(
+    null
+  );
+  const [error, setError] = useState<string | null>(null);
+  const global = useContext(GlobalContext);
+
+  const searchUser = () => {
+    if (!uuid.trim()) {
+      global?.updateAndShowToast("Please enter a UUID");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setUserData(null);
+
+    callApi(`/Authentik/UserByUuid/${encodeURIComponent(uuid.trim())}`).then(
+      (response) => {
+        setLoading(false);
+        if (response.status === 200) {
+          response.json().then((json) => setUserData(json));
+        } else if (response.status === 404) {
+          setError("No user found with that UUID");
+        } else {
+          response.json().then((json) => {
+            setError(json.message || "Failed to fetch user");
+          });
+        }
+      }
+    );
+  };
+
+  const handleClose = () => {
+    setOpen(false);
+    setUuid("");
+    setUserData(null);
+    setError(null);
+  };
+
+  return (
+    <>
+      <LinkColor onClick={() => setOpen(true)}>
+        Lookup Authentik User
+      </LinkColor>
+      {open && (
+        <Dialog open={open} toggle={handleClose} className="max-h-[80%]">
+          <div className="pt-5 flex flex-col gap-4">
+            <div className="text-xl text-center">Authentik User Lookup</div>
+            <form
+              className="flex flex-row justify-center gap-3"
+              onSubmit={(e) => {
+                e.preventDefault();
+                searchUser();
+              }}
+            >
+              <label htmlFor="authentik-uuid">UUID:</label>
+              <input
+                type="text"
+                id="authentik-uuid"
+                value={uuid}
+                onChange={(e) => setUuid(e.target.value)}
+                placeholder="Enter user UUID"
+                className="w-80"
+              />
+              <button
+                type="submit"
+                className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded"
+                disabled={loading}
+              >
+                {loading ? "Searching..." : "Search"}
+              </button>
+            </form>
+
+            {error && (
+              <div className="text-red-500 text-center">{error}</div>
+            )}
+
+            {userData && <AuthentikUserDetails user={userData} />}
+          </div>
+        </Dialog>
+      )}
+    </>
+  );
+};
+
+const AuthentikUserDetails = ({
+  user,
+}: {
+  user: AuthentikUserFullResponse;
+}) => {
+  const global = useContext(GlobalContext);
+
+  const copyToClipboard = (value: string, label: string) => {
+    navigator.clipboard.writeText(value);
+    global?.updateAndShowToast(`Copied ${label} to clipboard`);
+  };
+
+  const formatAttributeValue = (value: unknown): string => {
+    if (typeof value === "string") return value;
+    if (typeof value === "number" || typeof value === "boolean")
+      return String(value);
+    return JSON.stringify(value);
+  };
+
+  return (
+    <div className="flex flex-col gap-4 border border-[#3f3f3f] p-4 rounded">
+      <div className="flex flex-col md:flex-row gap-6">
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-row gap-2">
+            <span className="underline">Username:</span>
+            <span>{user.username}</span>
+          </div>
+          <div className="flex flex-row gap-2">
+            <span className="underline">Name:</span>
+            <span>{user.name}</span>
+          </div>
+          <div className="flex flex-row gap-2">
+            <span className="underline">Email:</span>
+            <span>{user.email ?? "Not set"}</span>
+          </div>
+          <div className="flex flex-row gap-2">
+            <span className="underline">Active:</span>
+            <span className={user.isActive ? "text-green-500" : "text-red-500"}>
+              {user.isActive ? "Yes" : "No"}
+            </span>
+          </div>
+          <div className="flex flex-row gap-2">
+            <span className="underline">Last Login:</span>
+            <span>{user.lastLogin ?? "Never"}</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-row gap-2">
+            <span className="underline">UUID:</span>
+            <LinkColor onClick={() => copyToClipboard(user.uuid ?? "", "UUID")}>
+              {user.uuid ?? "N/A"}
+            </LinkColor>
+          </div>
+          <div className="flex flex-row gap-2">
+            <span className="underline">UID:</span>
+            <LinkColor onClick={() => copyToClipboard(user.uid, "UID")}>
+              {user.uid}
+            </LinkColor>
+          </div>
+          <div className="flex flex-row gap-2">
+            <span className="underline">PK:</span>
+            <span>{user.pk}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <div className="underline">Groups:</div>
+        <div className="pl-4">
+          {user.groups.length > 0 ? user.groups.join(", ") : "None"}
+        </div>
+      </div>
+
+      {Object.keys(user.attributes).length > 0 && (
+        <div className="flex flex-col gap-2">
+          <div className="underline">Attributes:</div>
+          <div className="pl-4 flex flex-col gap-1">
+            {Object.entries(user.attributes).map(([key, value]) => (
+              <div key={key} className="flex flex-row gap-2">
+                <span className="text-gray-400">{key}:</span>
+                <span>{formatAttributeValue(value)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 

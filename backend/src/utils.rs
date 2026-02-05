@@ -12,16 +12,21 @@ pub fn normalize_uuid(input: &str) -> Option<String> {
             } else {
                 c.is_ascii_hexdigit()
             }
-        }) => Some(input.to_lowercase()),
-
-        32 if input.chars().all(|c| c.is_ascii_hexdigit()) => Some(format!(
-            "{}-{}-{}-{}-{}",
-            &input[0..8],
-            &input[8..12],
-            &input[12..16],
-            &input[16..20],
-            &input[20..32]
-        ).to_lowercase()),
+        }) =>
+        {
+            Some(input.to_lowercase())
+        }
+        32 if input.chars().all(|c| c.is_ascii_hexdigit()) => Some(
+            format!(
+                "{}-{}-{}-{}-{}",
+                &input[0..8],
+                &input[8..12],
+                &input[12..16],
+                &input[16..20],
+                &input[20..32]
+            )
+            .to_lowercase(),
+        ),
 
         _ => None,
     }

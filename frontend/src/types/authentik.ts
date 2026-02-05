@@ -54,3 +54,16 @@ export type UpdateAdditionalTitlesRequest = {
 	ckey: string;
 	additionalTitles: string;
 };
+
+export type AuthentikUserFullResponse = {
+	pk: number;
+	uuid: string | null;
+	uid: string;
+	username: string;
+	name: string;
+	email: string | null;
+	isActive: boolean;
+	lastLogin: string | null;
+	attributes: Record<string, unknown>;
+	groups: string[];
+};
