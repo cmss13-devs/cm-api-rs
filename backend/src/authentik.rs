@@ -781,7 +781,7 @@ pub async fn create_user_with_steam_id(
         .json(&serde_json::json!({
             "user": user.pk,
             "source": steam_source.pk,
-            "identifier": steam_id
+            "identifier": format!("https://steamcommunity.com/openid/id/{}", steam_id)
         }))
         .send()
         .await
