@@ -5,6 +5,7 @@ export type User = {
 	ckey: string;
 	email: string;
 	groups: string[];
+	manageable: string[];
 };
 
 type GlobalType = {
