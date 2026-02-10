@@ -58,6 +58,10 @@ export const BanHistory: React.FC = () => {
     <div className="flex flex-col gap-3">
       <h1 className="text-2xl font-bold">Ban History</h1>
 
+      <div className="text-gray-400 text-sm">
+        This is a historical record of prior infractions. Bans listed here may no longer be active.
+      </div>
+
       <div className="flex flex-row gap-3 items-center">
         <input
           type="text"
