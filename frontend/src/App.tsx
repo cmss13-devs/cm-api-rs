@@ -54,7 +54,7 @@ export default function App(): React.ReactElement {
             // Not authenticated, redirect to login
             const currentPath = window.location.pathname + window.location.hash;
             window.location.href = `/api/auth/login?redirect=${encodeURIComponent(
-              currentPath
+              currentPath,
             )}`;
             return null;
           }
@@ -159,7 +159,13 @@ export default function App(): React.ReactElement {
         {user && (
           <>
             <span className="ml-auto text-gray-400">
-              {user.username} (<NameExpand name={user.ckey}></NameExpand>)
+              {user.username} (
+              {user.isStaff ? (
+                <NameExpand name={user.ckey}></NameExpand>
+              ) : (
+                user.ckey
+              )}
+              )
             </span>
             <button
               type="button"
