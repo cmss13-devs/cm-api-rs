@@ -125,6 +125,7 @@ export const ActiveBans: React.FC = () => {
               <th className="text-left p-2">Ban Type</th>
               <th className="text-left p-2">Reason</th>
               <th className="text-left p-2">Date</th>
+              <th className="text-left p-2">Expires</th>
             </tr>
           </thead>
           <tbody>
@@ -136,6 +137,13 @@ export const ActiveBans: React.FC = () => {
       )}
     </div>
   );
+};
+
+// BYOND epoch is January 1, 2000
+const BYOND_EPOCH = new Date(Date.UTC(2000, 0, 1, 0, 0, 0)).getTime();
+
+const byondTimeToDate = (byondMinutes: number): Date => {
+  return new Date(BYOND_EPOCH + byondMinutes * 60 * 1000);
 };
 
 const BanRow: React.FC<{ ban: BannedPlayer }> = ({ ban }) => {
@@ -156,6 +164,12 @@ const BanRow: React.FC<{ ban: BannedPlayer }> = ({ ban }) => {
     }
   }
 
+  let expiresStr = "Never";
+  if (!isPerma && ban.timeBanExpiration) {
+    const expiresDate = byondTimeToDate(ban.timeBanExpiration);
+    expiresStr = expiresDate.toLocaleString();
+  }
+
   return (
     <>
       <tr className="border-t border-[#3f3f3f]">
@@ -173,6 +187,7 @@ const BanRow: React.FC<{ ban: BannedPlayer }> = ({ ban }) => {
           {reason || "No reason provided"}
         </td>
         <td className="p-2">{formattedDate}</td>
+        <td className="p-2">{expiresStr}</td>
       </tr>
       <Dialog open={showReason} toggle={() => setShowReason(false)}>
         <div className="flex flex-col gap-4 mt-6">
