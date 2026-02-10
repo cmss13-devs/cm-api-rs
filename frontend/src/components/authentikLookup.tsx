@@ -1,4 +1,9 @@
-import React, { type PropsWithChildren, useContext, useEffect, useState } from "react";
+import React, {
+  type PropsWithChildren,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { callApi } from "../helpers/api";
 import type { AuthentikUserFullResponse } from "../types/authentik";
 import { GlobalContext } from "../types/global";
@@ -10,13 +15,13 @@ interface AuthentikLookupProps extends PropsWithChildren {
 }
 
 export const AuthentikLookup: React.FC<AuthentikLookupProps> = (
-  props: AuthentikLookupProps
+  props: AuthentikLookupProps,
 ) => {
   const { initialUuid } = props;
 
   const [uuid, setUuid] = useState<string>("");
   const [userData, setUserData] = useState<AuthentikUserFullResponse | null>(
-    null
+    null,
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,21 +48,21 @@ export const AuthentikLookup: React.FC<AuthentikLookupProps> = (
       setUuid(override);
     }
 
-    callApi(`/Authentik/UserByUuid/${encodeURIComponent(searchUuid.trim())}`).then(
-      (response) => {
-        setLoading(false);
-        if (response.status === 200) {
-          response.json().then((json) => setUserData(json));
-        } else if (response.status === 404) {
-          setError("No user found with that UUID");
-          if (props.close) props.close();
-        } else {
-          response.json().then((json) => {
-            setError(json.message || "Failed to fetch user");
-          });
-        }
+    callApi(
+      `/Authentik/UserByUuid/${encodeURIComponent(searchUuid.trim())}`,
+    ).then((response) => {
+      setLoading(false);
+      if (response.status === 200) {
+        response.json().then((json) => setUserData(json));
+      } else if (response.status === 404) {
+        setError("No user found with that UUID");
+        if (props.close) props.close();
+      } else {
+        response.json().then((json) => {
+          setError(json.message || "Failed to fetch user");
+        });
       }
-    );
+    });
   };
 
   return (
@@ -108,9 +113,15 @@ const AuthentikUserDetails = ({
 
   const urlifyAttributeValue = (value: string, key: string): string => {
     if (key === "steam_id")
-      return "<a href='https://steamcommunity.com/profiles/" + value + "'>" + value + "</a>";
+      return (
+        "<a href='https://steamcommunity.com/profiles/" +
+        value +
+        "'>" +
+        value +
+        "</a>"
+      );
     return value;
-  }
+  };
 
   return (
     <div className="flex flex-col gap-4 border border-[#3f3f3f] p-4 rounded">
@@ -174,7 +185,9 @@ const AuthentikUserDetails = ({
             {Object.entries(user.attributes).map(([key, value]) => (
               <div key={key} className="flex flex-row gap-2">
                 <span className="text-gray-400">{key}:</span>
-                <span>{urlifyAttributeValue(formatAttributeValue(value), key)}</span>
+                <span>
+                  {urlifyAttributeValue(formatAttributeValue(value), key)}
+                </span>
               </div>
             ))}
           </div>
