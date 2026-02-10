@@ -245,6 +245,8 @@ async fn rocket() -> _ {
                 player::get_banned_players,
                 player::get_ban_history,
                 player::get_known_alts,
+                player::add_known_alt,
+                player::remove_known_alt,
             ],
         )
         .mount(

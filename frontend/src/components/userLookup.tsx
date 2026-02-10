@@ -1154,8 +1154,10 @@ const KnownAltsModal = (props: { player: Player }) => {
   const { player } = props;
   const [altsData, setAltsData] = useState<KnownAltsResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [newAltCkey, setNewAltCkey] = useState("");
+  const global = useContext(GlobalContext);
 
-  useEffect(() => {
+  const fetchAlts = useCallback(() => {
     if (!player.ckey) return;
 
     setLoading(true);
@@ -1172,6 +1174,61 @@ const KnownAltsModal = (props: { player: Player }) => {
         setLoading(false);
       });
   }, [player.ckey]);
+
+  useEffect(() => {
+    fetchAlts();
+  }, [fetchAlts]);
+
+  const addAlt = useCallback(() => {
+    if (!player.ckey || !newAltCkey.trim()) return;
+
+    const playerCkey = altsData?.mainAccount || player.ckey;
+    const altCkey = newAltCkey.trim().toLowerCase().replace(/[^a-z0-9@]/g, "");
+
+    callApi("/User/KnownAlts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerCkey, altCkey }),
+    })
+      .then((response) => {
+        if (response.ok) {
+          setNewAltCkey("");
+          fetchAlts();
+          global?.updateAndShowToast("Alt added.");
+        } else {
+          global?.updateAndShowToast("Failed to add alt.");
+        }
+      })
+      .catch(() => {
+        global?.updateAndShowToast("Failed to add alt.");
+      });
+  }, [player.ckey, newAltCkey, altsData, fetchAlts, global]);
+
+  const removeAlt = useCallback(
+    (altCkey: string) => {
+      if (!player.ckey) return;
+
+      const playerCkey = altsData?.mainAccount || player.ckey;
+
+      callApi("/User/KnownAlts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerCkey, altCkey }),
+      })
+        .then((response) => {
+          if (response.ok) {
+            fetchAlts();
+            global?.updateAndShowToast("Alt removed.");
+          } else {
+            global?.updateAndShowToast("Failed to remove alt.");
+          }
+        })
+        .catch(() => {
+          global?.updateAndShowToast("Failed to remove alt.");
+        });
+    },
+    [player.ckey, altsData, fetchAlts, global]
+  );
 
   const hasAlts = altsData && (altsData.mainAccount || altsData.alts.length > 0);
 
@@ -1196,9 +1253,38 @@ const KnownAltsModal = (props: { player: Player }) => {
             <div className="text-yellow-400">Known alt accounts:</div>
             <div className="ml-4 flex flex-col gap-1">
               {altsData.alts.map((alt) => (
-                <NameExpand key={alt} name={alt} />
+                <div key={alt} className="flex flex-row items-center gap-2">
+                  <NameExpand name={alt} />
+                  <button
+                    type="button"
+                    className="text-red-400 hover:text-red-300 text-sm font-bold"
+                    onClick={() => removeAlt(alt)}
+                    title="Remove alt"
+                  >
+                    X
+                  </button>
+                </div>
               ))}
             </div>
+          </div>
+        )}
+        {!loading && (
+          <div className="flex flex-row gap-2 items-center mt-2">
+            <input
+              type="text"
+              placeholder="Alt ckey"
+              value={newAltCkey}
+              onChange={(e) => setNewAltCkey(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addAlt()}
+              className="bg-[#2a2a2a] border border-[#3f3f3f] px-2 py-1 text-sm"
+            />
+            <button
+              type="button"
+              className="bg-[#3f3f3f] hover:bg-[#4f4f4f] px-2 py-1 text-sm"
+              onClick={addAlt}
+            >
+              Add Alt
+            </button>
           </div>
         )}
       </div>

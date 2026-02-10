@@ -7,7 +7,7 @@ use rocket::{
     futures::TryStreamExt,
     http::Status,
     request::{FromRequest, Outcome},
-    serde::{Serialize, json::Json},
+    serde::{Deserialize, Serialize, json::Json},
 };
 use rocket_db_pools::Connection;
 use sqlx::{MySqlConnection, Row, prelude::FromRow, query, query_as, types::BigDecimal};
@@ -711,13 +711,6 @@ pub async fn get_ban_history(
     }
 }
 
-#[derive(Serialize, FromRow)]
-#[serde(crate = "rocket::serde", rename_all = "camelCase")]
-pub struct KnownAlt {
-    player_ckey: Option<String>,
-    ckey: Option<String>,
-}
-
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct KnownAltsResponse {
@@ -765,4 +758,60 @@ pub async fn get_known_alts(
         },
         alts,
     })
+}
+
+#[derive(Deserialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct AddKnownAltRequest {
+    player_ckey: String,
+    alt_ckey: String,
+}
+
+/// Adds a known alt association
+#[post("/KnownAlts", data = "<request>")]
+pub async fn add_known_alt(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Staff>,
+    request: rocket::serde::json::Json<AddKnownAltRequest>,
+) -> Status {
+    let result = query(
+        "INSERT INTO known_alts (player_ckey, ckey) VALUES (?, ?)",
+    )
+    .bind(&request.player_ckey)
+    .bind(&request.alt_ckey)
+    .execute(&mut **db)
+    .await;
+
+    match result {
+        Ok(_) => Status::Created,
+        Err(_) => Status::InternalServerError,
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct RemoveKnownAltRequest {
+    player_ckey: String,
+    alt_ckey: String,
+}
+
+/// Removes a known alt association
+#[delete("/KnownAlts", data = "<request>")]
+pub async fn remove_known_alt(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Staff>,
+    request: rocket::serde::json::Json<RemoveKnownAltRequest>,
+) -> Status {
+    let result = query(
+        "DELETE FROM known_alts WHERE player_ckey = ? AND ckey = ?",
+    )
+    .bind(&request.player_ckey)
+    .bind(&request.alt_ckey)
+    .execute(&mut **db)
+    .await;
+
+    match result {
+        Ok(_) => Status::Ok,
+        Err(_) => Status::InternalServerError,
+    }
 }
