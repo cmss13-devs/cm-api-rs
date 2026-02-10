@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import App from "./App";
+import { ActiveBans } from "./components/activeBans";
 import { AuthentikPanel } from "./components/authentikPanel";
 import HomePage from "./components/homePage";
 import { NewPlayers } from "./components/newPlayers";
@@ -57,6 +58,10 @@ const router = createBrowserRouter([
       {
         path: "/2fa",
         element: <TwoFactor />,
+      },
+      {
+        path: "/bans",
+        element: <ActiveBans />,
       },
     ],
   },

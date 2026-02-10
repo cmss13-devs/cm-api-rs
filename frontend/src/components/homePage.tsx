@@ -21,6 +21,13 @@ export default function HomePage(): React.ReactElement {
           <div className="text-3xl underline text-center">[cmdb]</div>
         </div>
 
+        <Link
+          to={"/bans"}
+          className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
+        >
+          View Active Bans
+        </Link>
+
         {user?.isStaff && (
           <>
             <div className="flex flex-col md:flex-row gap-3">

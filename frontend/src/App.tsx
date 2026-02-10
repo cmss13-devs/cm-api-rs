@@ -116,6 +116,10 @@ export default function App(): React.ReactElement {
             [cmdb]
           </Link>
         </LinkColor>
+        |
+        <LinkColor>
+          <Link to="/bans">Bans</Link>
+        </LinkColor>
         {user?.isStaff && (
           <>
             |
