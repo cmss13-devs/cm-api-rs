@@ -164,6 +164,8 @@ const parseDate = (dateStr: string): Date | null => {
 const BanHistoryRow: React.FC<{ ban: HistoricalBan }> = ({ ban }) => {
   const [showReason, setShowReason] = useState(false);
 
+  const isPermanent = ban.banTime === null || ban.banTime <= 0;
+
   let formattedDate = ban.date || "Unknown";
   const parsedDate = ban.date ? parseDate(ban.date) : null;
   if (parsedDate) {
@@ -182,7 +184,9 @@ const BanHistoryRow: React.FC<{ ban: HistoricalBan }> = ({ ban }) => {
       <tr className="border-t border-[#3f3f3f]">
         <td className="p-2">{ban.ckey || "Unknown"}</td>
         <td className="p-2">{formattedDate}</td>
-        <td className="p-2">{formatDuration(ban.banTime)}</td>
+        <td className={`p-2 ${isPermanent ? "text-red-400" : "text-yellow-400"}`}>
+          {formatDuration(ban.banTime)}
+        </td>
         <td className="p-2">{ban.roundId ?? "N/A"}</td>
         <td
           className="p-2 max-w-md truncate cursor-pointer hover:text-blue-400"
