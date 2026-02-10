@@ -749,7 +749,11 @@ pub async fn get_known_alts(
         .fetch_all(&mut **db)
         .await
     {
-        Ok(rows) => rows.iter().filter_map(|row| row.get("ckey")).collect(),
+        Ok(rows) => rows
+            .iter()
+            .filter_map(|row| row.get::<Option<String>, _>("ckey"))
+            .filter(|alt| alt != &ckey)
+            .collect(),
         Err(_) => Vec::new(),
     };
 
