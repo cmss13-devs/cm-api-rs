@@ -57,6 +57,22 @@ impl PermissionLevel for Staff {
     }
 }
 
+pub struct Player;
+
+impl PermissionLevel for Player {
+    fn is_authorized(claims: &SessionClaims, _oidc: &OidcClient) -> bool {
+        !claims.sub.is_empty()
+    }
+
+    fn debug_groups() -> Vec<String> {
+        vec!["user".to_string()]
+    }
+
+    fn debug_username() -> &'static str {
+        "UserBot"
+    }
+}
+
 #[allow(dead_code)]
 pub struct Management;
 

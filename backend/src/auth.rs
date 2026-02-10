@@ -140,11 +140,14 @@ struct PkceState {
 
 /// User info response for /auth/userinfo
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserInfo {
     pub username: String,
     pub email: String,
     pub groups: Vec<String>,
     pub ckey: String,
+    pub is_staff: bool,
+    pub is_management: bool,
 }
 
 /// Error response
@@ -669,6 +672,8 @@ pub fn userinfo(
             ckey: "adminbot".to_string(),
             email: "admin@debug.local".to_string(),
             groups: vec!["admin".to_string()],
+            is_staff: true,
+            is_management: true,
         }));
     }
 
@@ -695,10 +700,25 @@ pub fn userinfo(
             )
         })?;
 
+    let is_staff = oidc
+        .config
+        .staff_groups
+        .iter()
+        .any(|x| claims.groups.contains(x));
+
+    let is_management = is_staff
+        && oidc
+            .config
+            .management_groups
+            .iter()
+            .any(|x| claims.groups.contains(x));
+
     Ok(Json(UserInfo {
         username: claims.username,
         ckey: claims.ckey,
         email: claims.email,
         groups: claims.groups,
+        is_staff,
+        is_management,
     }))
 }
