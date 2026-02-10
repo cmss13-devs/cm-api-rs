@@ -1155,6 +1155,7 @@ const KnownAltsModal = (props: { player: Player }) => {
   const [altsData, setAltsData] = useState<KnownAltsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [newAltCkey, setNewAltCkey] = useState("");
+  const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
   const global = useContext(GlobalContext);
 
   const fetchAlts = useCallback(() => {
@@ -1255,14 +1256,36 @@ const KnownAltsModal = (props: { player: Player }) => {
               {altsData.alts.map((alt) => (
                 <div key={alt} className="flex flex-row items-center gap-2">
                   <NameExpand name={alt} />
-                  <button
-                    type="button"
-                    className="text-red-400 hover:text-red-300 text-sm font-bold"
-                    onClick={() => removeAlt(alt)}
-                    title="Remove alt"
-                  >
-                    X
-                  </button>
+                  {confirmingRemove === alt ? (
+                    <>
+                      <button
+                        type="button"
+                        className="text-red-400 hover:text-red-300 text-sm"
+                        onClick={() => {
+                          removeAlt(alt);
+                          setConfirmingRemove(null);
+                        }}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        className="text-gray-400 hover:text-gray-300 text-sm"
+                        onClick={() => setConfirmingRemove(null)}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-red-400 hover:text-red-300 text-sm font-bold"
+                      onClick={() => setConfirmingRemove(alt)}
+                      title="Remove alt"
+                    >
+                      X
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
