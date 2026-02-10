@@ -677,7 +677,6 @@ pub fn userinfo(
         }));
     }
 
-    // Get session cookie
     let session_cookie = cookies.get(SESSION_COOKIE_NAME).ok_or_else(|| {
         (
             Status::Unauthorized,
@@ -688,7 +687,6 @@ pub fn userinfo(
         )
     })?;
 
-    // Validate session JWT
     let claims = validate_session_jwt(session_cookie.value(), &oidc.config.session_secret)
         .map_err(|e| {
             (

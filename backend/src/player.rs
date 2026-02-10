@@ -14,7 +14,7 @@ use sqlx::{MySqlConnection, Row, prelude::FromRow, query, query_as, types::BigDe
 
 use crate::{
     Cmdb, Config,
-    admin::{AuthenticatedUser, Staff},
+    admin::{AuthenticatedUser, Player as PlayerPermission, Staff},
     logging::log_external,
 };
 
@@ -578,5 +578,55 @@ pub async fn get_vpn_whitelist(
     {
         Ok(whitelist) => Some(Json(whitelist)),
         Err(_) => None,
+    }
+}
+
+#[derive(Serialize, FromRow)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct BannedPlayer {
+    ckey: Option<String>,
+    is_time_banned: Option<i32>,
+    time_ban_reason: Option<String>,
+    time_ban_date: Option<String>,
+    time_ban_expiration: Option<i64>,
+    is_permabanned: Option<i32>,
+    permaban_reason: Option<String>,
+    permaban_date: Option<String>,
+}
+
+/// Returns all currently banned players (permabanned or active time bans)
+/// Accessible by any authenticated user
+/// Supports pagination with ?page=N (0-indexed, 20 results per page)
+#[get("/Banned?<page>")]
+pub async fn get_banned_players(
+    mut db: Connection<Cmdb>,
+    _user: AuthenticatedUser<PlayerPermission>,
+    page: Option<i64>,
+) -> Json<Vec<BannedPlayer>> {
+    let byond_epoch = chrono::Utc
+        .with_ymd_and_hms(2000, 1, 1, 0, 0, 0)
+        .unwrap()
+        .timestamp();
+    let current_byond_time = (chrono::Utc::now().timestamp() - byond_epoch) / 60;
+
+    let page = page.unwrap_or(0).max(0);
+    let offset = page * 20;
+
+    match query_as(
+        r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
+                 is_permabanned, permaban_reason, permaban_date
+          FROM players
+          WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL)
+             OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_expiration > ?)
+          ORDER BY COALESCE(permaban_date, time_ban_date) ASC
+          LIMIT 20 OFFSET ?",
+    )
+    .bind(current_byond_time)
+    .bind(offset)
+    .fetch_all(&mut **db)
+    .await
+    {
+        Ok(players) => Json(players),
+        Err(_) => Json(Vec::new()),
     }
 }
