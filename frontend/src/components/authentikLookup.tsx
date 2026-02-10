@@ -1,5 +1,6 @@
 import React, {
   type PropsWithChildren,
+  ReactElement,
   useContext,
   useEffect,
   useState,
@@ -8,6 +9,7 @@ import { callApi } from "../helpers/api";
 import type { AuthentikUserFullResponse } from "../types/authentik";
 import { GlobalContext } from "../types/global";
 import { LinkColor } from "./link";
+import { Link } from "react-router-dom";
 
 interface AuthentikLookupProps extends PropsWithChildren {
   initialUuid?: string;
@@ -111,15 +113,9 @@ const AuthentikUserDetails = ({
     return JSON.stringify(value);
   };
 
-  const urlifyAttributeValue = (value: string, key: string): string => {
+  const urlifyAttributeValue = (value: string, key: string): ReactElement | string => {
     if (key === "steam_id")
-      return (
-        "<a href='https://steamcommunity.com/profiles/" +
-        value +
-        "'>" +
-        value +
-        "</a>"
-      );
+      return <LinkColor><Link to={"https://steamcommunity.com/profiles/" + {value}}>{value}</Link></LinkColor>
     return value;
   };
 
