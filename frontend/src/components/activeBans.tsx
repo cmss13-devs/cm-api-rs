@@ -18,10 +18,17 @@ export const ActiveBans: React.FC = () => {
   const [bans, setBans] = useState<BannedPlayer[]>();
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [ckeyFilter, setCkeyFilter] = useState("");
 
   useEffect(() => {
     setLoading(true);
-    callApi(`/User/Banned?page=${page}`)
+    const params = new URLSearchParams();
+    params.set("page", page.toString());
+    if (ckeyFilter) {
+      params.set("ckey", ckeyFilter);
+    }
+    callApi(`/User/Banned?${params.toString()}`)
       .then((response) => response.json())
       .then((json: BannedPlayer[]) => {
         setBans(json);
@@ -33,7 +40,18 @@ export const ActiveBans: React.FC = () => {
       .finally(() => {
         setLoading(false);
       });
-  }, [page]);
+  }, [page, ckeyFilter]);
+
+  const handleSearch = () => {
+    setPage(0);
+    setCkeyFilter(searchInput);
+  };
+
+  const handleClearSearch = () => {
+    setSearchInput("");
+    setCkeyFilter("");
+    setPage(0);
+  };
 
   if (!bans && loading) {
     return <div>Loading...</div>;
@@ -42,6 +60,34 @@ export const ActiveBans: React.FC = () => {
   return (
     <div className="flex flex-col gap-3">
       <h1 className="text-2xl font-bold">View Active Bans</h1>
+
+      <div className="flex flex-row gap-3 items-center">
+        <input
+          type="text"
+          placeholder="Search by CKEY..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+          className="border border-[#3f3f3f] rounded p-2 bg-transparent"
+        />
+        <button
+          type="button"
+          onClick={handleSearch}
+          disabled={loading}
+          className="border border-[#3f3f3f] rounded p-2 cursor-pointer disabled:opacity-50"
+        >
+          Search
+        </button>
+        {ckeyFilter && (
+          <button
+            type="button"
+            onClick={handleClearSearch}
+            className="border border-[#3f3f3f] rounded p-2 cursor-pointer text-gray-400 hover:text-white"
+          >
+            Clear
+          </button>
+        )}
+      </div>
 
       <div className="flex flex-row gap-3 items-center">
         <button
@@ -61,6 +107,9 @@ export const ActiveBans: React.FC = () => {
         >
           Next
         </button>
+        {ckeyFilter && (
+          <span className="text-gray-400">Filtering by: {ckeyFilter}</span>
+        )}
       </div>
 
       {loading && <div className="text-gray-400">Loading...</div>}

@@ -597,11 +597,13 @@ pub struct BannedPlayer {
 /// Returns all currently banned players (permabanned or active time bans)
 /// Accessible by any authenticated user
 /// Supports pagination with ?page=N (0-indexed, 20 results per page)
-#[get("/Banned?<page>")]
+/// Supports filtering by ckey with ?ckey=<search>
+#[get("/Banned?<page>&<ckey>")]
 pub async fn get_banned_players(
     mut db: Connection<Cmdb>,
     _user: AuthenticatedUser<PlayerPermission>,
     page: Option<i64>,
+    ckey: Option<String>,
 ) -> Json<Vec<BannedPlayer>> {
     let byond_epoch = chrono::Utc
         .with_ymd_and_hms(2000, 1, 1, 0, 0, 0)
@@ -612,20 +614,40 @@ pub async fn get_banned_players(
     let page = page.unwrap_or(0).max(0);
     let offset = page * 20;
 
-    match query_as(
-        r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
-                 is_permabanned, permaban_reason, permaban_date
-          FROM players
-          WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL)
-             OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_expiration > ?)
-          ORDER BY COALESCE(permaban_date, time_ban_date) DESC
-          LIMIT 20 OFFSET ?",
-    )
-    .bind(current_byond_time)
-    .bind(offset)
-    .fetch_all(&mut **db)
-    .await
-    {
+    let result = if let Some(ckey_filter) = ckey {
+        let ckey_pattern = format!("%{}%", ckey_filter);
+        query_as(
+            r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
+                     is_permabanned, permaban_reason, permaban_date
+              FROM players
+              WHERE ckey LIKE ?
+                AND ((is_permabanned = 1 AND permaban_reason IS NOT NULL)
+                   OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_expiration > ?))
+              ORDER BY COALESCE(permaban_date, time_ban_date) DESC
+              LIMIT 20 OFFSET ?",
+        )
+        .bind(ckey_pattern)
+        .bind(current_byond_time)
+        .bind(offset)
+        .fetch_all(&mut **db)
+        .await
+    } else {
+        query_as(
+            r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
+                     is_permabanned, permaban_reason, permaban_date
+              FROM players
+              WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL)
+                 OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_expiration > ?)
+              ORDER BY COALESCE(permaban_date, time_ban_date) DESC
+              LIMIT 20 OFFSET ?",
+        )
+        .bind(current_byond_time)
+        .bind(offset)
+        .fetch_all(&mut **db)
+        .await
+    };
+
+    match result {
         Ok(players) => Json(players),
         Err(_) => Json(Vec::new()),
     }
