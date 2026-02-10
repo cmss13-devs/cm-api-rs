@@ -618,7 +618,7 @@ pub async fn get_banned_players(
           FROM players
           WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL)
              OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_expiration > ?)
-          ORDER BY COALESCE(permaban_date, time_ban_date) ASC
+          ORDER BY COALESCE(permaban_date, time_ban_date) DESC
           LIMIT 20 OFFSET ?",
     )
     .bind(current_byond_time)
