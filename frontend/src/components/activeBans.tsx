@@ -107,9 +107,6 @@ export const ActiveBans: React.FC = () => {
         >
           Next
         </button>
-        {ckeyFilter && (
-          <span className="text-gray-400">Filtering by: {ckeyFilter}</span>
-        )}
       </div>
 
       {loading && <div className="text-gray-400">Loading...</div>}
