@@ -614,6 +614,8 @@ pub async fn get_banned_players(
     let page = page.unwrap_or(0).max(0);
     let offset = page * 20;
 
+    let cutoff_date = "2026-02-10";
+
     let result = if let Some(ckey_filter) = ckey {
         let ckey_pattern = format!("%{}%", ckey_filter);
         query_as(
@@ -621,12 +623,14 @@ pub async fn get_banned_players(
                      is_permabanned, permaban_reason, permaban_date
               FROM players
               WHERE ckey LIKE ?
-                AND ((is_permabanned = 1 AND permaban_reason IS NOT NULL)
-                   OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_expiration > ?))
+                AND ((is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date >= ?)
+                   OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date >= ? AND time_ban_expiration > ?))
               ORDER BY COALESCE(permaban_date, time_ban_date) DESC
               LIMIT 20 OFFSET ?",
         )
         .bind(ckey_pattern)
+        .bind(cutoff_date)
+        .bind(cutoff_date)
         .bind(current_byond_time)
         .bind(offset)
         .fetch_all(&mut **db)
@@ -636,11 +640,13 @@ pub async fn get_banned_players(
             r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
                      is_permabanned, permaban_reason, permaban_date
               FROM players
-              WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL)
-                 OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_expiration > ?)
+              WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date >= ?)
+                 OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date >= ? AND time_ban_expiration > ?)
               ORDER BY COALESCE(permaban_date, time_ban_date) DESC
               LIMIT 20 OFFSET ?",
         )
+        .bind(cutoff_date)
+        .bind(cutoff_date)
         .bind(current_byond_time)
         .bind(offset)
         .fetch_all(&mut **db)
@@ -677,17 +683,20 @@ pub async fn get_ban_history(
     let page = page.unwrap_or(0).max(0);
     let offset = page * 20;
 
+    let cutoff_date = "2026-02-10";
+
     let result = if let Some(ckey_filter) = ckey {
         let ckey_pattern = format!("%{}%", ckey_filter);
         query_as(
             r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
               FROM player_notes n
               INNER JOIN players p ON n.player_id = p.id
-              WHERE n.is_ban = 1 AND p.ckey LIKE ?
+              WHERE n.is_ban = 1 AND p.ckey LIKE ? AND n.date >= ?
               ORDER BY n.id DESC
               LIMIT 20 OFFSET ?",
         )
         .bind(ckey_pattern)
+        .bind(cutoff_date)
         .bind(offset)
         .fetch_all(&mut **db)
         .await
@@ -696,10 +705,11 @@ pub async fn get_ban_history(
             r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
               FROM player_notes n
               INNER JOIN players p ON n.player_id = p.id
-              WHERE n.is_ban = 1
+              WHERE n.is_ban = 1 AND n.date >= ?
               ORDER BY n.id DESC
               LIMIT 20 OFFSET ?",
         )
+        .bind(cutoff_date)
         .bind(offset)
         .fetch_all(&mut **db)
         .await
