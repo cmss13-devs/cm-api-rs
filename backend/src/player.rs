@@ -623,8 +623,8 @@ pub async fn get_banned_players(
                      is_permabanned, permaban_reason, permaban_date
               FROM players
               WHERE ckey LIKE ?
-                AND ((is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date >= ?)
-                   OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date >= ? AND time_ban_expiration > ?))
+                AND ((is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date LIKE '202%' AND permaban_date >= ?)
+                   OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date LIKE '202%' AND time_ban_date >= ? AND time_ban_expiration > ?))
               ORDER BY COALESCE(permaban_date, time_ban_date) DESC
               LIMIT 20 OFFSET ?",
         )
@@ -640,8 +640,8 @@ pub async fn get_banned_players(
             r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
                      is_permabanned, permaban_reason, permaban_date
               FROM players
-              WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date >= ?)
-                 OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date >= ? AND time_ban_expiration > ?)
+              WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date LIKE '202%' AND permaban_date >= ?)
+                 OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date LIKE '202%' AND time_ban_date >= ? AND time_ban_expiration > ?)
               ORDER BY COALESCE(permaban_date, time_ban_date) DESC
               LIMIT 20 OFFSET ?",
         )
@@ -691,7 +691,7 @@ pub async fn get_ban_history(
             r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
               FROM player_notes n
               INNER JOIN players p ON n.player_id = p.id
-              WHERE n.is_ban = 1 AND p.ckey LIKE ? AND n.date >= ?
+              WHERE n.is_ban = 1 AND p.ckey LIKE ? AND n.date LIKE '202%' AND n.date >= ?
               ORDER BY n.id DESC
               LIMIT 20 OFFSET ?",
         )
@@ -705,7 +705,7 @@ pub async fn get_ban_history(
             r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
               FROM player_notes n
               INNER JOIN players p ON n.player_id = p.id
-              WHERE n.is_ban = 1 AND n.date >= ?
+              WHERE n.is_ban = 1 AND n.date LIKE '202%' AND n.date >= ?
               ORDER BY n.id DESC
               LIMIT 20 OFFSET ?",
         )
