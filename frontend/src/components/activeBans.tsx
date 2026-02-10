@@ -1,6 +1,7 @@
 import type React from "react";
 import { useEffect, useState } from "react";
 import { callApi } from "../helpers/api";
+import { Dialog } from "./dialog";
 
 interface BannedPlayer {
   ckey: string | null;
@@ -92,6 +93,8 @@ export const ActiveBans: React.FC = () => {
 };
 
 const BanRow: React.FC<{ ban: BannedPlayer }> = ({ ban }) => {
+  const [showReason, setShowReason] = useState(false);
+
   const isPerma = ban.isPermabanned === 1;
   const banType = isPerma ? "Permaban" : "Timeban";
   const reason = isPerma ? ban.permabanReason : ban.timeBanReason;
@@ -108,15 +111,31 @@ const BanRow: React.FC<{ ban: BannedPlayer }> = ({ ban }) => {
   }
 
   return (
-    <tr className="border-t border-[#3f3f3f]">
-      <td className="p-2">{ban.ckey || "Unknown"}</td>
-      <td className={`p-2 ${isPerma ? "text-red-400" : "text-yellow-400"}`}>
-        {banType}
-      </td>
-      <td className="p-2 max-w-md truncate" title={reason || undefined}>
-        {reason || "No reason provided"}
-      </td>
-      <td className="p-2">{formattedDate}</td>
-    </tr>
+    <>
+      <tr className="border-t border-[#3f3f3f]">
+        <td className="p-2">{ban.ckey || "Unknown"}</td>
+        <td className={`p-2 ${isPerma ? "text-red-400" : "text-yellow-400"}`}>
+          {banType}
+        </td>
+        <td
+          className="p-2 max-w-md truncate cursor-pointer hover:text-blue-400"
+          onClick={() => reason && setShowReason(true)}
+          onKeyDown={(e) => e.key === "Enter" && reason && setShowReason(true)}
+          tabIndex={reason ? 0 : undefined}
+          role={reason ? "button" : undefined}
+        >
+          {reason || "No reason provided"}
+        </td>
+        <td className="p-2">{formattedDate}</td>
+      </tr>
+      <Dialog open={showReason} toggle={() => setShowReason(false)}>
+        <div className="flex flex-col gap-4 mt-6">
+          <h2 className="text-xl font-bold">
+            Ban Reason for {ban.ckey || "Unknown"}
+          </h2>
+          <div className="whitespace-pre-wrap">{reason}</div>
+        </div>
+      </Dialog>
+    </>
   );
 };
