@@ -113,9 +113,18 @@ const AuthentikUserDetails = ({
     return JSON.stringify(value);
   };
 
-  const urlifyAttributeValue = (value: string, key: string): ReactElement | string => {
+  const urlifyAttributeValue = (
+    value: string,
+    key: string,
+  ): ReactElement | string => {
     if (key === "steam_id")
-      return <LinkColor><Link to={"https://steamcommunity.com/profiles/" + {value}}>{value}</Link></LinkColor>
+      return (
+        <LinkColor>
+          <Link to={"https://steamcommunity.com/profiles/" + { value }}>
+            {value}
+          </Link>
+        </LinkColor>
+      );
     return value;
   };
 
