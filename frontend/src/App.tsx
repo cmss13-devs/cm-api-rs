@@ -38,6 +38,8 @@ export default function App(): React.ReactElement {
           ckey: "debug",
           email: "debug@debug.debug",
           groups: ["admin"],
+          isStaff: true,
+          isManagement: true,
         });
         setAuthLoading(false);
         return;
@@ -114,27 +116,31 @@ export default function App(): React.ReactElement {
             [cmdb]
           </Link>
         </LinkColor>
-        |
-        <LinkColor>
-          <Link to="/sticky">Sticky Menu</Link>
-        </LinkColor>
-        |
-        <LinkColor>
-          <Link to="/ticket">Tickets</Link>
-        </LinkColor>
-        |
-        <LinkColor>
-          <Link to="/user">Users</Link>
-        </LinkColor>
-        |
-        <LinkColor>
-          <Link to="/whitelists">Whitelists</Link>
-        </LinkColor>
-        |
-        <LinkColor>
-          <Link to="/new_players">New Players</Link>
-        </LinkColor>
-        {user?.groups?.includes("management") && (
+        {user?.isStaff && (
+          <>
+            |
+            <LinkColor>
+              <Link to="/sticky">Sticky Menu</Link>
+            </LinkColor>
+            |
+            <LinkColor>
+              <Link to="/ticket">Tickets</Link>
+            </LinkColor>
+            |
+            <LinkColor>
+              <Link to="/user">Users</Link>
+            </LinkColor>
+            |
+            <LinkColor>
+              <Link to="/whitelists">Whitelists</Link>
+            </LinkColor>
+            |
+            <LinkColor>
+              <Link to="/new_players">New Players</Link>
+            </LinkColor>
+          </>
+        )}
+        {user?.isManagement && (
           <>
             |
             <LinkColor>

@@ -1,7 +1,8 @@
 import type React from "react";
 import type { PropsWithChildren } from "react";
-import { useRef, useState } from "react";
+import { useContext, useRef, useState } from "react";
 import { Link, Navigate } from "react-router-dom";
+import { GlobalContext } from "../types/global";
 import { AuthentikLookup } from "./authentikLookup";
 import { CidLookup } from "./cidLookup";
 import { Dialog } from "./dialog";
@@ -10,6 +11,9 @@ import { RoundData } from "./roundData";
 import { LookupMenu } from "./userLookup";
 
 export default function HomePage(): React.ReactElement {
+  const context = useContext(GlobalContext);
+  const user = context?.user;
+
   return (
     <div className="md:flex flex-row justify-center">
       <div className="flex flex-col gap-3">
@@ -17,42 +21,46 @@ export default function HomePage(): React.ReactElement {
           <div className="text-3xl underline text-center">[cmdb]</div>
         </div>
 
-        <div className="flex flex-col md:flex-row gap-3">
-          <LookupOption type="lookup">Lookup User</LookupOption>
-          <LookupOption type="ip">Lookup IP</LookupOption>
-          <LookupOption type="cid">Lookup CID</LookupOption>
-          <LookupOption type="discordId">Lookup Discord</LookupOption>
-          <LookupOption type="authentikUuid">Lookup Authentik</LookupOption>
-        </div>
+        {user?.isStaff && (
+          <>
+            <div className="flex flex-col md:flex-row gap-3">
+              <LookupOption type="lookup">Lookup User</LookupOption>
+              <LookupOption type="ip">Lookup IP</LookupOption>
+              <LookupOption type="cid">Lookup CID</LookupOption>
+              <LookupOption type="discordId">Lookup Discord</LookupOption>
+              <LookupOption type="authentikUuid">Lookup Authentik</LookupOption>
+            </div>
 
-        <Link
-          to={"/sticky"}
-          className={
-            "border border-[#3f3f3f] rounded p-3 cursor-pointer grow clicky shadow-lg"
-          }
-        >
-          Sticky Menu
-        </Link>
-        <Link
-          to={"/ticket"}
-          className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
-        >
-          Ticket Menu
-        </Link>
-        <Link
-          to={"/whitelists"}
-          className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
-        >
-          Whitelist Menu
-        </Link>
-        <Link
-          to={"/new_players"}
-          className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
-        >
-          New Players
-        </Link>
+            <Link
+              to={"/sticky"}
+              className={
+                "border border-[#3f3f3f] rounded p-3 cursor-pointer grow clicky shadow-lg"
+              }
+            >
+              Sticky Menu
+            </Link>
+            <Link
+              to={"/ticket"}
+              className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
+            >
+              Ticket Menu
+            </Link>
+            <Link
+              to={"/whitelists"}
+              className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
+            >
+              Whitelist Menu
+            </Link>
+            <Link
+              to={"/new_players"}
+              className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
+            >
+              New Players
+            </Link>
 
-        <RoundData />
+            <RoundData />
+          </>
+        )}
       </div>
     </div>
   );
