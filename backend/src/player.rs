@@ -684,7 +684,7 @@ pub async fn get_ban_history(
               FROM player_notes n
               INNER JOIN players p ON n.player_id = p.id
               WHERE n.is_ban = 1 AND p.ckey LIKE ?
-              ORDER BY n.date DESC
+              ORDER BY n.id DESC
               LIMIT 20 OFFSET ?",
         )
         .bind(ckey_pattern)
@@ -697,7 +697,7 @@ pub async fn get_ban_history(
               FROM player_notes n
               INNER JOIN players p ON n.player_id = p.id
               WHERE n.is_ban = 1
-              ORDER BY n.date DESC
+              ORDER BY n.id DESC
               LIMIT 20 OFFSET ?",
         )
         .bind(offset)

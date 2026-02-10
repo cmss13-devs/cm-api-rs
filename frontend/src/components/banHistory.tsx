@@ -139,15 +139,35 @@ export const BanHistory: React.FC = () => {
   );
 };
 
+const parseDate = (dateStr: string): Date | null => {
+  // Try standard format first: "2020-02-14 00:00:00"
+  const standardDate = new Date(Date.parse(dateStr.replace(" ", "T")));
+  if (!Number.isNaN(standardDate.getTime())) {
+    return standardDate;
+  }
+
+  // Try human-readable format: "Wed, September 6th of 2017"
+  // Remove day name, ordinal suffixes, and "of"
+  const cleaned = dateStr
+    .replace(/^[A-Za-z]+,\s*/, "") // Remove "Wed, "
+    .replace(/(\d+)(st|nd|rd|th)/, "$1") // Remove ordinal suffix
+    .replace(/\s+of\s+/, " "); // Remove "of"
+
+  const parsed = new Date(Date.parse(cleaned));
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed;
+  }
+
+  return null;
+};
+
 const BanHistoryRow: React.FC<{ ban: HistoricalBan }> = ({ ban }) => {
   const [showReason, setShowReason] = useState(false);
 
   let formattedDate = ban.date || "Unknown";
-  try {
-    const date = new Date(Date.parse(ban.date.replace(" ", "T")));
-    formattedDate = date.toLocaleString();
-  } catch {
-    // Keep original
+  const parsedDate = ban.date ? parseDate(ban.date) : null;
+  if (parsedDate) {
+    formattedDate = parsedDate.toLocaleString();
   }
 
   const formatDuration = (minutes: number | null): string => {
