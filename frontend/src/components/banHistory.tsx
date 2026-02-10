@@ -171,8 +171,7 @@ const BanHistoryRow: React.FC<{ ban: HistoricalBan }> = ({ ban }) => {
   }
 
   const formatDuration = (minutes: number | null): string => {
-    if (minutes === null) return "Unknown";
-    if (minutes <= 0) return "Permanent";
+    if (minutes === null || minutes <= 0) return "Permanent";
     if (minutes < 60) return `${minutes}m`;
     if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
     return `${Math.floor(minutes / 1440)}d`;
