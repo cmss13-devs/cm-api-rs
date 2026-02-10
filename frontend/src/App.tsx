@@ -120,6 +120,10 @@ export default function App(): React.ReactElement {
         <LinkColor>
           <Link to="/bans">Bans</Link>
         </LinkColor>
+        |
+        <LinkColor>
+          <Link to="/ban-history">Ban History</Link>
+        </LinkColor>
         {user?.isStaff && (
           <>
             |

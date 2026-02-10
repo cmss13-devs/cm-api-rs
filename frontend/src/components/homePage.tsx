@@ -27,6 +27,12 @@ export default function HomePage(): React.ReactElement {
         >
           View Active Bans
         </Link>
+        <Link
+          to={"/ban-history"}
+          className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
+        >
+          Ban History
+        </Link>
 
         {user?.isStaff && (
           <>

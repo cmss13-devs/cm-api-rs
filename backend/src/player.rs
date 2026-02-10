@@ -652,3 +652,61 @@ pub async fn get_banned_players(
         Err(_) => Json(Vec::new()),
     }
 }
+
+#[derive(Serialize, FromRow)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct HistoricalBan {
+    ckey: Option<String>,
+    text: Option<String>,
+    date: String,
+    ban_time: Option<i64>,
+    round_id: Option<i32>,
+}
+
+/// Returns historical bans from player notes (is_ban = 1)
+/// Accessible by any authenticated user
+/// Supports pagination with ?page=N (0-indexed, 20 results per page)
+/// Supports filtering by ckey with ?ckey=<search>
+#[get("/BanHistory?<page>&<ckey>")]
+pub async fn get_ban_history(
+    mut db: Connection<Cmdb>,
+    _user: AuthenticatedUser<PlayerPermission>,
+    page: Option<i64>,
+    ckey: Option<String>,
+) -> Json<Vec<HistoricalBan>> {
+    let page = page.unwrap_or(0).max(0);
+    let offset = page * 20;
+
+    let result = if let Some(ckey_filter) = ckey {
+        let ckey_pattern = format!("%{}%", ckey_filter);
+        query_as(
+            r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
+              FROM player_notes n
+              INNER JOIN players p ON n.player_id = p.id
+              WHERE n.is_ban = 1 AND p.ckey LIKE ?
+              ORDER BY n.date DESC
+              LIMIT 20 OFFSET ?",
+        )
+        .bind(ckey_pattern)
+        .bind(offset)
+        .fetch_all(&mut **db)
+        .await
+    } else {
+        query_as(
+            r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
+              FROM player_notes n
+              INNER JOIN players p ON n.player_id = p.id
+              WHERE n.is_ban = 1
+              ORDER BY n.date DESC
+              LIMIT 20 OFFSET ?",
+        )
+        .bind(offset)
+        .fetch_all(&mut **db)
+        .await
+    };
+
+    match result {
+        Ok(bans) => Json(bans),
+        Err(_) => Json(Vec::new()),
+    }
+}

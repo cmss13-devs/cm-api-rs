@@ -5,6 +5,7 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import App from "./App";
 import { ActiveBans } from "./components/activeBans";
 import { AuthentikPanel } from "./components/authentikPanel";
+import { BanHistory } from "./components/banHistory";
 import HomePage from "./components/homePage";
 import { NewPlayers } from "./components/newPlayers";
 import { Stickybans } from "./components/stickybans";
@@ -62,6 +63,10 @@ const router = createBrowserRouter([
       {
         path: "/bans",
         element: <ActiveBans />,
+      },
+      {
+        path: "/ban-history",
+        element: <BanHistory />,
       },
     ],
   },
