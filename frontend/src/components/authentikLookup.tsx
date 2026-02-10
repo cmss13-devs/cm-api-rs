@@ -106,6 +106,12 @@ const AuthentikUserDetails = ({
     return JSON.stringify(value);
   };
 
+  const urlifyAttributeValue = (value: string, key: string): string => {
+    if (key === "steam_id")
+      return "<a href='https://steamcommunity.com/profiles/" + value + "'>" + value + "</a>";
+    return value;
+  }
+
   return (
     <div className="flex flex-col gap-4 border border-[#3f3f3f] p-4 rounded">
       <div className="flex flex-col md:flex-row gap-6">
@@ -168,7 +174,7 @@ const AuthentikUserDetails = ({
             {Object.entries(user.attributes).map(([key, value]) => (
               <div key={key} className="flex flex-row gap-2">
                 <span className="text-gray-400">{key}:</span>
-                <span>{formatAttributeValue(value)}</span>
+                <span>{urlifyAttributeValue(formatAttributeValue(value), key)}</span>
               </div>
             ))}
           </div>
