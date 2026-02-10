@@ -9,7 +9,6 @@ import { callApi } from "../helpers/api";
 import type { AuthentikUserFullResponse } from "../types/authentik";
 import { GlobalContext } from "../types/global";
 import { LinkColor } from "./link";
-import { Link } from "react-router-dom";
 
 interface AuthentikLookupProps extends PropsWithChildren {
   initialUuid?: string;
@@ -119,10 +118,15 @@ const AuthentikUserDetails = ({
   ): ReactElement | string => {
     if (key === "steam_id")
       return (
-        <LinkColor>
-          <Link to={"https://steamcommunity.com/profiles/" + { value }}>
-            {value}
-          </Link>
+        <LinkColor
+          onClick={() =>
+            window.open(
+              `https://steamcommunity.com/profiles/${value}`,
+              "_blank",
+            )
+          }
+        >
+          {value}
         </LinkColor>
       );
     return value;
