@@ -1,8 +1,15 @@
-import React, { type PropsWithChildren, useContext, useEffect, useState } from "react";
+import React, {
+  type PropsWithChildren,
+  ReactElement,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { callApi } from "../helpers/api";
 import type { AuthentikUserFullResponse } from "../types/authentik";
 import { GlobalContext } from "../types/global";
 import { LinkColor } from "./link";
+import { Link } from "react-router-dom";
 
 interface AuthentikLookupProps extends PropsWithChildren {
   initialUuid?: string;
@@ -10,13 +17,13 @@ interface AuthentikLookupProps extends PropsWithChildren {
 }
 
 export const AuthentikLookup: React.FC<AuthentikLookupProps> = (
-  props: AuthentikLookupProps
+  props: AuthentikLookupProps,
 ) => {
   const { initialUuid } = props;
 
   const [uuid, setUuid] = useState<string>("");
   const [userData, setUserData] = useState<AuthentikUserFullResponse | null>(
-    null
+    null,
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,21 +50,21 @@ export const AuthentikLookup: React.FC<AuthentikLookupProps> = (
       setUuid(override);
     }
 
-    callApi(`/Authentik/UserByUuid/${encodeURIComponent(searchUuid.trim())}`).then(
-      (response) => {
-        setLoading(false);
-        if (response.status === 200) {
-          response.json().then((json) => setUserData(json));
-        } else if (response.status === 404) {
-          setError("No user found with that UUID");
-          if (props.close) props.close();
-        } else {
-          response.json().then((json) => {
-            setError(json.message || "Failed to fetch user");
-          });
-        }
+    callApi(
+      `/Authentik/UserByUuid/${encodeURIComponent(searchUuid.trim())}`,
+    ).then((response) => {
+      setLoading(false);
+      if (response.status === 200) {
+        response.json().then((json) => setUserData(json));
+      } else if (response.status === 404) {
+        setError("No user found with that UUID");
+        if (props.close) props.close();
+      } else {
+        response.json().then((json) => {
+          setError(json.message || "Failed to fetch user");
+        });
       }
-    );
+    });
   };
 
   return (
@@ -104,6 +111,21 @@ const AuthentikUserDetails = ({
     if (typeof value === "number" || typeof value === "boolean")
       return String(value);
     return JSON.stringify(value);
+  };
+
+  const urlifyAttributeValue = (
+    value: string,
+    key: string,
+  ): ReactElement | string => {
+    if (key === "steam_id")
+      return (
+        <LinkColor>
+          <Link to={"https://steamcommunity.com/profiles/" + { value }}>
+            {value}
+          </Link>
+        </LinkColor>
+      );
+    return value;
   };
 
   return (
@@ -168,7 +190,9 @@ const AuthentikUserDetails = ({
             {Object.entries(user.attributes).map(([key, value]) => (
               <div key={key} className="flex flex-row gap-2">
                 <span className="text-gray-400">{key}:</span>
-                <span>{formatAttributeValue(value)}</span>
+                <span>
+                  {urlifyAttributeValue(formatAttributeValue(value), key)}
+                </span>
               </div>
             ))}
           </div>
