@@ -188,6 +188,7 @@ const UserModal = (props: { player: Player }) => {
         <div className="flex flex-col gap-3 grow">
           <UserNotesModal player={player} />
           <UserJobBansModal player={player} />
+          <KnownAltsModal player={player} />
         </div>
       </div>
     </div>
@@ -1139,6 +1140,67 @@ const JobBan = (props: { jobBan: PlayerJobBan }) => {
       </div>
       <div className="flex flex-row justify-end italic">
         by {banningAdminCkey} on {date}
+      </div>
+    </div>
+  );
+};
+
+interface KnownAltsResponse {
+  mainAccount: string | null;
+  alts: string[];
+}
+
+const KnownAltsModal = (props: { player: Player }) => {
+  const { player } = props;
+  const [altsData, setAltsData] = useState<KnownAltsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!player.ckey) return;
+
+    setLoading(true);
+    callApi(`/User/KnownAlts?ckey=${player.ckey}`)
+      .then((response) => response.json())
+      .then((json: KnownAltsResponse) => {
+        setAltsData(json);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch known alts:", err);
+        setAltsData({ mainAccount: null, alts: [] });
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [player.ckey]);
+
+  const hasAlts = altsData && (altsData.mainAccount || altsData.alts.length > 0);
+
+  return (
+    <div className="flex flex-col">
+      <div className="text-2xl">Known Alts:</div>
+      <div className="border-[#3f3f3f] border-2 p-3 flex flex-col gap-3">
+        {loading && <div className="text-gray-400">Loading...</div>}
+        {!loading && !hasAlts && (
+          <div className="flex flex-row justify-center">No known alts.</div>
+        )}
+        {!loading && altsData?.mainAccount && (
+          <div className="flex flex-col">
+            <div className="text-yellow-400">This is an alt account of:</div>
+            <div className="ml-4">
+              <NameExpand name={altsData.mainAccount} />
+            </div>
+          </div>
+        )}
+        {!loading && altsData && altsData.alts.length > 0 && (
+          <div className="flex flex-col">
+            <div className="text-yellow-400">Known alt accounts:</div>
+            <div className="ml-4 flex flex-col gap-1">
+              {altsData.alts.map((alt) => (
+                <NameExpand key={alt} name={alt} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

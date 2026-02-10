@@ -244,6 +244,7 @@ async fn rocket() -> _ {
                 player::remove_vpn_whitelist,
                 player::get_banned_players,
                 player::get_ban_history,
+                player::get_known_alts,
             ],
         )
         .mount(

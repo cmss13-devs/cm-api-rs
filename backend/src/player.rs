@@ -710,3 +710,55 @@ pub async fn get_ban_history(
         Err(_) => Json(Vec::new()),
     }
 }
+
+#[derive(Serialize, FromRow)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct KnownAlt {
+    player_ckey: Option<String>,
+    ckey: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct KnownAltsResponse {
+    main_account: Option<String>,
+    alts: Vec<String>,
+}
+
+/// Returns known alts for a given ckey
+/// Checks if the ckey is a main account (player_ckey) or an alt account (ckey)
+#[get("/KnownAlts?<ckey>")]
+pub async fn get_known_alts(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Staff>,
+    ckey: String,
+) -> Json<KnownAltsResponse> {
+    let main_account: Option<String> =
+        query("SELECT player_ckey FROM known_alts WHERE ckey = ? LIMIT 1")
+            .bind(&ckey)
+            .fetch_optional(&mut **db)
+            .await
+            .ok()
+            .flatten()
+            .map(|row| row.get("player_ckey"));
+
+    let lookup_ckey = main_account.as_ref().unwrap_or(&ckey);
+
+    let alts: Vec<String> = match query("SELECT ckey FROM known_alts WHERE player_ckey = ?")
+        .bind(lookup_ckey)
+        .fetch_all(&mut **db)
+        .await
+    {
+        Ok(rows) => rows.iter().filter_map(|row| row.get("ckey")).collect(),
+        Err(_) => Vec::new(),
+    };
+
+    Json(KnownAltsResponse {
+        main_account: if main_account.is_some() {
+            main_account
+        } else {
+            None
+        },
+        alts,
+    })
+}
