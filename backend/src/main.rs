@@ -84,6 +84,8 @@ pub struct ServerConfig {
     #[serde(default)]
     pub refresh_admins: bool,
     pub recommended_byond_version: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

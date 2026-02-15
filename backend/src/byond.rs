@@ -85,6 +85,8 @@ pub struct ServerStatusResponse {
     details: Option<GameResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     recommended_byond_version: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tags: Vec<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -179,6 +181,7 @@ pub async fn round(
 fn query_server(server: ServerConfig) -> ServerStatusResponse {
     let url = server.host.clone();
     let recommended_byond_version = server.recommended_byond_version.clone();
+    let tags = server.tags.clone();
 
     let topic = match serde_json::to_string(&GameRequest {
         query: "status".to_string(),
@@ -193,6 +196,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 status: "unavailable".to_string(),
                 details: None,
                 recommended_byond_version,
+                tags,
             };
         }
     };
@@ -207,6 +211,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                     status: "unavailable".to_string(),
                     details: None,
                     recommended_byond_version,
+                    tags,
                 };
             }
         },
@@ -217,6 +222,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 status: "unavailable".to_string(),
                 details: None,
                 recommended_byond_version,
+                tags,
             };
         }
     };
@@ -230,6 +236,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 status: "unavailable".to_string(),
                 details: None,
                 recommended_byond_version,
+                tags,
             };
         }
     };
@@ -243,6 +250,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 status: "unavailable".to_string(),
                 details: None,
                 recommended_byond_version,
+                tags,
             };
         }
     };
@@ -256,6 +264,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
             status: "available".to_string(),
             details: Some(game_response),
             recommended_byond_version,
+            tags,
         },
         Err(_) => ServerStatusResponse {
             name: server.name,
@@ -263,6 +272,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
             status: "unavailable".to_string(),
             details: None,
             recommended_byond_version,
+            tags,
         },
     }
 }
