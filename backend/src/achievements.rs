@@ -329,7 +329,7 @@ pub async fn get_achievements(
         .await
         .map_err(|e| {
             (
-                Status::BadGateway,
+                Status::FailedDependency,
                 Json(AuthentikError {
                     error: "steam_api_error".to_string(),
                     message: e,
