@@ -34,6 +34,9 @@ export default function HomePage(): React.ReactElement {
 
         {user?.isStaff && (
           <>
+            <hr className="border-[#3f3f3f] my-2" />
+            <div className="text-sm text-gray-500 text-center">Staff Tools</div>
+
             <div className="flex flex-col md:flex-row gap-3">
               <LookupOption type="lookup">Lookup User</LookupOption>
               <LookupOption type="ip">Lookup IP</LookupOption>
