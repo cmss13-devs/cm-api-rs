@@ -291,6 +291,7 @@ pub async fn check_verified(
                     &mut db,
                     &linked_sources,
                     ckey.as_deref(),
+                    authentik_user.uuid.as_deref(),
                     Some(&discord_id),
                     discord_config,
                 )

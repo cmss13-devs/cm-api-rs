@@ -2218,6 +2218,7 @@ pub struct UserLinkWebhook {
     pub linked_sources: Vec<String>,
     pub username: String,
     pub pk: i64,
+    pub uuid: Option<String>,
     pub ckey: Option<String>,
     pub discord_id: Option<String>,
 }
@@ -2268,6 +2269,7 @@ pub async fn check_verification_eligibility(
     db: &mut Connection<Cmdb>,
     linked_sources: &[String],
     ckey: Option<&str>,
+    uuid: Option<&str>,
     discord_id: Option<&str>,
     discord_config: &DiscordBotConfig,
 ) -> VerificationEligibility {
@@ -2276,24 +2278,33 @@ pub async fn check_verification_eligibility(
     let has_byond = linked_sources.iter().any(|s| s == "byond");
     let has_discord = linked_sources.iter().any(|s| s == "discord");
 
-    if !has_byond {
-        result.reason = Some("BYOND source is not linked".to_string());
-        return result;
-    }
-
     if !has_discord {
         result.reason = Some("Discord source is not linked".to_string());
         return result;
     }
 
-    let ckey = match ckey {
-        Some(c) if !c.is_empty() => c,
-        _ => {
-            result.reason = Some("ckey attribute is missing or empty".to_string());
-            return result;
+    // Use ckey if BYOND is linked, otherwise fall back to UUID (with hyphens removed) as ckey
+    let effective_ckey: String = if has_byond {
+        match ckey {
+            Some(c) if !c.is_empty() => c.to_string(),
+            _ => {
+                result.reason = Some("ckey attribute is missing or empty".to_string());
+                return result;
+            }
+        }
+    } else {
+        // No BYOND linked - use UUID with hyphens removed as ckey
+        match uuid {
+            Some(u) if !u.is_empty() => u.replace('-', ""),
+            _ => {
+                result.reason =
+                    Some("Neither BYOND is linked nor UUID is available".to_string());
+                return result;
+            }
         }
     };
-    result.ckey = Some(ckey.to_string());
+    result.ckey = Some(effective_ckey.clone());
+    let ckey = effective_ckey.as_str();
 
     let discord_id = match discord_id {
         Some(d) if !d.is_empty() => d,
@@ -2790,6 +2801,7 @@ pub async fn webhook_user_linked(
         &mut db,
         &payload.linked_sources,
         payload.ckey.as_deref(),
+        payload.uuid.as_deref(),
         payload.discord_id.as_deref(),
         discord_config,
     )
