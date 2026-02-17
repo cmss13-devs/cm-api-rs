@@ -356,15 +356,15 @@ pub async fn get_achievements(
             )
         })?;
 
-    // Filter to only uncompleted achievements
-    let uncompleted: Vec<String> = achievements
+    // Return earned achievements
+    let earned: Vec<String> = achievements
         .into_iter()
-        .filter(|(_, a)| a.achieved == 0)
+        .filter(|(_, a)| a.achieved == 1)
         .map(|(name, _)| name)
         .collect();
 
     Ok(Json(AchievementsResponse {
-        achievements: uncompleted,
+        achievements: earned,
     }))
 }
 
