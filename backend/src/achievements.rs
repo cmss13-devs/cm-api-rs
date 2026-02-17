@@ -55,6 +55,7 @@ struct SteamPlayerStats {
     #[serde(default)]
     result: Option<i32>,
     #[serde(default)]
+    #[allow(dead_code)]
     success: bool,
     #[serde(default)]
     error: Option<String>,
@@ -62,7 +63,13 @@ struct SteamPlayerStats {
 
 impl SteamPlayerStats {
     fn is_success(&self) -> bool {
-        self.result.map(|r| r == 1).unwrap_or(self.success)
+        if self.error.is_some() {
+            return false;
+        }
+        if let Some(result) = self.result {
+            return result == 1;
+        }
+        true
     }
 }
 
@@ -119,19 +126,18 @@ async fn get_steam_achievements(
         .await
         .map_err(|e| format!("Failed to contact Steam Partner API: {}", e))?;
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+
+    if !status.is_success() {
         return Err(format!(
             "Steam Partner API returned error {}: {}",
             status, body
         ));
     }
 
-    let achievements_response: SteamAchievementsResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Steam Partner API response: {}", e))?;
+    let achievements_response: SteamAchievementsResponse = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse Steam Partner API response: {} - Body: {}", e, body))?;
 
     if !achievements_response.playerstats.is_success() {
         if let Some(error) = achievements_response.playerstats.error {
