@@ -31,7 +31,6 @@ export const AuthentikUserPage: React.FC = () => {
 
   useEffect(() => {
     if (urlUuid) {
-      // Reset state and fetch when URL changes
       setUserData(null);
       setSearchResults(null);
       setError(null);
@@ -163,6 +162,35 @@ const AuthentikUserDetails = ({
   user: AuthentikUserFullResponse;
 }) => {
   const global = useContext(GlobalContext);
+  const [playerByCkey, setPlayerByCkey] = useState<string | null>(null);
+  const [playerByUuid, setPlayerByUuid] = useState<string | null>(null);
+
+  const ckey =
+    typeof user.attributes.ckey === "string" ? user.attributes.ckey : null;
+
+  useEffect(() => {
+    if (ckey) {
+      callApi(`/User?ckey=${encodeURIComponent(ckey)}`).then((response) => {
+        if (response.status === 200) {
+          setPlayerByCkey(ckey);
+        } else {
+          setPlayerByCkey(null);
+        }
+      });
+    }
+
+    if (user.uuid) {
+      callApi(`/User?ckey=${encodeURIComponent(user.uuid)}`).then(
+        (response) => {
+          if (response.status === 200) {
+            setPlayerByUuid(user.uuid);
+          } else {
+            setPlayerByUuid(null);
+          }
+        }
+      );
+    }
+  }, [ckey, user.uuid]);
 
   const copyToClipboard = (value: string, label: string) => {
     navigator.clipboard.writeText(value);
@@ -246,6 +274,30 @@ const AuthentikUserDetails = ({
           {user.groups.length > 0 ? user.groups.join(", ") : "None"}
         </div>
       </div>
+
+      {(playerByCkey || playerByUuid) && (
+        <div className="flex flex-col gap-2">
+          <div className="underline">Player Lookups:</div>
+          <div className="pl-4 flex flex-row gap-4">
+            {playerByCkey && (
+              <Link
+                to={`/user/${playerByCkey}`}
+                className="text-blue-400 hover:underline"
+              >
+                By Ckey ({playerByCkey})
+              </Link>
+            )}
+            {playerByUuid && (
+              <Link
+                to={`/user/${playerByUuid}`}
+                className="text-blue-400 hover:underline"
+              >
+                By UUID
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
 
       {Object.keys(user.attributes).length > 0 && (
         <div className="flex flex-col gap-2">
