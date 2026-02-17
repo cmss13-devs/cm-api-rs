@@ -66,3 +66,11 @@ export type AuthentikUserFullResponse = {
 	attributes: Record<string, unknown>;
 	groups: string[];
 };
+
+export type AuthentikUserSearchResult = {
+	pk: number;
+	uuid: string | null;
+	username: string;
+	name: string;
+	isActive: boolean;
+};

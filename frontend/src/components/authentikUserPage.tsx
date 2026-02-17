@@ -4,9 +4,12 @@ import React, {
   useEffect,
   useState,
 } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { callApi } from "../helpers/api";
-import type { AuthentikUserFullResponse } from "../types/authentik";
+import type {
+  AuthentikUserFullResponse,
+  AuthentikUserSearchResult,
+} from "../types/authentik";
 import { GlobalContext } from "../types/global";
 import { LinkColor } from "./link";
 
@@ -14,76 +17,137 @@ export const AuthentikUserPage: React.FC = () => {
   const { uuid: urlUuid } = useParams<{ uuid: string }>();
   const navigate = useNavigate();
 
-  const [searchUuid, setSearchUuid] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [userData, setUserData] = useState<AuthentikUserFullResponse | null>(
     null
   );
+  const [searchResults, setSearchResults] = useState<
+    AuthentikUserSearchResult[] | null
+  >(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const global = useContext(GlobalContext);
 
   useEffect(() => {
-    if (urlUuid && !userData && !loading) {
+    if (urlUuid && !userData && !loading && !searchResults) {
       fetchUser(urlUuid);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlUuid]);
 
-  const fetchUser = (uuid: string) => {
-    if (!uuid.trim()) {
-      global?.updateAndShowToast("Please enter a UUID");
+  const fetchUser = async (query: string) => {
+    if (!query.trim()) {
+      global?.updateAndShowToast("Please enter a search query");
       return;
     }
 
     setLoading(true);
     setError(null);
     setUserData(null);
+    setSearchResults(null);
 
-    callApi(`/Authentik/UserByUuid/${encodeURIComponent(uuid.trim())}`).then(
-      (response) => {
-        setLoading(false);
-        if (response.status === 200) {
-          response.json().then((json) => setUserData(json));
-        } else if (response.status === 404) {
-          setError("No user found with that UUID");
-        } else {
-          response.json().then((json) => {
-            setError(json.message || "Failed to fetch user");
-          });
-        }
-      }
+    const uuidResponse = await callApi(
+      `/Authentik/UserByUuid/${encodeURIComponent(query.trim())}`
     );
+
+    if (uuidResponse.status === 200) {
+      const json = await uuidResponse.json();
+      setUserData(json);
+      setLoading(false);
+      return;
+    }
+
+    if (uuidResponse.status === 404) {
+      const searchResponse = await callApi(
+        `/Authentik/SearchUsers?query=${encodeURIComponent(query.trim())}`
+      );
+
+      if (searchResponse.status === 200) {
+        const results: AuthentikUserSearchResult[] =
+          await searchResponse.json();
+        if (results.length === 0) {
+          setError("No users found matching that query");
+        } else if (results.length === 1 && results[0].uuid) {
+          navigate(`/authentik/${results[0].uuid}`, { replace: true });
+          return;
+        } else {
+          setSearchResults(results);
+        }
+      } else {
+        setError("Failed to search users");
+      }
+    } else {
+      const json = await uuidResponse.json();
+      setError(json.message || "Failed to fetch user");
+    }
+
+    setLoading(false);
   };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (searchUuid.trim()) {
-      navigate(`/authentik/${searchUuid.trim()}`);
+    if (searchQuery.trim()) {
+      setUserData(null);
+      setSearchResults(null);
+      setError(null);
+      navigate(`/authentik/${searchQuery.trim()}`);
     }
   };
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="text-center text-2xl underline">Authentik User Lookup</div>
+      <div className="text-center text-2xl underline">
+        Authentik User Lookup
+      </div>
 
       <form
         className="flex flex-row justify-center gap-3"
         onSubmit={handleSearch}
       >
-        <label htmlFor="authentik-uuid">UUID:</label>
+        <label htmlFor="authentik-search">Search:</label>
         <input
           type="text"
-          id="authentik-uuid"
-          value={searchUuid}
-          onChange={(e) => setSearchUuid(e.target.value)}
-          placeholder="Enter user UUID"
+          id="authentik-search"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="UUID, username, or name"
           className="w-80"
         />
       </form>
 
       {loading && <div className="text-2xl text-center">Loading...</div>}
       {error && <div className="text-red-500 text-center">{error}</div>}
+
+      {searchResults && searchResults.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <div className="text-center text-gray-400">
+            Multiple users found - select one:
+          </div>
+          <div className="flex flex-col gap-2">
+            {searchResults.map((result) => (
+              <Link
+                key={result.pk}
+                to={`/authentik/${result.uuid}`}
+                className="border border-[#3f3f3f] p-3 rounded clicky flex flex-row justify-between items-center"
+              >
+                <div className="flex flex-col">
+                  <span className="font-bold">{result.username}</span>
+                  <span className="text-gray-400">{result.name}</span>
+                </div>
+                <span
+                  className={
+                    result.isActive ? "text-green-500" : "text-red-500"
+                  }
+                >
+                  {result.isActive ? "Active" : "Inactive"}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {userData && <AuthentikUserDetails user={userData} />}
     </div>
   );

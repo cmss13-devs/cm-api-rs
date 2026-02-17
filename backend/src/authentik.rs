@@ -273,6 +273,17 @@ pub struct AuthentikUserFullResponse {
     pub groups: Vec<String>,
 }
 
+/// Simplified Authentik user for search results
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct AuthentikUserSearchResult {
+    pub pk: i64,
+    pub uuid: Option<String>,
+    pub username: String,
+    pub name: String,
+    pub is_active: bool,
+}
+
 #[derive(Debug, Clone)]
 struct GroupWithPriority {
     name: String,
@@ -2996,4 +3007,85 @@ pub async fn get_user_by_uuid(
         attributes: user.attributes,
         groups,
     }))
+}
+
+/// GET /Authentik/SearchUsers?query=<query> - search users by username or name (Staff only)
+#[get("/SearchUsers?<query>")]
+pub async fn search_users(
+    _user: AuthenticatedUser<Staff>,
+    config: &State<Config>,
+    query: String,
+) -> Result<Json<Vec<AuthentikUserSearchResult>>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let url = format!(
+        "{}/api/v3/core/users/?search={}",
+        authentik_config.base_url.trim_end_matches('/'),
+        urlencoding::encode(&query)
+    );
+
+    let response = http_client
+        .get(&url)
+        .header(
+            "Authorization",
+            format!("Bearer {}", authentik_config.token),
+        )
+        .send()
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "api_error".to_string(),
+                    message: format!("Failed to query Authentik API: {}", e),
+                }),
+            )
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err((
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "api_error".to_string(),
+                message: format!("Authentik API returned error {}: {}", status, body),
+            }),
+        ));
+    }
+
+    let search_response: AuthentikUserDetailedSearchResponse =
+        response.json().await.map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "parse_error".to_string(),
+                    message: format!("Failed to parse Authentik response: {}", e),
+                }),
+            )
+        })?;
+
+    let results: Vec<AuthentikUserSearchResult> = search_response
+        .results
+        .into_iter()
+        .map(|u| AuthentikUserSearchResult {
+            pk: u.pk,
+            uuid: u.uuid,
+            username: u.username,
+            name: u.name,
+            is_active: u.is_active,
+        })
+        .collect();
+
+    Ok(Json(results))
 }
