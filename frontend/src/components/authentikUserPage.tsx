@@ -30,7 +30,11 @@ export const AuthentikUserPage: React.FC = () => {
   const global = useContext(GlobalContext);
 
   useEffect(() => {
-    if (urlUuid && !userData && !loading && !searchResults) {
+    if (urlUuid) {
+      // Reset state and fetch when URL changes
+      setUserData(null);
+      setSearchResults(null);
+      setError(null);
       fetchUser(urlUuid);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
