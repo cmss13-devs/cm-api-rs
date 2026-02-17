@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rocket::{State, http::Status, serde::json::Json};
 use serde::{Deserialize, Serialize};
 
@@ -51,7 +53,7 @@ struct SteamPlayerStats {
     #[allow(dead_code)]
     game_name: Option<String>,
     #[serde(default)]
-    achievements: Vec<SteamAchievement>,
+    achievements: HashMap<String, SteamAchievement>,
     #[serde(default)]
     result: Option<i32>,
     #[serde(default)]
@@ -75,8 +77,6 @@ impl SteamPlayerStats {
 
 #[derive(Debug, Deserialize)]
 struct SteamAchievement {
-    #[serde(alias = "apiname")]
-    name: String,
     achieved: i32,
 }
 
@@ -108,7 +108,7 @@ async fn get_steam_achievements(
     config: &SteamConfig,
     steam_id: &str,
     instance: &str,
-) -> Result<Vec<SteamAchievement>, String> {
+) -> Result<HashMap<String, SteamAchievement>, String> {
     let app_id = config
         .app_id
         .get(instance)
@@ -359,8 +359,8 @@ pub async fn get_achievements(
     // Filter to only uncompleted achievements
     let uncompleted: Vec<String> = achievements
         .into_iter()
-        .filter(|a| a.achieved == 0)
-        .map(|a| a.name)
+        .filter(|(_, a)| a.achieved == 0)
+        .map(|(name, _)| name)
         .collect();
 
     Ok(Json(AchievementsResponse {
