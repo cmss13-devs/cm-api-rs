@@ -53,14 +53,23 @@ struct SteamPlayerStats {
     #[serde(default)]
     achievements: Vec<SteamAchievement>,
     #[serde(default)]
+    result: Option<i32>,
+    #[serde(default)]
     success: bool,
     #[serde(default)]
     error: Option<String>,
 }
 
+impl SteamPlayerStats {
+    fn is_success(&self) -> bool {
+        self.result.map(|r| r == 1).unwrap_or(self.success)
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct SteamAchievement {
-    apiname: String,
+    #[serde(alias = "apiname")]
+    name: String,
     achieved: i32,
 }
 
@@ -85,7 +94,8 @@ struct SteamSetAchievementError {
     error_desc: String,
 }
 
-/// Fetches achievements from Steam Web API for a given steam_id
+/// Fetches achievements from Steam Partner API for a given steam_id
+/// Uses the Publisher API which works regardless of user privacy settings
 async fn get_steam_achievements(
     client: &reqwest::Client,
     config: &SteamConfig,
@@ -99,7 +109,7 @@ async fn get_steam_achievements(
         .ok_or_else(|| "No app_id configured for Steam".to_string())?;
 
     let url = format!(
-        "https://api.steampowered.com/ISteamUserStats/GetPlayerAchievements/v1/?key={}&steamid={}&appid={}",
+        "https://partner.steam-api.com/ISteamUserStats/GetUserStatsForGame/v1/?key={}&steamid={}&appid={}",
         config.web_api_key, steam_id, app_id
     );
 
@@ -107,24 +117,27 @@ async fn get_steam_achievements(
         .get(&url)
         .send()
         .await
-        .map_err(|e| format!("Failed to contact Steam API: {}", e))?;
+        .map_err(|e| format!("Failed to contact Steam Partner API: {}", e))?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("Steam API returned error {}: {}", status, body));
+        return Err(format!(
+            "Steam Partner API returned error {}: {}",
+            status, body
+        ));
     }
 
     let achievements_response: SteamAchievementsResponse = response
         .json()
         .await
-        .map_err(|e| format!("Failed to parse Steam API response: {}", e))?;
+        .map_err(|e| format!("Failed to parse Steam Partner API response: {}", e))?;
 
-    if !achievements_response.playerstats.success {
+    if !achievements_response.playerstats.is_success() {
         if let Some(error) = achievements_response.playerstats.error {
-            return Err(format!("Steam API error: {}", error));
+            return Err(format!("Steam Partner API error: {}", error));
         }
-        return Err("Steam API returned unsuccessful response".to_string());
+        return Err("Steam Partner API returned unsuccessful response".to_string());
     }
 
     Ok(achievements_response.playerstats.achievements)
@@ -341,7 +354,7 @@ pub async fn get_achievements(
     let uncompleted: Vec<String> = achievements
         .into_iter()
         .filter(|a| a.achieved == 0)
-        .map(|a| a.apiname)
+        .map(|a| a.name)
         .collect();
 
     Ok(Json(AchievementsResponse {
