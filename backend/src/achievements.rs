@@ -244,7 +244,7 @@ async fn get_user_by_uuid(
     client: &reqwest::Client,
     config: &AuthentikConfig,
     uuid: &str,
-) -> Result<crate::authentik::AuthentikUser, String> {
+) -> Result<crate::authentik::AuthentikUserDetailed, String> {
     let uuid = normalize_uuid(uuid).ok_or_else(|| format!("Invalid UUID format: '{}'", uuid))?;
     let url = format!(
         "{}/api/v3/core/users/?uuid={}",
@@ -265,7 +265,7 @@ async fn get_user_by_uuid(
         return Err(format!("Authentik API returned error {}: {}", status, body));
     }
 
-    let search_response: crate::authentik::AuthentikUserSearchResponse = response
+    let search_response: crate::authentik::AuthentikUserDetailedSearchResponse = response
         .json()
         .await
         .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;

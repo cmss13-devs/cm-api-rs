@@ -101,6 +101,12 @@ pub struct AuthentikUser {
     pub attributes: serde_json::Value,
 }
 
+/// Minimal group info from groups_obj in user response
+#[derive(Debug, Deserialize, Clone)]
+pub struct AuthentikGroupObj {
+    pub name: String,
+}
+
 /// Detailed Authentik user response with all fields from the API
 #[derive(Debug, Deserialize, Clone)]
 pub struct AuthentikUserDetailed {
@@ -114,6 +120,14 @@ pub struct AuthentikUserDetailed {
     pub last_login: Option<String>,
     #[serde(default)]
     pub attributes: serde_json::Value,
+    #[serde(default)]
+    pub groups_obj: Vec<AuthentikGroupObj>,
+}
+
+impl AuthentikUserDetailed {
+    pub fn group_names(&self) -> Vec<String> {
+        self.groups_obj.iter().map(|g| g.name.clone()).collect()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -253,7 +267,6 @@ pub struct AuthentikUserFullResponse {
     pub uid: String,
     pub username: String,
     pub name: String,
-    pub email: Option<String>,
     pub is_active: bool,
     pub last_login: Option<String>,
     pub attributes: serde_json::Value,
@@ -528,7 +541,7 @@ async fn get_user_by_ckey(
     client: &reqwest::Client,
     config: &AuthentikConfig,
     ckey: &str,
-) -> Result<AuthentikUser, String> {
+) -> Result<AuthentikUserDetailed, String> {
     get_user_by_attribute(client, config, "ckey", ckey).await
 }
 
@@ -538,7 +551,7 @@ pub async fn get_user_by_attribute(
     config: &AuthentikConfig,
     attribute_key: &str,
     attribute_value: &str,
-) -> Result<AuthentikUser, String> {
+) -> Result<AuthentikUserDetailed, String> {
     let url = format!(
         "{}/api/v3/core/users/?attributes={{\"{}\": \"{}\"}}",
         config.base_url.trim_end_matches('/'),
@@ -559,7 +572,7 @@ pub async fn get_user_by_attribute(
         return Err(format!("Authentik API returned error {}: {}", status, body));
     }
 
-    let search_response: AuthentikUserSearchResponse = response
+    let search_response: AuthentikUserDetailedSearchResponse = response
         .json()
         .await
         .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
@@ -626,6 +639,7 @@ async fn get_user_by_uuid_detailed(
 }
 
 /// fetch group names for a user by their pk
+#[allow(dead_code)]
 async fn fetch_user_groups(
     client: &reqwest::Client,
     config: &AuthentikConfig,
@@ -2892,6 +2906,52 @@ pub async fn webhook_user_linked(
     }))
 }
 
+/// GET /Authentik/UserByDiscordId/<discord_id> - get full user details by Discord ID (Staff only)
+#[get("/UserByDiscordId/<discord_id>")]
+pub async fn get_user_by_discord_id(
+    _user: AuthenticatedUser<Staff>,
+    config: &State<Config>,
+    discord_id: String,
+) -> Result<Json<AuthentikUserFullResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let user = get_user_by_attribute(&http_client, authentik_config, "discord_id", &discord_id)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let groups = user.group_names();
+
+    Ok(Json(AuthentikUserFullResponse {
+        pk: user.pk,
+        uuid: user.uuid,
+        uid: user.uid,
+        username: user.username,
+        name: user.name,
+        is_active: user.is_active,
+        last_login: user.last_login,
+        attributes: user.attributes,
+        groups,
+    }))
+}
+
 /// GET /Authentik/UserByUuid/<uuid> - get full user details by UUID (Staff only)
 #[get("/UserByUuid/<uuid>")]
 pub async fn get_user_by_uuid(
@@ -2923,17 +2983,7 @@ pub async fn get_user_by_uuid(
             )
         })?;
 
-    let groups = fetch_user_groups(&http_client, authentik_config, user.pk)
-        .await
-        .map_err(|e| {
-            (
-                Status::InternalServerError,
-                Json(AuthentikError {
-                    error: "fetch_groups_failed".to_string(),
-                    message: e,
-                }),
-            )
-        })?;
+    let groups = user.group_names();
 
     Ok(Json(AuthentikUserFullResponse {
         pk: user.pk,
@@ -2941,7 +2991,6 @@ pub async fn get_user_by_uuid(
         uid: user.uid,
         username: user.username,
         name: user.name,
-        email: user.email,
         is_active: user.is_active,
         last_login: user.last_login,
         attributes: user.attributes,

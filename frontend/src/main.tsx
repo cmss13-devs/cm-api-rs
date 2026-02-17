@@ -5,7 +5,9 @@ import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import App from "./App";
 import { ActiveBans } from "./components/activeBans";
 import { AuthentikPanel } from "./components/authentikPanel";
+import { AuthentikUserPage } from "./components/authentikUserPage";
 import { BanHistory } from "./components/banHistory";
+import { DiscordLookupPage } from "./components/discordLookupPage";
 import HomePage from "./components/homePage";
 import { NewPlayers } from "./components/newPlayers";
 import { Stickybans } from "./components/stickybans";
@@ -67,6 +69,14 @@ const router = createBrowserRouter([
       {
         path: "/ban-history",
         element: <BanHistory />,
+      },
+      {
+        path: "/authentik/:uuid?",
+        element: <AuthentikUserPage />,
+      },
+      {
+        path: "/discord-lookup/:discordId",
+        element: <DiscordLookupPage />,
       },
     ],
   },

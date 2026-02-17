@@ -140,6 +140,10 @@ export default function App(): React.ReactElement {
             </LinkColor>
             |
             <LinkColor>
+              <Link to="/authentik">Authentik</Link>
+            </LinkColor>
+            |
+            <LinkColor>
               <Link to="/whitelists">Whitelists</Link>
             </LinkColor>
             |

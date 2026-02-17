@@ -1,28 +1,22 @@
 import React, {
-  type PropsWithChildren,
-  ReactElement,
+  type ReactElement,
   useContext,
   useEffect,
   useState,
 } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { callApi } from "../helpers/api";
 import type { AuthentikUserFullResponse } from "../types/authentik";
 import { GlobalContext } from "../types/global";
 import { LinkColor } from "./link";
 
-interface AuthentikLookupProps extends PropsWithChildren {
-  initialUuid?: string;
-  close?: () => void;
-}
+export const AuthentikUserPage: React.FC = () => {
+  const { uuid: urlUuid } = useParams<{ uuid: string }>();
+  const navigate = useNavigate();
 
-export const AuthentikLookup: React.FC<AuthentikLookupProps> = (
-  props: AuthentikLookupProps,
-) => {
-  const { initialUuid } = props;
-
-  const [uuid, setUuid] = useState<string>("");
+  const [searchUuid, setSearchUuid] = useState<string>("");
   const [userData, setUserData] = useState<AuthentikUserFullResponse | null>(
-    null,
+    null
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,14 +24,14 @@ export const AuthentikLookup: React.FC<AuthentikLookupProps> = (
   const global = useContext(GlobalContext);
 
   useEffect(() => {
-    if (initialUuid && !userData && !loading) {
-      searchUser(initialUuid);
+    if (urlUuid && !userData && !loading) {
+      fetchUser(urlUuid);
     }
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlUuid]);
 
-  const searchUser = (override?: string) => {
-    const searchUuid = override || uuid;
-    if (!searchUuid.trim()) {
+  const fetchUser = (uuid: string) => {
+    if (!uuid.trim()) {
       global?.updateAndShowToast("Please enter a UUID");
       return;
     }
@@ -45,42 +39,44 @@ export const AuthentikLookup: React.FC<AuthentikLookupProps> = (
     setLoading(true);
     setError(null);
     setUserData(null);
-    if (override) {
-      setUuid(override);
-    }
 
-    callApi(
-      `/Authentik/UserByUuid/${encodeURIComponent(searchUuid.trim())}`,
-    ).then((response) => {
-      setLoading(false);
-      if (response.status === 200) {
-        response.json().then((json) => setUserData(json));
-      } else if (response.status === 404) {
-        setError("No user found with that UUID");
-        if (props.close) props.close();
-      } else {
-        response.json().then((json) => {
-          setError(json.message || "Failed to fetch user");
-        });
+    callApi(`/Authentik/UserByUuid/${encodeURIComponent(uuid.trim())}`).then(
+      (response) => {
+        setLoading(false);
+        if (response.status === 200) {
+          response.json().then((json) => setUserData(json));
+        } else if (response.status === 404) {
+          setError("No user found with that UUID");
+        } else {
+          response.json().then((json) => {
+            setError(json.message || "Failed to fetch user");
+          });
+        }
       }
-    });
+    );
+  };
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchUuid.trim()) {
+      navigate(`/authentik/${searchUuid.trim()}`);
+    }
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
+      <div className="text-center text-2xl underline">Authentik User Lookup</div>
+
       <form
         className="flex flex-row justify-center gap-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          searchUser();
-        }}
+        onSubmit={handleSearch}
       >
         <label htmlFor="authentik-uuid">UUID:</label>
         <input
           type="text"
           id="authentik-uuid"
-          value={uuid}
-          onChange={(e) => setUuid(e.target.value)}
+          value={searchUuid}
+          onChange={(e) => setSearchUuid(e.target.value)}
           placeholder="Enter user UUID"
           className="w-80"
         />
@@ -114,7 +110,7 @@ const AuthentikUserDetails = ({
 
   const urlifyAttributeValue = (
     value: string,
-    key: string,
+    key: string
   ): ReactElement | string => {
     if (key === "steam_id")
       return (
@@ -122,7 +118,7 @@ const AuthentikUserDetails = ({
           onClick={() =>
             window.open(
               `https://steamcommunity.com/profiles/${value}`,
-              "_blank",
+              "_blank"
             )
           }
         >

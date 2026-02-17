@@ -61,7 +61,6 @@ export type AuthentikUserFullResponse = {
 	uid: string;
 	username: string;
 	name: string;
-	email: string | null;
 	isActive: boolean;
 	lastLogin: string | null;
 	attributes: Record<string, unknown>;

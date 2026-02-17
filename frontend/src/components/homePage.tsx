@@ -1,14 +1,12 @@
 import type React from "react";
 import type { PropsWithChildren } from "react";
 import { useContext, useRef, useState } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { GlobalContext } from "../types/global";
-import { AuthentikLookup } from "./authentikLookup";
 import { CidLookup } from "./cidLookup";
 import { Dialog } from "./dialog";
 import { IpLookup } from "./ipLookup";
 import { RoundData } from "./roundData";
-import { LookupMenu } from "./userLookup";
 
 export default function HomePage(): React.ReactElement {
   const context = useContext(GlobalContext);
@@ -88,12 +86,28 @@ const LookupOption = (props: LookupProps) => {
   const [value, setValue] = useState<string | null>(null);
   const [heldValue, setHeldValue] = useState<string | null>(null);
   const [timer, setTimer] = useState<number>(0);
+  const navigate = useNavigate();
 
   const { type } = props;
 
   const inputRef = useRef<HTMLInputElement>(null);
 
   const close = () => setValue(null);
+
+  const handleSubmit = (submittedValue: string | null) => {
+    if (!submittedValue) return;
+
+    if (type === "discordId") {
+      navigate(`/discord-lookup/${submittedValue}`);
+      return;
+    }
+    if (type === "authentikUuid") {
+      navigate(`/authentik/${submittedValue}`);
+      return;
+    }
+
+    setValue(submittedValue);
+  };
 
   return (
     <>
@@ -117,7 +131,7 @@ const LookupOption = (props: LookupProps) => {
             className="flex flex-row justify-center gap-3"
             onSubmit={(event) => {
               event.preventDefault();
-              setValue(heldValue);
+              handleSubmit(heldValue);
             }}
           >
             <input
@@ -146,14 +160,8 @@ const LookupOption = (props: LookupProps) => {
           className="md:w-11/12 md:h-11/12"
         >
           {type === "lookup" && <Navigate to={`/user/${value}`} />}
-          {type === "discordId" && (
-            <LookupMenu discordId={value} close={close} />
-          )}
           {type === "cid" && <CidLookup initialCid={value} close={close} />}
           {type === "ip" && <IpLookup initialIp={value} close={close} />}
-          {type === "authentikUuid" && (
-            <AuthentikLookup initialUuid={value} close={close} />
-          )}
         </Dialog>
       )}
     </>
