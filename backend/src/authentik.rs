@@ -2297,8 +2297,7 @@ pub async fn check_verification_eligibility(
         match uuid {
             Some(u) if !u.is_empty() => u.replace('-', ""),
             _ => {
-                result.reason =
-                    Some("Neither BYOND is linked nor UUID is available".to_string());
+                result.reason = Some("Neither BYOND is linked nor UUID is available".to_string());
                 return result;
             }
         }
@@ -2348,10 +2347,16 @@ pub async fn check_verification_eligibility(
                 )
             })
             .collect();
-        result.reason = Some(format!(
+        let mut reason = format!(
             "Insufficient playtime for server(s): {}.",
             server_details.join(", ")
-        ));
+        );
+        if !has_byond {
+            reason.push_str(
+                " You may have more playtime on your BYOND account - try linking it to cmAuth.",
+            );
+        }
+        result.reason = Some(reason);
     }
 
     result
