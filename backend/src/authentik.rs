@@ -3027,57 +3027,86 @@ pub async fn search_users(
     })?;
 
     let http_client = reqwest::Client::new();
+    let base_url = authentik_config.base_url.trim_end_matches('/');
+    let encoded_query = urlencoding::encode(&query);
 
-    let url = format!(
-        "{}/api/v3/core/users/?search={}",
-        authentik_config.base_url.trim_end_matches('/'),
-        urlencoding::encode(&query)
+    let main_search_url = format!("{}/api/v3/core/users/?search={}", base_url, encoded_query);
+
+    let steam_id_url = format!(
+        "{}/api/v3/core/users/?attributes={{\"steam_id\":\"{}\"}}",
+        base_url, encoded_query
     );
 
-    let response = http_client
-        .get(&url)
-        .header(
-            "Authorization",
-            format!("Bearer {}", authentik_config.token),
-        )
-        .send()
-        .await
-        .map_err(|e| {
-            (
-                Status::InternalServerError,
-                Json(AuthentikError {
-                    error: "api_error".to_string(),
-                    message: format!("Failed to query Authentik API: {}", e),
-                }),
-            )
-        })?;
+    let ckey_url = format!(
+        "{}/api/v3/core/users/?attributes={{\"ckey\":\"{}\"}}",
+        base_url, encoded_query
+    );
 
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
+    let auth_header = format!("Bearer {}", authentik_config.token);
+    let (main_result, steam_id_result, ckey_result) = tokio::join!(
+        http_client
+            .get(&main_search_url)
+            .header("Authorization", &auth_header)
+            .send(),
+        http_client
+            .get(&steam_id_url)
+            .header("Authorization", &auth_header)
+            .send(),
+        http_client
+            .get(&ckey_url)
+            .header("Authorization", &auth_header)
+            .send()
+    );
+
+    let mut all_users: Vec<AuthentikUserDetailed> = Vec::new();
+    let mut main_request_error: Option<String> = None;
+
+    match main_result {
+        Ok(response) if response.status().is_success() => {
+            if let Ok(search_response) =
+                response.json::<AuthentikUserDetailedSearchResponse>().await
+            {
+                all_users.extend(search_response.results);
+            }
+        }
+        Ok(response) => {
+            main_request_error = Some(format!("HTTP {}", response.status()));
+        }
+        Err(e) => {
+            main_request_error = Some(e.to_string());
+        }
+    }
+
+    if let Ok(response) = steam_id_result
+        && response.status().is_success()
+        && let Ok(search_response) = response.json::<AuthentikUserDetailedSearchResponse>().await
+    {
+        all_users.extend(search_response.results);
+    }
+
+    if let Ok(response) = ckey_result
+        && response.status().is_success()
+        && let Ok(search_response) = response.json::<AuthentikUserDetailedSearchResponse>().await
+    {
+        all_users.extend(search_response.results);
+    }
+
+    if all_users.is_empty()
+        && let Some(error) = main_request_error
+    {
         return Err((
             Status::InternalServerError,
             Json(AuthentikError {
                 error: "api_error".to_string(),
-                message: format!("Authentik API returned error {}: {}", status, body),
+                message: format!("Failed to query Authentik API: {}", error),
             }),
         ));
     }
 
-    let search_response: AuthentikUserDetailedSearchResponse =
-        response.json().await.map_err(|e| {
-            (
-                Status::InternalServerError,
-                Json(AuthentikError {
-                    error: "parse_error".to_string(),
-                    message: format!("Failed to parse Authentik response: {}", e),
-                }),
-            )
-        })?;
-
-    let results: Vec<AuthentikUserSearchResult> = search_response
-        .results
+    let mut seen_pks = std::collections::HashSet::new();
+    let results: Vec<AuthentikUserSearchResult> = all_users
         .into_iter()
+        .filter(|u| seen_pks.insert(u.pk))
         .map(|u| AuthentikUserSearchResult {
             pk: u.pk,
             uuid: u.uuid,
