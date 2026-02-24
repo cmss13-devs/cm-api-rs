@@ -466,15 +466,11 @@ const ProfileTab: React.FC<{
           <span>
             {(() => {
               const byond = profile.linkedSources.find((s) => s.slug === "byond");
-              if (byond) {
-                // Strip "user:" prefix if present
-                if (byond.identifier.startsWith("user:")) {
-                  return byond.identifier.slice(5);
-                }
-                return byond.identifier;
+              if (byond?.parsedId) {
+                return byond.parsedId.toLowerCase();
               }
               // Fallback to Authentik UUID without dashes
-              return profile.uuid.replace(/-/g, "");
+              return profile.uuid.replace(/-/g, "").toLowerCase();
             })()}
           </span>
           {!profile.linkedSources.find((s) => s.slug === "byond") && (

@@ -3318,7 +3318,13 @@ pub async fn get_my_profile(
             let parsed_id = match source.source.slug.as_str() {
                 "steam" => parse_steam_id(&source.identifier),
                 "discord" => Some(source.identifier.clone()),
-                "byond" => Some(source.identifier.clone()),
+                "byond" => Some(
+                    source
+                        .identifier
+                        .strip_prefix("user:")
+                        .unwrap_or(&source.identifier)
+                        .to_string(),
+                ),
                 _ => None,
             };
             LinkedOAuthSource {
