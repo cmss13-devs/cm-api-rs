@@ -127,11 +127,11 @@ export type ConsentInfo = {
 };
 
 export type MfaDeviceInfo = {
-	pk: number;
+	pk: string;
 	name: string;
 	deviceType: string;
-	createdOn: string | null;
-	tokenCount: number | null;
+	created: string | null;
+	lastUsed: string | null;
 };
 
 export type UserSettingsResponse = {

@@ -205,7 +205,7 @@ export const AccountSettings: React.FC = () => {
 
   const handleDeleteMfaDevice = async (
     deviceType: string,
-    pk: number,
+    pk: string,
     name: string
   ) => {
     try {
@@ -674,12 +674,16 @@ const MfaDeviceRow: React.FC<{
 
   const getDeviceTypeLabel = (type: string): string => {
     switch (type) {
-      case "totp":
+      case "authentik_stages_authenticator_totp.totpdevice":
         return "Authenticator App (TOTP)";
-      case "webauthn":
+      case "authentik_stages_authenticator_webauthn.webauthndevice":
         return "Security Key (WebAuthn)";
-      case "static":
+      case "authentik_stages_authenticator_static.staticdevice":
         return "Backup Codes";
+      case "authentik_stages_authenticator_duo.duodevice":
+        return "Duo";
+      case "authentik_stages_authenticator_sms.smsdevice":
+        return "SMS";
       default:
         return type;
     }
@@ -702,14 +706,14 @@ const MfaDeviceRow: React.FC<{
         <span className="text-sm text-gray-400">
           {getDeviceTypeLabel(device.deviceType)}
         </span>
-        {device.createdOn && (
+        {device.created && (
           <span className="text-sm text-gray-500">
-            Added: {formatDate(device.createdOn)}
+            Added: {formatDate(device.created)}
           </span>
         )}
-        {device.tokenCount !== null && (
+        {device.lastUsed && (
           <span className="text-sm text-gray-500">
-            Remaining codes: {device.tokenCount}
+            Last used: {formatDate(device.lastUsed)}
           </span>
         )}
       </div>

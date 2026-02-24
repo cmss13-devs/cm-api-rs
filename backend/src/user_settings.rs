@@ -114,51 +114,26 @@ pub struct ConsentInfo {
     pub expires: Option<String>,
 }
 
-/// MFA device types
+/// Admin device from /authenticators/admin/all/ endpoint
 #[derive(Debug, Deserialize, Clone)]
-pub struct TotpDevice {
-    pub pk: i64,
+pub struct AdminDevice {
+    pub pk: String,
     pub name: String,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct WebAuthnDevice {
-    pub pk: i64,
-    pub name: String,
-    pub created_on: String,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-pub struct StaticDevice {
-    pub pk: i64,
-    pub name: String,
-    pub token_count: Option<i64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct TotpDevicesResponse {
-    pub results: Vec<TotpDevice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WebAuthnDevicesResponse {
-    pub results: Vec<WebAuthnDevice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct StaticDevicesResponse {
-    pub results: Vec<StaticDevice>,
+    #[serde(rename = "type")]
+    pub device_type: String,
+    pub created: Option<String>,
+    pub last_used: Option<String>,
 }
 
 /// MFA device info for frontend
 #[derive(Debug, Serialize)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct MfaDeviceInfo {
-    pub pk: i64,
+    pub pk: String,
     pub name: String,
     pub device_type: String,
-    pub created_on: Option<String>,
-    pub token_count: Option<i64>,
+    pub created: Option<String>,
+    pub last_used: Option<String>,
 }
 
 /// Full user settings response
@@ -302,94 +277,46 @@ async fn revoke_consent(
     Ok(())
 }
 
-/// Get user MFA devices from Authentik (TOTP, WebAuthn, Static)
+/// Get user MFA devices from Authentik using the admin/all endpoint
 async fn get_user_mfa_devices(
     client: &reqwest::Client,
     config: &AuthentikConfig,
     user_pk: i64,
 ) -> Result<Vec<MfaDeviceInfo>, String> {
-    let base_url = config.base_url.trim_end_matches('/');
-    let auth_header = format!("Bearer {}", config.token);
-
-    // Fetch all device types in parallel
-    let (totp_result, webauthn_result, static_result) = tokio::join!(
-        client
-            .get(format!(
-                "{}/api/v3/authenticators/totp/?user={}",
-                base_url, user_pk
-            ))
-            .header("Authorization", &auth_header)
-            .send(),
-        client
-            .get(format!(
-                "{}/api/v3/authenticators/webauthn/?user={}",
-                base_url, user_pk
-            ))
-            .header("Authorization", &auth_header)
-            .send(),
-        client
-            .get(format!(
-                "{}/api/v3/authenticators/static/?user={}",
-                base_url, user_pk
-            ))
-            .header("Authorization", &auth_header)
-            .send()
+    let url = format!(
+        "{}/api/v3/authenticators/admin/all/?user={}",
+        config.base_url.trim_end_matches('/'),
+        user_pk
     );
 
-    let mut devices = Vec::new();
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
 
-    // Parse TOTP devices
-    if let Ok(response) = totp_result {
-        if response.status().is_success() {
-            if let Ok(totp_response) = response.json::<TotpDevicesResponse>().await {
-                for device in totp_response.results {
-                    devices.push(MfaDeviceInfo {
-                        pk: device.pk,
-                        name: device.name,
-                        device_type: "totp".to_string(),
-                        created_on: None,
-                        token_count: None,
-                    });
-                }
-            }
-        }
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Authentik API returned error {}: {}", status, body));
     }
 
-    // Parse WebAuthn devices
-    if let Ok(response) = webauthn_result {
-        if response.status().is_success() {
-            if let Ok(webauthn_response) = response.json::<WebAuthnDevicesResponse>().await {
-                for device in webauthn_response.results {
-                    devices.push(MfaDeviceInfo {
-                        pk: device.pk,
-                        name: device.name,
-                        device_type: "webauthn".to_string(),
-                        created_on: Some(device.created_on),
-                        token_count: None,
-                    });
-                }
-            }
-        }
-    }
+    let devices: Vec<AdminDevice> = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
 
-    // Parse Static (backup codes) devices
-    if let Ok(response) = static_result {
-        if response.status().is_success() {
-            if let Ok(static_response) = response.json::<StaticDevicesResponse>().await {
-                for device in static_response.results {
-                    devices.push(MfaDeviceInfo {
-                        pk: device.pk,
-                        name: device.name,
-                        device_type: "static".to_string(),
-                        created_on: None,
-                        token_count: device.token_count,
-                    });
-                }
-            }
-        }
-    }
-
-    Ok(devices)
+    Ok(devices
+        .into_iter()
+        .map(|d| MfaDeviceInfo {
+            pk: d.pk,
+            name: d.name,
+            device_type: d.device_type,
+            created: d.created,
+            last_used: d.last_used,
+        })
+        .collect())
 }
 
 /// Delete an MFA device
@@ -397,12 +324,14 @@ async fn delete_mfa_device(
     client: &reqwest::Client,
     config: &AuthentikConfig,
     device_type: &str,
-    device_pk: i64,
+    device_pk: &str,
 ) -> Result<(), String> {
     let endpoint = match device_type {
-        "totp" => "authenticators/totp",
-        "webauthn" => "authenticators/webauthn",
-        "static" => "authenticators/static",
+        "authentik_stages_authenticator_totp.totpdevice" => "authenticators/totp",
+        "authentik_stages_authenticator_webauthn.webauthndevice" => "authenticators/webauthn",
+        "authentik_stages_authenticator_static.staticdevice" => "authenticators/static",
+        "authentik_stages_authenticator_duo.duodevice" => "authenticators/duo",
+        "authentik_stages_authenticator_sms.smsdevice" => "authenticators/sms",
         _ => return Err(format!("Unknown device type: {}", device_type)),
     };
 
@@ -692,7 +621,7 @@ pub async fn delete_my_mfa_device(
     user: AuthenticatedUser<Player>,
     config: &State<Config>,
     device_type: String,
-    device_pk: i64,
+    device_pk: String,
 ) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
     let authentik_config = config.authentik.as_ref().ok_or_else(|| {
         (
@@ -746,7 +675,7 @@ pub async fn delete_my_mfa_device(
 
     let device_name = device.name.clone();
 
-    delete_mfa_device(&http_client, authentik_config, &device_type, device_pk)
+    delete_mfa_device(&http_client, authentik_config, &device_type, &device_pk)
         .await
         .map_err(|e| {
             (
