@@ -53,8 +53,8 @@ export const LookupMenu: React.FC<LookupMenuProps> = (
     (args: UpdateUserArguments) => {
       const { userCkey, userDiscordId } = args;
       setLoading(true);
-      const re = /[\\^]|[^a-z0-9@]/g;
-      const userCkeyChecked = userCkey?.toLowerCase().replace(re, "");
+      const re = /[^a-z0-9@]/g;
+      const userCkeyChecked = userCkey?.trim().toLowerCase().replace(re, "");
       callApi(
         userCkeyChecked
           ? `/User?ckey=${userCkeyChecked}`
@@ -92,8 +92,9 @@ export const LookupMenu: React.FC<LookupMenuProps> = (
 
     if (!potentialUser) return;
 
-    const re = /[\\^]|[^a-z0-9@]/g;
-    const checked = potentialUser.toLowerCase().replace(re, "");
+    const re = /[^a-z0-9@]/g;
+    const checked = potentialUser.trim().toLowerCase().replace(re, "");
+    if (!potentialUser) return;
 
     if (potentialUser && (!userData || userData.ckey !== checked)) {
       updateUser({ userCkey: potentialUser as string });
@@ -1184,7 +1185,9 @@ const KnownAltsModal = (props: { player: Player }) => {
     if (!player.ckey || !newAltCkey.trim()) return;
 
     const playerCkey = altsData?.mainAccount || player.ckey;
-    const altCkey = newAltCkey.trim().toLowerCase().replace(/[^a-z0-9@]/g, "");
+    const re = /[^a-z0-9@]/g;
+    const altCkey = newAltCkey.trim().toLowerCase().replace(re, "");
+    if (!altCkey) return;
 
     callApi("/User/KnownAlts", {
       method: "POST",
