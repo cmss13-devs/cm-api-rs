@@ -191,10 +191,15 @@ async fn get_user_sessions(
         return Err(format!("Authentik API returned error {}: {}", status, body));
     }
 
-    let sessions_response: AuthentikSessionsResponse = response
-        .json()
+    let body = response
+        .text()
         .await
-        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+    eprintln!("DEBUG sessions response: {}", body);
+
+    let sessions_response: AuthentikSessionsResponse = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse Authentik sessions response: {} - body was: {}", e, body))?;
 
     Ok(sessions_response.results)
 }
@@ -255,10 +260,15 @@ async fn get_user_consents(
         return Err(format!("Authentik API returned error {}: {}", status, body));
     }
 
-    let consents_response: AuthentikConsentsResponse = response
-        .json()
+    let body = response
+        .text()
         .await
-        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+        .map_err(|e| format!("Failed to read response body: {}", e))?;
+
+    eprintln!("DEBUG consents response: {}", body);
+
+    let consents_response: AuthentikConsentsResponse = serde_json::from_str(&body)
+        .map_err(|e| format!("Failed to parse Authentik consents response: {} - body was: {}", e, body))?;
 
     Ok(consents_response.results)
 }
