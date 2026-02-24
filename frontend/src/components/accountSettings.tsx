@@ -13,8 +13,19 @@ import type {
 } from "../types/authentik";
 import { GlobalContext } from "../types/global";
 
+type TabId = "profile" | "sessions" | "consents" | "mfa";
+
+const tabs: { id: TabId; label: string }[] = [
+  { id: "profile", label: "Profile" },
+  { id: "sessions", label: "Sessions" },
+  { id: "consents", label: "Consents" },
+  { id: "mfa", label: "MFA Devices" },
+];
+
 export const AccountSettings: React.FC = () => {
   const global = useContext(GlobalContext);
+
+  const [activeTab, setActiveTab] = useState<TabId>("profile");
 
   const [profile, setProfile] = useState<UserProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -241,218 +252,350 @@ export const AccountSettings: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <h1 className="text-xl font-bold">Account Settings</h1>
 
-      <div className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold">Profile Information</h2>
-
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-row items-center gap-2">
-            <span className="text-gray-400 w-32">Username:</span>
-            <span>{profile.username}</span>
-            <span className="text-gray-500 text-sm">(cannot be changed)</span>
-          </div>
-
-          <div className="flex flex-row items-center gap-2">
-            <span className="text-gray-400 w-32">Display Name:</span>
-            {editingName ? (
-              <>
-                <input
-                  type="text"
-                  value={pendingName}
-                  onChange={(e) => setPendingName(e.target.value)}
-                  disabled={saving}
-                  className="bg-[#2a2a2a] border border-[#3f3f3f] rounded px-2 py-1 text-white flex-1 max-w-xs"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSaveName();
-                    if (e.key === "Escape") handleCancelName();
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveName}
-                  disabled={saving}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-3 py-1 rounded text-sm"
-                >
-                  {saving ? "Saving..." : "Save"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCancelName}
-                  disabled={saving}
-                  className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-sm"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                <span>{profile.name}</span>
-                <button
-                  type="button"
-                  onClick={() => setEditingName(true)}
-                  className="text-blue-400 hover:text-blue-300 hover:underline text-sm"
-                >
-                  Edit
-                </button>
-              </>
+      {/* Tab Bar */}
+      <div className="flex flex-row border-b border-[#3f3f3f]">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.id
+                ? "border-blue-500 text-blue-400"
+                : "border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500"
+            }`}
+          >
+            {tab.label}
+            {tab.id === "sessions" && settings && (
+              <span className="ml-1.5 text-xs text-gray-500">
+                ({settings.sessions.length})
+              </span>
             )}
-          </div>
-
-          <div className="flex flex-row items-center gap-2">
-            <span className="text-gray-400 w-32">Email:</span>
-            {editingEmail ? (
-              <>
-                <input
-                  type="email"
-                  value={pendingEmail}
-                  onChange={(e) => setPendingEmail(e.target.value)}
-                  disabled={saving}
-                  className="bg-[#2a2a2a] border border-[#3f3f3f] rounded px-2 py-1 text-white flex-1 max-w-xs"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSaveEmail();
-                    if (e.key === "Escape") handleCancelEmail();
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveEmail}
-                  disabled={saving}
-                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-3 py-1 rounded text-sm"
-                >
-                  {saving ? "Saving..." : "Save"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCancelEmail}
-                  disabled={saving}
-                  className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-sm"
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <>
-                <span className={profile.email ? "" : "text-gray-500"}>
-                  {profile.email || "(not set)"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setEditingEmail(true)}
-                  className="text-blue-400 hover:text-blue-300 hover:underline text-sm"
-                >
-                  Edit
-                </button>
-              </>
+            {tab.id === "consents" && settings && (
+              <span className="ml-1.5 text-xs text-gray-500">
+                ({settings.consents.length})
+              </span>
             )}
-          </div>
-        </div>
+            {tab.id === "mfa" && settings && (
+              <span className="ml-1.5 text-xs text-gray-500">
+                ({settings.mfaDevices.length})
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
-      <div className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold">Linked Accounts</h2>
-
-        {profile.linkedSources.length === 0 ? (
-          <div className="text-gray-400">No linked accounts</div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {profile.linkedSources.map((source) => (
-              <LinkedSourceRow
-                key={source.slug}
-                source={source}
-                onUnlink={() => handleUnlink(source.connectionPk, source.name)}
-                authentikBaseUrl={profile.authentikBaseUrl}
-              />
-            ))}
-          </div>
+      {/* Tab Content */}
+      <div className="pt-2">
+        {activeTab === "profile" && (
+          <ProfileTab
+            profile={profile}
+            editingName={editingName}
+            editingEmail={editingEmail}
+            pendingName={pendingName}
+            pendingEmail={pendingEmail}
+            saving={saving}
+            setEditingName={setEditingName}
+            setEditingEmail={setEditingEmail}
+            setPendingName={setPendingName}
+            setPendingEmail={setPendingEmail}
+            handleSaveName={handleSaveName}
+            handleSaveEmail={handleSaveEmail}
+            handleCancelName={handleCancelName}
+            handleCancelEmail={handleCancelEmail}
+            handleUnlink={handleUnlink}
+          />
         )}
 
-        {profile.availableSources.length > 0 && (
-          <div className="flex flex-col gap-2 mt-4">
-            <h3 className="text-md font-medium text-gray-400">
-              Available to Link
-            </h3>
-            {profile.availableSources.map((source) => (
-              <AvailableSourceRow
-                key={source.slug}
-                source={source}
-                authentikBaseUrl={profile.authentikBaseUrl}
-              />
-            ))}
-          </div>
+        {activeTab === "sessions" && (
+          <SessionsTab
+            settings={settings}
+            settingsLoading={settingsLoading}
+            onDeleteSession={handleDeleteSession}
+          />
         )}
-      </div>
 
-      {/* Sessions Section */}
-      <div className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold">Active Sessions</h2>
-
-        {settingsLoading ? (
-          <div className="text-gray-400">Loading sessions...</div>
-        ) : settings?.sessions.length === 0 ? (
-          <div className="text-gray-400">No active sessions</div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {settings?.sessions.map((session) => (
-              <SessionRow
-                key={session.uuid}
-                session={session}
-                onDelete={() => handleDeleteSession(session.uuid)}
-              />
-            ))}
-          </div>
+        {activeTab === "consents" && (
+          <ConsentsTab
+            settings={settings}
+            settingsLoading={settingsLoading}
+            onRevokeConsent={handleRevokeConsent}
+          />
         )}
-      </div>
 
-      {/* Application Consents Section */}
-      <div className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold">Application Consents</h2>
-
-        {settingsLoading ? (
-          <div className="text-gray-400">Loading consents...</div>
-        ) : settings?.consents.length === 0 ? (
-          <div className="text-gray-400">No application consents</div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {settings?.consents.map((consent) => (
-              <ConsentRow
-                key={consent.pk}
-                consent={consent}
-                onRevoke={() =>
-                  handleRevokeConsent(consent.pk, consent.applicationName)
-                }
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* MFA Devices Section */}
-      <div className="flex flex-col gap-4">
-        <h2 className="text-lg font-semibold">MFA Devices</h2>
-
-        {settingsLoading ? (
-          <div className="text-gray-400">Loading MFA devices...</div>
-        ) : settings?.mfaDevices.length === 0 ? (
-          <div className="text-gray-400">No MFA devices configured</div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {settings?.mfaDevices.map((device) => (
-              <MfaDeviceRow
-                key={`${device.deviceType}-${device.pk}`}
-                device={device}
-                onDelete={() =>
-                  handleDeleteMfaDevice(device.deviceType, device.pk, device.name)
-                }
-              />
-            ))}
-          </div>
+        {activeTab === "mfa" && (
+          <MfaTab
+            settings={settings}
+            settingsLoading={settingsLoading}
+            onDeleteDevice={handleDeleteMfaDevice}
+          />
         )}
       </div>
     </div>
   );
 };
+
+// Tab Content Components
+const ProfileTab: React.FC<{
+  profile: UserProfileResponse;
+  editingName: boolean;
+  editingEmail: boolean;
+  pendingName: string;
+  pendingEmail: string;
+  saving: boolean;
+  setEditingName: (v: boolean) => void;
+  setEditingEmail: (v: boolean) => void;
+  setPendingName: (v: string) => void;
+  setPendingEmail: (v: string) => void;
+  handleSaveName: () => void;
+  handleSaveEmail: () => void;
+  handleCancelName: () => void;
+  handleCancelEmail: () => void;
+  handleUnlink: (pk: number, name: string) => void;
+}> = ({
+  profile,
+  editingName,
+  editingEmail,
+  pendingName,
+  pendingEmail,
+  saving,
+  setEditingName,
+  setEditingEmail,
+  setPendingName,
+  setPendingEmail,
+  handleSaveName,
+  handleSaveEmail,
+  handleCancelName,
+  handleCancelEmail,
+  handleUnlink,
+}) => (
+  <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
+      <h2 className="text-lg font-semibold">Profile Information</h2>
+
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-row items-center gap-2">
+          <span className="text-gray-400 w-32">Username:</span>
+          <span>{profile.username}</span>
+          <span className="text-gray-500 text-sm">(cannot be changed)</span>
+        </div>
+
+        <div className="flex flex-row items-center gap-2">
+          <span className="text-gray-400 w-32">Display Name:</span>
+          {editingName ? (
+            <>
+              <input
+                type="text"
+                value={pendingName}
+                onChange={(e) => setPendingName(e.target.value)}
+                disabled={saving}
+                className="bg-[#2a2a2a] border border-[#3f3f3f] rounded px-2 py-1 text-white flex-1 max-w-xs"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveName();
+                  if (e.key === "Escape") handleCancelName();
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleSaveName}
+                disabled={saving}
+                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-3 py-1 rounded text-sm"
+              >
+                {saving ? "Saving..." : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelName}
+                disabled={saving}
+                className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-sm"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <span>{profile.name}</span>
+              <button
+                type="button"
+                onClick={() => setEditingName(true)}
+                className="text-blue-400 hover:text-blue-300 hover:underline text-sm"
+              >
+                Edit
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="flex flex-row items-center gap-2">
+          <span className="text-gray-400 w-32">Email:</span>
+          {editingEmail ? (
+            <>
+              <input
+                type="email"
+                value={pendingEmail}
+                onChange={(e) => setPendingEmail(e.target.value)}
+                disabled={saving}
+                className="bg-[#2a2a2a] border border-[#3f3f3f] rounded px-2 py-1 text-white flex-1 max-w-xs"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSaveEmail();
+                  if (e.key === "Escape") handleCancelEmail();
+                }}
+              />
+              <button
+                type="button"
+                onClick={handleSaveEmail}
+                disabled={saving}
+                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-3 py-1 rounded text-sm"
+              >
+                {saving ? "Saving..." : "Save"}
+              </button>
+              <button
+                type="button"
+                onClick={handleCancelEmail}
+                disabled={saving}
+                className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-sm"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <span className={profile.email ? "" : "text-gray-500"}>
+                {profile.email || "(not set)"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setEditingEmail(true)}
+                className="text-blue-400 hover:text-blue-300 hover:underline text-sm"
+              >
+                Edit
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+
+    <div className="flex flex-col gap-4">
+      <h2 className="text-lg font-semibold">Linked Accounts</h2>
+
+      {profile.linkedSources.length === 0 ? (
+        <div className="text-gray-400">No linked accounts</div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {profile.linkedSources.map((source) => (
+            <LinkedSourceRow
+              key={source.slug}
+              source={source}
+              onUnlink={() => handleUnlink(source.connectionPk, source.name)}
+              authentikBaseUrl={profile.authentikBaseUrl}
+            />
+          ))}
+        </div>
+      )}
+
+      {profile.availableSources.length > 0 && (
+        <div className="flex flex-col gap-2 mt-4">
+          <h3 className="text-md font-medium text-gray-400">
+            Available to Link
+          </h3>
+          {profile.availableSources.map((source) => (
+            <AvailableSourceRow
+              key={source.slug}
+              source={source}
+              authentikBaseUrl={profile.authentikBaseUrl}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  </div>
+);
+
+const SessionsTab: React.FC<{
+  settings: UserSettingsResponse | null;
+  settingsLoading: boolean;
+  onDeleteSession: (uuid: string) => void;
+}> = ({ settings, settingsLoading, onDeleteSession }) => (
+  <div className="flex flex-col gap-4">
+    <h2 className="text-lg font-semibold">Active Sessions</h2>
+
+    {settingsLoading ? (
+      <div className="text-gray-400">Loading sessions...</div>
+    ) : settings?.sessions.length === 0 ? (
+      <div className="text-gray-400">No active sessions</div>
+    ) : (
+      <div className="flex flex-col gap-2">
+        {settings?.sessions.map((session) => (
+          <SessionRow
+            key={session.uuid}
+            session={session}
+            onDelete={() => onDeleteSession(session.uuid)}
+          />
+        ))}
+      </div>
+    )}
+  </div>
+);
+
+const ConsentsTab: React.FC<{
+  settings: UserSettingsResponse | null;
+  settingsLoading: boolean;
+  onRevokeConsent: (pk: number, appName: string) => void;
+}> = ({ settings, settingsLoading, onRevokeConsent }) => (
+  <div className="flex flex-col gap-4">
+    <h2 className="text-lg font-semibold">Application Consents</h2>
+
+    {settingsLoading ? (
+      <div className="text-gray-400">Loading consents...</div>
+    ) : settings?.consents.length === 0 ? (
+      <div className="text-gray-400">No application consents</div>
+    ) : (
+      <div className="flex flex-col gap-2">
+        {settings?.consents.map((consent) => (
+          <ConsentRow
+            key={consent.pk}
+            consent={consent}
+            onRevoke={() =>
+              onRevokeConsent(consent.pk, consent.applicationName)
+            }
+          />
+        ))}
+      </div>
+    )}
+  </div>
+);
+
+const MfaTab: React.FC<{
+  settings: UserSettingsResponse | null;
+  settingsLoading: boolean;
+  onDeleteDevice: (deviceType: string, pk: string, name: string) => void;
+}> = ({ settings, settingsLoading, onDeleteDevice }) => (
+  <div className="flex flex-col gap-4">
+    <h2 className="text-lg font-semibold">MFA Devices</h2>
+
+    {settingsLoading ? (
+      <div className="text-gray-400">Loading MFA devices...</div>
+    ) : settings?.mfaDevices.length === 0 ? (
+      <div className="text-gray-400">No MFA devices configured</div>
+    ) : (
+      <div className="flex flex-col gap-2">
+        {settings?.mfaDevices.map((device) => (
+          <MfaDeviceRow
+            key={`${device.deviceType}-${device.pk}`}
+            device={device}
+            onDelete={() =>
+              onDeleteDevice(device.deviceType, device.pk, device.name)
+            }
+          />
+        ))}
+      </div>
+    )}
+  </div>
+);
 
 const LinkedSourceRow: React.FC<{
   source: LinkedOAuthSource;
