@@ -5,10 +5,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Config,
-    authentik::{AuthentikConfig, AuthentikError, get_user_by_attribute},
+    authentik::{AuthentikConfig, AuthentikError, get_user_by_attribute, get_user_by_uuid},
     player::{AuthorizationHeader, validate_auth_header},
     steam::SteamConfig,
-    utils::normalize_uuid,
 };
 
 #[derive(Debug, Serialize)]
@@ -237,44 +236,6 @@ async fn get_steam_id_for_ckey(
         .map(|s| s.to_string());
 
     Ok(steam_id)
-}
-
-/// Finds an Authentik user by their uuid field
-async fn get_user_by_uuid(
-    client: &reqwest::Client,
-    config: &AuthentikConfig,
-    uuid: &str,
-) -> Result<crate::authentik::AuthentikUserDetailed, String> {
-    let uuid = normalize_uuid(uuid).ok_or_else(|| format!("Invalid UUID format: '{}'", uuid))?;
-    let url = format!(
-        "{}/api/v3/core/users/?uuid={}",
-        config.base_url.trim_end_matches('/'),
-        uuid
-    );
-
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", config.token))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Authentik API returned error {}: {}", status, body));
-    }
-
-    let search_response: crate::authentik::AuthentikUserDetailedSearchResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
-
-    if search_response.results.is_empty() {
-        return Err(format!("No user found with uuid '{}'", uuid));
-    }
-
-    Ok(search_response.results.into_iter().next().unwrap())
 }
 
 /// GET /Achievements?ckey=<ckey>&instance=<instance> - Get uncompleted achievements for a player

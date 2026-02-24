@@ -577,6 +577,42 @@ async fn get_user_by_pk(
     Ok(user)
 }
 
+/// Generic helper to query Authentik users API and expect exactly one result
+async fn query_single_user(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    url: &str,
+    field_name: &str,
+    field_value: &str,
+) -> Result<AuthentikUserDetailed, String> {
+    let response = client
+        .get(url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Authentik API returned error {}: {}", status, body));
+    }
+
+    let search_response: AuthentikUserDetailedSearchResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+
+    match search_response.results.len() {
+        0 => Err(format!("No user found with {} '{}'", field_name, field_value)),
+        1 => Ok(search_response.results.into_iter().next().unwrap()),
+        _ => Err(format!(
+            "Multiple users found with {} '{}', expected exactly one",
+            field_name, field_value
+        )),
+    }
+}
+
 /// find an Authentik user by their ckey attribute
 async fn get_user_by_ckey(
     client: &reqwest::Client,
@@ -599,128 +635,23 @@ pub async fn get_user_by_attribute(
         attribute_key,
         attribute_value
     );
-
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", config.token))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Authentik API returned error {}: {}", status, body));
-    }
-
-    let search_response: AuthentikUserDetailedSearchResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
-
-    if search_response.results.is_empty() {
-        return Err(format!(
-            "No user found with {} '{}'",
-            attribute_key, attribute_value
-        ));
-    }
-
-    if search_response.results.len() > 1 {
-        return Err(format!(
-            "Multiple users found with {} '{}', expected exactly one",
-            attribute_key, attribute_value
-        ));
-    }
-
-    Ok(search_response.results.into_iter().next().unwrap())
+    query_single_user(client, config, &url, attribute_key, attribute_value).await
 }
 
-/// find an Authentik user by their UUID with detailed info
-async fn get_user_by_uuid_detailed(
+/// find an Authentik user by their UUID (normalizes UUID format)
+pub async fn get_user_by_uuid(
     client: &reqwest::Client,
     config: &AuthentikConfig,
     uuid: &str,
 ) -> Result<AuthentikUserDetailed, String> {
+    let uuid = crate::utils::normalize_uuid(uuid)
+        .ok_or_else(|| format!("Invalid UUID format: '{}'", uuid))?;
     let url = format!(
         "{}/api/v3/core/users/?uuid={}",
         config.base_url.trim_end_matches('/'),
-        urlencoding::encode(uuid)
+        uuid
     );
-
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", config.token))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Authentik API returned error {}: {}", status, body));
-    }
-
-    let search_response: AuthentikUserDetailedSearchResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
-
-    if search_response.results.is_empty() {
-        return Err(format!("No user found with UUID '{}'", uuid));
-    }
-
-    if search_response.results.len() > 1 {
-        return Err(format!(
-            "Multiple users found with UUID '{}', expected exactly one",
-            uuid
-        ));
-    }
-
-    Ok(search_response.results.into_iter().next().unwrap())
-}
-
-/// find an Authentik user by their uid (sub claim)
-async fn get_user_by_uid(
-    client: &reqwest::Client,
-    config: &AuthentikConfig,
-    uid: &str,
-) -> Result<AuthentikUserDetailed, String> {
-    let url = format!(
-        "{}/api/v3/core/users/?uid={}",
-        config.base_url.trim_end_matches('/'),
-        urlencoding::encode(uid)
-    );
-
-    let response = client
-        .get(&url)
-        .header("Authorization", format!("Bearer {}", config.token))
-        .send()
-        .await
-        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Authentik API returned error {}: {}", status, body));
-    }
-
-    let search_response: AuthentikUserDetailedSearchResponse = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
-
-    if search_response.results.is_empty() {
-        return Err(format!("No user found with uid '{}'", uid));
-    }
-
-    if search_response.results.len() > 1 {
-        return Err(format!(
-            "Multiple users found with uid '{}', expected exactly one",
-            uid
-        ));
-    }
-
-    Ok(search_response.results.into_iter().next().unwrap())
+    query_single_user(client, config, &url, "UUID", &uuid).await
 }
 
 /// Update user fields (name, email) on Authentik
@@ -3098,7 +3029,7 @@ pub async fn get_user_by_discord_id(
 
 /// GET /Authentik/UserByUuid/<uuid> - get full user details by UUID (Staff only)
 #[get("/UserByUuid/<uuid>")]
-pub async fn get_user_by_uuid(
+pub async fn user_by_uuid_endpoint(
     _user: AuthenticatedUser<Staff>,
     config: &State<Config>,
     uuid: String,
@@ -3115,7 +3046,7 @@ pub async fn get_user_by_uuid(
 
     let http_client = reqwest::Client::new();
 
-    let user = get_user_by_uuid_detailed(&http_client, authentik_config, &uuid)
+    let user = get_user_by_uuid(&http_client, authentik_config, &uuid)
         .await
         .map_err(|e| {
             (
@@ -3270,7 +3201,7 @@ pub async fn get_my_profile(
 
     let http_client = reqwest::Client::new();
 
-    let authentik_user = get_user_by_uid(&http_client, authentik_config, &user.sub)
+    let authentik_user = get_user_by_uuid(&http_client, authentik_config, &user.sub)
         .await
         .map_err(|e| {
             (
@@ -3350,7 +3281,7 @@ pub async fn update_my_profile(
 
     let http_client = reqwest::Client::new();
 
-    let authentik_user = get_user_by_uid(&http_client, authentik_config, &user.sub)
+    let authentik_user = get_user_by_uuid(&http_client, authentik_config, &user.sub)
         .await
         .map_err(|e| {
             (
