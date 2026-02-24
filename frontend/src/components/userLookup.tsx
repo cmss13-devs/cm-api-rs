@@ -94,6 +94,7 @@ export const LookupMenu: React.FC<LookupMenuProps> = (
 
     const re = /[^a-z0-9@]/g;
     const checked = potentialUser.trim().toLowerCase().replace(re, "");
+    if(!checked) return;
 
     if (!userData || userData.ckey !== checked) {
       updateUser({ userCkey: potentialUser as string });
