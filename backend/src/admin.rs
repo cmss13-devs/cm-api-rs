@@ -105,16 +105,18 @@ pub struct AuthenticatedUser<P: PermissionLevel> {
     pub ckey: String,
     pub email: String,
     pub groups: Vec<String>,
+    pub sub: String,
     _permission: std::marker::PhantomData<P>,
 }
 
 impl<P: PermissionLevel> AuthenticatedUser<P> {
-    fn new(username: String, ckey: String, email: String, groups: Vec<String>) -> Self {
+    fn new(username: String, ckey: String, email: String, groups: Vec<String>, sub: String) -> Self {
         Self {
             username,
             ckey,
             email,
             groups,
+            sub,
             _permission: std::marker::PhantomData,
         }
     }
@@ -132,6 +134,7 @@ impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> 
                 P::debug_username().to_lowercase(),
                 format!("{}@debug.local", P::debug_username().to_lowercase()),
                 P::debug_groups(),
+                "debug-sub".to_string(),
             ));
         }
 
@@ -174,6 +177,7 @@ impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> 
             claims.ckey,
             claims.email,
             claims.groups,
+            claims.sub,
         ))
     }
 }

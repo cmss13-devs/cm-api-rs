@@ -8,7 +8,7 @@ use serenity::all::{GuildId, Http, RoleId, UserId};
 
 use crate::{
     Cmdb, Config, DiscordBotConfig, ServerRoleConfig,
-    admin::{AuthenticatedUser, Management, Staff},
+    admin::{AuthenticatedUser, Management, Player, Staff},
     byond::refresh_admins,
     discord::{get_whitelist_status_by_ckey, resolve_whitelist_roles},
     logging::log_external,
@@ -282,6 +282,36 @@ pub struct AuthentikUserSearchResult {
     pub username: String,
     pub name: String,
     pub is_active: bool,
+}
+
+/// User profile response for self-service account management
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct UserProfileResponse {
+    pub pk: i64,
+    pub uid: String,
+    pub username: String,
+    pub name: String,
+    pub email: Option<String>,
+    pub linked_sources: Vec<LinkedOAuthSource>,
+}
+
+/// Linked OAuth source information
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct LinkedOAuthSource {
+    pub name: String,
+    pub slug: String,
+    pub identifier: String,
+    pub parsed_id: Option<String>,
+}
+
+/// Request to update user profile fields
+#[derive(Debug, Deserialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct UpdateProfileRequest {
+    pub name: Option<String>,
+    pub email: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -647,6 +677,109 @@ async fn get_user_by_uuid_detailed(
     }
 
     Ok(search_response.results.into_iter().next().unwrap())
+}
+
+/// find an Authentik user by their uid (sub claim)
+async fn get_user_by_uid(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    uid: &str,
+) -> Result<AuthentikUserDetailed, String> {
+    let url = format!(
+        "{}/api/v3/core/users/?uid={}",
+        config.base_url.trim_end_matches('/'),
+        urlencoding::encode(uid)
+    );
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Authentik API returned error {}: {}", status, body));
+    }
+
+    let search_response: AuthentikUserDetailedSearchResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+
+    if search_response.results.is_empty() {
+        return Err(format!("No user found with uid '{}'", uid));
+    }
+
+    if search_response.results.len() > 1 {
+        return Err(format!(
+            "Multiple users found with uid '{}', expected exactly one",
+            uid
+        ));
+    }
+
+    Ok(search_response.results.into_iter().next().unwrap())
+}
+
+/// Update user fields (name, email) on Authentik
+async fn update_user_fields(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    user_pk: i64,
+    name: Option<&str>,
+    email: Option<&str>,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/api/v3/core/users/{}/",
+        config.base_url.trim_end_matches('/'),
+        user_pk
+    );
+
+    let mut body = serde_json::Map::new();
+    if let Some(n) = name {
+        body.insert("name".to_string(), serde_json::json!(n));
+    }
+    if let Some(e) = email {
+        body.insert("email".to_string(), serde_json::json!(e));
+    }
+
+    if body.is_empty() {
+        return Ok(());
+    }
+
+    let response = client
+        .patch(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::Value::Object(body))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to update user: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to update user fields (status {}): {}",
+            status, body
+        ));
+    }
+
+    Ok(())
+}
+
+/// Parse a Steam ID from an OpenID URL identifier
+/// Example: "https://steamcommunity.com/openid/id/76561198012345678" -> "76561198012345678"
+fn parse_steam_id(identifier: &str) -> Option<String> {
+    if identifier.starts_with("https://steamcommunity.com/openid/id/") {
+        identifier
+            .strip_prefix("https://steamcommunity.com/openid/id/")
+            .map(|s| s.to_string())
+    } else {
+        None
+    }
 }
 
 /// fetch group names for a user by their pk
@@ -3117,4 +3250,145 @@ pub async fn search_users(
         .collect();
 
     Ok(Json(results))
+}
+
+/// GET /Authentik/MyProfile - get the current user's profile information
+#[get("/MyProfile")]
+pub async fn get_my_profile(
+    user: AuthenticatedUser<Player>,
+    config: &State<Config>,
+) -> Result<Json<UserProfileResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let authentik_user = get_user_by_uid(&http_client, authentik_config, &user.sub)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let oauth_sources = get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "fetch_sources_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let linked_sources: Vec<LinkedOAuthSource> = oauth_sources
+        .into_iter()
+        .map(|source| {
+            let parsed_id = match source.source.slug.as_str() {
+                "steam" => parse_steam_id(&source.identifier),
+                "discord" => Some(source.identifier.clone()),
+                _ => None,
+            };
+            LinkedOAuthSource {
+                name: source.source.name,
+                slug: source.source.slug,
+                identifier: source.identifier,
+                parsed_id,
+            }
+        })
+        .collect();
+
+    Ok(Json(UserProfileResponse {
+        pk: authentik_user.pk,
+        uid: authentik_user.uid,
+        username: authentik_user.username,
+        name: authentik_user.name,
+        email: authentik_user.email,
+        linked_sources,
+    }))
+}
+
+/// PATCH /Authentik/MyProfile - update the current user's profile information
+#[patch("/MyProfile", format = "json", data = "<request>")]
+pub async fn update_my_profile(
+    user: AuthenticatedUser<Player>,
+    config: &State<Config>,
+    request: Json<UpdateProfileRequest>,
+) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    if request.name.is_none() && request.email.is_none() {
+        return Err((
+            Status::BadRequest,
+            Json(AuthentikError {
+                error: "no_fields_to_update".to_string(),
+                message: "At least one field (name or email) must be provided".to_string(),
+            }),
+        ));
+    }
+
+    let http_client = reqwest::Client::new();
+
+    let authentik_user = get_user_by_uid(&http_client, authentik_config, &user.sub)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    update_user_fields(
+        &http_client,
+        authentik_config,
+        authentik_user.pk,
+        request.name.as_deref(),
+        request.email.as_deref(),
+    )
+    .await
+    .map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "update_failed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
+
+    let mut updated_fields = Vec::new();
+    if request.name.is_some() {
+        updated_fields.push("name");
+    }
+    if request.email.is_some() {
+        updated_fields.push("email");
+    }
+
+    Ok(Json(AuthentikSuccess {
+        message: format!("Successfully updated: {}", updated_fields.join(", ")),
+    }))
 }

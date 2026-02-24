@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import App from "./App";
+import { AccountSettings } from "./components/accountSettings";
 import { ActiveBans } from "./components/activeBans";
 import { AuthentikPanel } from "./components/authentikPanel";
 import { AuthentikUserPage } from "./components/authentikUserPage";
@@ -77,6 +78,10 @@ const router = createBrowserRouter([
       {
         path: "/discord-lookup/:discordId",
         element: <DiscordLookupPage />,
+      },
+      {
+        path: "/account",
+        element: <AccountSettings />,
       },
     ],
   },

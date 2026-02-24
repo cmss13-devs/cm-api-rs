@@ -74,3 +74,24 @@ export type AuthentikUserSearchResult = {
 	name: string;
 	isActive: boolean;
 };
+
+export type LinkedOAuthSource = {
+	name: string;
+	slug: string;
+	identifier: string;
+	parsedId: string | null;
+};
+
+export type UserProfileResponse = {
+	pk: number;
+	uid: string;
+	username: string;
+	name: string;
+	email: string | null;
+	linkedSources: LinkedOAuthSource[];
+};
+
+export type UpdateProfileRequest = {
+	name?: string;
+	email?: string;
+};

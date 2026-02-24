@@ -171,6 +171,9 @@ export default function App(): React.ReactElement {
               )}
               )
             </span>
+            <LinkColor>
+              <Link to="/account">Account</Link>
+            </LinkColor>
             <button
               type="button"
               onClick={handleLogout}
