@@ -141,6 +141,12 @@ pub struct OAuthSource {
     pub pk: String,
     pub name: String,
     pub slug: String,
+    pub icon: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OAuthSourcesResponse {
+    pub results: Vec<OAuthSource>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -294,16 +300,29 @@ pub struct UserProfileResponse {
     pub name: String,
     pub email: Option<String>,
     pub linked_sources: Vec<LinkedOAuthSource>,
+    pub available_sources: Vec<AvailableOAuthSource>,
+    pub authentik_base_url: String,
 }
 
 /// Linked OAuth source information
 #[derive(Debug, Serialize)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct LinkedOAuthSource {
+    pub connection_pk: i64,
     pub name: String,
     pub slug: String,
+    pub icon: Option<String>,
     pub identifier: String,
     pub parsed_id: Option<String>,
+}
+
+/// Available OAuth source for linking
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct AvailableOAuthSource {
+    pub slug: String,
+    pub name: String,
+    pub icon: Option<String>,
 }
 
 /// Request to update user profile fields
@@ -921,15 +940,63 @@ pub async fn get_user_oauth_sources(
     Ok(connections_response.results)
 }
 
-#[allow(dead_code)]
-pub async fn user_has_oauth_source(
+/// Get all available OAuth sources from Authentik
+pub async fn get_all_oauth_sources(
     client: &reqwest::Client,
     config: &AuthentikConfig,
-    user_pk: i64,
-    source_slug: &str,
-) -> Result<bool, String> {
-    let sources = get_user_oauth_sources(client, config, user_pk).await?;
-    Ok(sources.iter().any(|s| s.source.slug == source_slug))
+) -> Result<Vec<OAuthSource>, String> {
+    let url = format!(
+        "{}/api/v3/sources/oauth/",
+        config.base_url.trim_end_matches('/')
+    );
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Authentik API returned error {}: {}", status, body));
+    }
+
+    let sources_response: OAuthSourcesResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+
+    Ok(sources_response.results)
+}
+
+/// Unlink an OAuth source connection
+async fn unlink_oauth_source(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    connection_pk: i64,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/api/v3/sources/user_connections/oauth/{}/",
+        config.base_url.trim_end_matches('/'),
+        connection_pk
+    );
+
+    let response = client
+        .delete(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to unlink source: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Failed to unlink source (status {}): {}", status, body));
+    }
+
+    Ok(())
 }
 
 /// find an Authentik group by name and return its UUID
@@ -3213,19 +3280,39 @@ pub async fn get_my_profile(
             )
         })?;
 
-    let oauth_sources = get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk)
-        .await
-        .map_err(|e| {
-            (
-                Status::InternalServerError,
-                Json(AuthentikError {
-                    error: "fetch_sources_failed".to_string(),
-                    message: e,
-                }),
-            )
-        })?;
+    // Fetch user's linked sources and all available sources in parallel
+    let (user_sources_result, all_sources_result) = tokio::join!(
+        get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk),
+        get_all_oauth_sources(&http_client, authentik_config)
+    );
 
-    let linked_sources: Vec<LinkedOAuthSource> = oauth_sources
+    let user_sources = user_sources_result.map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "fetch_sources_failed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
+
+    let all_sources = all_sources_result.map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "fetch_sources_failed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
+
+    // Build set of linked source slugs
+    let linked_slugs: std::collections::HashSet<String> = user_sources
+        .iter()
+        .map(|s| s.source.slug.clone())
+        .collect();
+
+    let linked_sources: Vec<LinkedOAuthSource> = user_sources
         .into_iter()
         .map(|source| {
             let parsed_id = match source.source.slug.as_str() {
@@ -3234,11 +3321,24 @@ pub async fn get_my_profile(
                 _ => None,
             };
             LinkedOAuthSource {
+                connection_pk: source.pk,
                 name: source.source.name,
-                slug: source.source.slug,
+                slug: source.source.slug.clone(),
+                icon: source.source.icon,
                 identifier: source.identifier,
                 parsed_id,
             }
+        })
+        .collect();
+
+    // Available sources are those not already linked
+    let available_sources: Vec<AvailableOAuthSource> = all_sources
+        .into_iter()
+        .filter(|s| !linked_slugs.contains(&s.slug))
+        .map(|s| AvailableOAuthSource {
+            slug: s.slug,
+            name: s.name,
+            icon: s.icon,
         })
         .collect();
 
@@ -3249,6 +3349,8 @@ pub async fn get_my_profile(
         name: authentik_user.name,
         email: authentik_user.email,
         linked_sources,
+        available_sources,
+        authentik_base_url: authentik_config.base_url.trim_end_matches('/').to_string(),
     }))
 }
 
@@ -3321,5 +3423,82 @@ pub async fn update_my_profile(
 
     Ok(Json(AuthentikSuccess {
         message: format!("Successfully updated: {}", updated_fields.join(", ")),
+    }))
+}
+
+/// DELETE /Authentik/MyProfile/UnlinkSource/<connection_pk> - unlink an OAuth source
+#[delete("/MyProfile/UnlinkSource/<connection_pk>")]
+pub async fn unlink_my_source(
+    user: AuthenticatedUser<Player>,
+    config: &State<Config>,
+    connection_pk: i64,
+) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    // Verify the user owns this connection by looking up their connections
+    let authentik_user = get_user_by_uuid(&http_client, authentik_config, &user.sub)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let user_sources = get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "fetch_sources_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    // Check that the connection belongs to this user
+    let connection = user_sources
+        .iter()
+        .find(|s| s.pk == connection_pk)
+        .ok_or_else(|| {
+            (
+                Status::Forbidden,
+                Json(AuthentikError {
+                    error: "not_your_connection".to_string(),
+                    message: "This connection does not belong to you".to_string(),
+                }),
+            )
+        })?;
+
+    let source_name = connection.source.name.clone();
+
+    unlink_oauth_source(&http_client, authentik_config, connection_pk)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "unlink_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    Ok(Json(AuthentikSuccess {
+        message: format!("Successfully unlinked {}", source_name),
     }))
 }

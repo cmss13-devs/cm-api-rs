@@ -76,10 +76,18 @@ export type AuthentikUserSearchResult = {
 };
 
 export type LinkedOAuthSource = {
+	connectionPk: number;
 	name: string;
 	slug: string;
+	icon: string | null;
 	identifier: string;
 	parsedId: string | null;
+};
+
+export type AvailableOAuthSource = {
+	slug: string;
+	name: string;
+	icon: string | null;
 };
 
 export type UserProfileResponse = {
@@ -89,6 +97,8 @@ export type UserProfileResponse = {
 	name: string;
 	email: string | null;
 	linkedSources: LinkedOAuthSource[];
+	availableSources: AvailableOAuthSource[];
+	authentikBaseUrl: string;
 };
 
 export type UpdateProfileRequest = {

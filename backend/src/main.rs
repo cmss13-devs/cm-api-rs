@@ -317,6 +317,7 @@ async fn rocket() -> _ {
                 authentik::search_users,
                 authentik::get_my_profile,
                 authentik::update_my_profile,
+                authentik::unlink_my_source,
                 token::get_token_user_info,
             ],
         )

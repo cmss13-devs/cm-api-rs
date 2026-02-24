@@ -3,6 +3,7 @@ import { useContext, useEffect, useState } from "react";
 import { callApi } from "../helpers/api";
 import type {
   AuthentikError,
+  AvailableOAuthSource,
   LinkedOAuthSource,
   UserProfileResponse,
 } from "../types/authentik";
@@ -21,25 +22,25 @@ export const AccountSettings: React.FC = () => {
   const [pendingEmail, setPendingEmail] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const response = await callApi("/Authentik/MyProfile");
-        if (!response.ok) {
-          const err: AuthentikError = await response.json();
-          throw new Error(err.message || "Failed to fetch profile");
-        }
-        const data: UserProfileResponse = await response.json();
-        setProfile(data);
-        setPendingName(data.name);
-        setPendingEmail(data.email || "");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load profile");
-      } finally {
-        setLoading(false);
+  const fetchProfile = async () => {
+    try {
+      const response = await callApi("/Authentik/MyProfile");
+      if (!response.ok) {
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to fetch profile");
       }
-    };
+      const data: UserProfileResponse = await response.json();
+      setProfile(data);
+      setPendingName(data.name);
+      setPendingEmail(data.email || "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load profile");
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchProfile();
   }, []);
 
@@ -102,6 +103,27 @@ export const AccountSettings: React.FC = () => {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleUnlink = async (connectionPk: number, sourceName: string) => {
+    try {
+      const response = await callApi(
+        `/Authentik/MyProfile/UnlinkSource/${connectionPk}`,
+        { method: "DELETE" }
+      );
+
+      if (!response.ok) {
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to unlink source");
+      }
+
+      global?.updateAndShowToast(`Unlinked ${sourceName}`);
+      fetchProfile();
+    } catch (err) {
+      global?.updateAndShowToast(
+        err instanceof Error ? err.message : "Failed to unlink source"
+      );
     }
   };
 
@@ -245,7 +267,26 @@ export const AccountSettings: React.FC = () => {
         ) : (
           <div className="flex flex-col gap-2">
             {profile.linkedSources.map((source) => (
-              <LinkedSourceRow key={source.slug} source={source} />
+              <LinkedSourceRow
+                key={source.slug}
+                source={source}
+                onUnlink={() => handleUnlink(source.connectionPk, source.name)}
+              />
+            ))}
+          </div>
+        )}
+
+        {profile.availableSources.length > 0 && (
+          <div className="flex flex-col gap-2 mt-4">
+            <h3 className="text-md font-medium text-gray-400">
+              Available to Link
+            </h3>
+            {profile.availableSources.map((source) => (
+              <AvailableSourceRow
+                key={source.slug}
+                source={source}
+                authentikBaseUrl={profile.authentikBaseUrl}
+              />
             ))}
           </div>
         )}
@@ -254,21 +295,11 @@ export const AccountSettings: React.FC = () => {
   );
 };
 
-const LinkedSourceRow: React.FC<{ source: LinkedOAuthSource }> = ({
-  source,
-}) => {
-  const getSourceIcon = (slug: string): string => {
-    switch (slug) {
-      case "steam":
-        return "Steam";
-      case "discord":
-        return "Discord";
-      case "byond":
-        return "BYOND";
-      default:
-        return source.name;
-    }
-  };
+const LinkedSourceRow: React.FC<{
+  source: LinkedOAuthSource;
+  onUnlink: () => void;
+}> = ({ source, onUnlink }) => {
+  const [unlinking, setUnlinking] = useState(false);
 
   const getExternalLink = (
     slug: string,
@@ -279,20 +310,38 @@ const LinkedSourceRow: React.FC<{ source: LinkedOAuthSource }> = ({
       case "steam":
         return `https://steamcommunity.com/profiles/${parsedId}`;
       case "discord":
-        return null; // Discord doesn't have direct profile links via ID
+        return null;
       default:
         return null;
     }
+  };
+
+  const getDisplayId = (): string => {
+    if (source.parsedId) return source.parsedId;
+
+    if (source.identifier.startsWith("user:")) {
+      return source.identifier.slice(5);
+    }
+    return source.identifier;
+  };
+
+  const handleUnlinkClick = async () => {
+    setUnlinking(true);
+    await onUnlink();
+    setUnlinking(false);
   };
 
   const externalLink = getExternalLink(source.slug, source.parsedId);
 
   return (
     <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
-      <span className="font-medium w-24">{getSourceIcon(source.slug)}</span>
-      <span className="text-gray-300">
-        {source.parsedId || source.identifier}
-      </span>
+      {source.icon ? (
+        <img src={source.icon} alt={source.name} className="w-6 h-6" />
+      ) : (
+        <div className="w-6 h-6 bg-gray-600 rounded" />
+      )}
+      <span className="font-medium w-24">{source.name}</span>
+      <span className="text-gray-300">{getDisplayId()}</span>
       {externalLink && (
         <a
           href={externalLink}
@@ -303,6 +352,43 @@ const LinkedSourceRow: React.FC<{ source: LinkedOAuthSource }> = ({
           View Profile
         </a>
       )}
+      <button
+        type="button"
+        onClick={handleUnlinkClick}
+        disabled={unlinking}
+        className="ml-auto text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500"
+      >
+        {unlinking ? "Unlinking..." : "Unlink"}
+      </button>
+    </div>
+  );
+};
+
+const AvailableSourceRow: React.FC<{
+  source: AvailableOAuthSource;
+  authentikBaseUrl: string;
+}> = ({ source, authentikBaseUrl }) => {
+  const handleLink = () => {
+    // Redirect to Authentik link-source flow
+    window.location.href = `${authentikBaseUrl}/if/flow/link-source/?source=${source.slug}`;
+  };
+
+  return (
+    <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
+      {source.icon ? (
+        <img src={source.icon} alt={source.name} className="w-6 h-6" />
+      ) : (
+        <div className="w-6 h-6 bg-gray-600 rounded" />
+      )}
+      <span className="font-medium w-24">{source.name}</span>
+      <span className="text-gray-500">Not linked</span>
+      <button
+        type="button"
+        onClick={handleLink}
+        className="ml-auto text-green-400 hover:text-green-300 hover:underline text-sm"
+      >
+        Link
+      </button>
     </div>
   );
 };
