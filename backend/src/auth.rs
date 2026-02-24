@@ -140,11 +140,14 @@ struct PkceState {
 
 /// User info response for /auth/userinfo
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserInfo {
     pub username: String,
     pub email: String,
     pub groups: Vec<String>,
     pub ckey: String,
+    pub is_staff: bool,
+    pub is_management: bool,
 }
 
 /// Error response
@@ -162,7 +165,6 @@ pub async fn init_oidc_client(config: OidcConfig) -> Result<OidcClient, String> 
     let issuer_url = IssuerUrl::new(config.issuer_url.clone())
         .map_err(|e| format!("Invalid issuer URL: {}", e))?;
 
-    // Try standard discovery first
     let provider_metadata =
         match CoreProviderMetadata::discover_async(issuer_url.clone(), async_http_client).await {
             Ok(metadata) => metadata,
@@ -243,20 +245,15 @@ pub fn login(
     cookies: &CookieJar<'_>,
     redirect: Option<String>,
 ) -> Redirect {
-    // Generate PKCE challenge
     let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();
-
-    // Generate state and nonce
     let csrf_state = CsrfToken::new_random();
     let nonce = Nonce::new_random();
 
-    // Clone values for the cookie before moving into closures
     let csrf_state_secret = csrf_state.secret().clone();
     let nonce_secret = nonce.secret().clone();
 
     let client = oidc.client.clone().unwrap();
 
-    // Build authorization URL
     let mut auth_request = client
         .authorize_url(
             AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
@@ -265,14 +262,12 @@ pub fn login(
         )
         .set_pkce_challenge(pkce_challenge);
 
-    // Add configured scopes
     for scope in &oidc.config.scopes {
         auth_request = auth_request.add_scope(Scope::new(scope.clone()));
     }
 
     let (auth_url, _, _) = auth_request.url();
 
-    // Store PKCE state in cookie
     let pkce_state = PkceState {
         verifier: pkce_verifier.secret().clone(),
         csrf_state: csrf_state_secret,
@@ -303,7 +298,6 @@ pub async fn callback(
     code: String,
     state: String,
 ) -> Result<Redirect, (Status, Json<AuthError>)> {
-    // Retrieve and validate PKCE state
     let pkce_cookie = cookies.get(PKCE_COOKIE_NAME).ok_or_else(|| {
         (
             Status::BadRequest,
@@ -324,7 +318,6 @@ pub async fn callback(
         )
     })?;
 
-    // Validate CSRF state
     if state != pkce_state.csrf_state {
         return Err((
             Status::BadRequest,
@@ -337,7 +330,6 @@ pub async fn callback(
 
     let client = oidc.client.clone().unwrap();
 
-    // Exchange authorization code for tokens
     let token_response = client
         .exchange_code(AuthorizationCode::new(code))
         .set_pkce_verifier(PkceCodeVerifier::new(pkce_state.verifier))
@@ -353,7 +345,6 @@ pub async fn callback(
             )
         })?;
 
-    // Get ID token
     let id_token = token_response.id_token().ok_or_else(|| {
         (
             Status::InternalServerError,
@@ -364,7 +355,6 @@ pub async fn callback(
         )
     })?;
 
-    // Verify ID token
     let claims = id_token
         .claims(&client.id_token_verifier(), &Nonce::new(pkce_state.nonce))
         .map_err(|e| {
@@ -377,7 +367,6 @@ pub async fn callback(
             )
         })?;
 
-    // Extract user info from claims
     let subject = claims.subject().to_string();
     let email = claims.email().map(|e| e.to_string()).unwrap_or_default();
     let username = claims
@@ -385,17 +374,13 @@ pub async fn callback(
         .map(|u| u.to_string())
         .unwrap_or_else(|| subject.clone());
 
-    // Extract groups - need to get from userinfo endpoint or access token
-    // For Authentik, groups are in the access token or userinfo
     let userinfo_endpoint = oidc.config.userinfo_endpoint.clone().unwrap_or_else(|| {
-        // Derive from issuer URL if not explicitly configured
         format!("{}/userinfo/", oidc.config.issuer_url.trim_end_matches('/'))
     });
     let groups = fetch_user_groups(&userinfo_endpoint, token_response.access_token())
         .await
         .unwrap();
 
-    // Check if user has required admin group
     if !oidc
         .config
         .staff_groups
@@ -411,16 +396,13 @@ pub async fn callback(
         ));
     }
 
-    // Get refresh token
     let refresh_token = token_response
         .refresh_token()
         .map(|t| t.secret().clone())
         .unwrap_or_default();
 
-    // Encrypt refresh token
     let encrypted_refresh = encrypt_refresh_token(&refresh_token, &oidc.config.session_secret);
 
-    // Create session claims
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -439,7 +421,6 @@ pub async fn callback(
         refresh_token: encrypted_refresh,
     };
 
-    // Create session JWT
     let session_jwt =
         create_session_jwt(&session_claims, &oidc.config.session_secret).map_err(|e| {
             (
@@ -451,7 +432,6 @@ pub async fn callback(
             )
         })?;
 
-    // Set session cookie
     let session_cookie = Cookie::build((SESSION_COOKIE_NAME, session_jwt))
         .path("/")
         .http_only(true)
@@ -462,11 +442,8 @@ pub async fn callback(
         .secure(!cfg!(debug_assertions));
 
     cookies.add(session_cookie);
-
-    // Remove PKCE cookie
     cookies.remove(Cookie::from(PKCE_COOKIE_NAME));
 
-    // Redirect to post-login URL
     let redirect_url = pkce_state
         .redirect_after_login
         .unwrap_or_else(|| oidc.config.post_login_redirect.clone());
@@ -480,7 +457,6 @@ async fn fetch_user_groups(
     userinfo_endpoint: &str,
     access_token: &openidconnect::AccessToken,
 ) -> Result<Vec<String>, String> {
-    // Make raw HTTP request to get all claims including custom ones
     let http_client = reqwest::Client::new();
     let response = http_client
         .get(userinfo_endpoint)
@@ -501,8 +477,6 @@ async fn fetch_user_groups(
         .await
         .map_err(|e| format!("Failed to parse userinfo JSON: {}", e))?;
 
-    // Extract groups from the JSON response
-    // Authentik typically returns groups as an array of strings
     if let Some(groups) = json.get("groups")
         && let Some(groups_array) = groups.as_array()
     {
@@ -518,7 +492,6 @@ async fn fetch_user_groups(
 /// GET /auth/logout - Clears session cookie
 #[get("/logout")]
 pub fn logout(oidc: &State<Arc<OidcClient>>, cookies: &CookieJar<'_>) -> Redirect {
-    // Remove session cookie
     cookies.remove(Cookie::from(SESSION_COOKIE_NAME));
 
     Redirect::to(oidc.config.post_logout_redirect.clone())
@@ -530,7 +503,6 @@ pub async fn refresh(
     oidc: &State<Arc<OidcClient>>,
     cookies: &CookieJar<'_>,
 ) -> Result<Status, (Status, Json<AuthError>)> {
-    // Get current session
     let session_cookie = cookies.get(SESSION_COOKIE_NAME).ok_or_else(|| {
         (
             Status::Unauthorized,
@@ -541,7 +513,6 @@ pub async fn refresh(
         )
     })?;
 
-    // Validate current session (allow expired for refresh)
     let mut validation = Validation::default();
     validation.validate_exp = false; // Allow expired tokens for refresh
 
@@ -561,7 +532,6 @@ pub async fn refresh(
     })?
     .claims;
 
-    // Decrypt refresh token
     let refresh_token = decrypt_refresh_token(&claims.refresh_token, &oidc.config.session_secret)
         .map_err(|e| {
         (
@@ -585,7 +555,6 @@ pub async fn refresh(
 
     let client = oidc.client.clone().unwrap();
 
-    // Exchange refresh token for new tokens
     let token_response = client
         .exchange_refresh_token(&RefreshToken::new(refresh_token))
         .request_async(async_http_client)
@@ -600,7 +569,6 @@ pub async fn refresh(
             )
         })?;
 
-    // Get new refresh token (or keep old one)
     let new_refresh_token = token_response
         .refresh_token()
         .map(|t| t.secret().clone())
@@ -609,10 +577,8 @@ pub async fn refresh(
                 .unwrap_or_default()
         });
 
-    // Encrypt new refresh token
     let encrypted_refresh = encrypt_refresh_token(&new_refresh_token, &oidc.config.session_secret);
 
-    // Create new session claims
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -629,7 +595,6 @@ pub async fn refresh(
         refresh_token: encrypted_refresh,
     };
 
-    // Create new session JWT
     let session_jwt =
         create_session_jwt(&new_claims, &oidc.config.session_secret).map_err(|e| {
             (
@@ -641,7 +606,6 @@ pub async fn refresh(
             )
         })?;
 
-    // Set new session cookie
     let session_cookie = Cookie::build((SESSION_COOKIE_NAME, session_jwt))
         .path("/")
         .http_only(true)
@@ -662,17 +626,17 @@ pub fn userinfo(
     oidc: &State<Arc<OidcClient>>,
     cookies: &CookieJar<'_>,
 ) -> Result<Json<UserInfo>, (Status, Json<AuthError>)> {
-    // Debug mode: return fake user
     if cfg!(debug_assertions) {
         return Ok(Json(UserInfo {
             username: "AdminBot".to_string(),
             ckey: "adminbot".to_string(),
             email: "admin@debug.local".to_string(),
             groups: vec!["admin".to_string()],
+            is_staff: true,
+            is_management: true,
         }));
     }
 
-    // Get session cookie
     let session_cookie = cookies.get(SESSION_COOKIE_NAME).ok_or_else(|| {
         (
             Status::Unauthorized,
@@ -683,7 +647,6 @@ pub fn userinfo(
         )
     })?;
 
-    // Validate session JWT
     let claims = validate_session_jwt(session_cookie.value(), &oidc.config.session_secret)
         .map_err(|e| {
             (
@@ -695,10 +658,25 @@ pub fn userinfo(
             )
         })?;
 
+    let is_staff = oidc
+        .config
+        .staff_groups
+        .iter()
+        .any(|x| claims.groups.contains(x));
+
+    let is_management = is_staff
+        && oidc
+            .config
+            .management_groups
+            .iter()
+            .any(|x| claims.groups.contains(x));
+
     Ok(Json(UserInfo {
         username: claims.username,
         ckey: claims.ckey,
         email: claims.email,
         groups: claims.groups,
+        is_staff,
+        is_management,
     }))
 }

@@ -23,6 +23,7 @@ use crate::authentik::AuthentikConfig;
 #[macro_use]
 extern crate rocket;
 
+mod achievements;
 mod admin;
 mod auth;
 mod authentik;
@@ -33,9 +34,13 @@ mod logging;
 mod new_players;
 mod player;
 mod spa;
+mod steam;
 mod stickyban;
 mod ticket;
+mod token;
 mod twofactor;
+mod user_settings;
+mod utils;
 mod whitelist;
 
 /// CORS fairing with configurable allowed origin
@@ -80,6 +85,8 @@ pub struct ServerConfig {
     #[serde(default)]
     pub refresh_admins: bool,
     pub recommended_byond_version: Option<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -136,11 +143,17 @@ struct Config {
     authentik: Option<AuthentikConfig>,
     api_auth: Option<ApiAuthConfig>,
     discord_bot: Option<DiscordBotConfig>,
+    steam: Option<steam::SteamConfig>,
+    byond_hashes: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Database)]
 #[database("cmdb")]
 pub struct Cmdb(MySqlPool);
+
+#[derive(Database)]
+#[database("cmapi")]
+pub struct Cmapi(MySqlPool);
 
 #[launch]
 async fn rocket() -> _ {
@@ -157,10 +170,8 @@ async fn rocket() -> _ {
         Err(_) => "/api".to_string(),
     };
 
-    // Extract configuration
     let config: Config = figment.extract().expect("Failed to extract configuration");
 
-    // Get CORS allowed origin (default to * in debug mode)
     let allowed_origin = config
         .cors
         .as_ref()
@@ -197,10 +208,10 @@ async fn rocket() -> _ {
     let mut rocket_builder = rocket::custom(figment)
         .manage(byond::ByondTopic::default())
         .attach(Cmdb::init())
+        .attach(Cmapi::init())
         .attach(AdHoc::config::<Config>())
         .attach(Cors::new(allowed_origin));
 
-    // Add OIDC client to managed state if available
     if let Some(client) = oidc_client {
         rocket_builder = rocket_builder.manage(client);
     } else {
@@ -231,6 +242,11 @@ async fn rocket() -> _ {
                 player::get_vpn_whitelist,
                 player::add_vpn_whitelist,
                 player::remove_vpn_whitelist,
+                player::get_banned_players,
+                player::get_ban_history,
+                player::get_known_alts,
+                player::add_known_alt,
+                player::remove_known_alt,
             ],
         )
         .mount(
@@ -294,11 +310,35 @@ async fn rocket() -> _ {
                 authentik::get_discourse_user_id,
                 authentik::webhook_user_unlinked,
                 authentik::webhook_user_linked,
+                authentik::user_by_uuid_endpoint,
+                authentik::get_user_by_discord_id,
+                authentik::search_users,
+                authentik::get_my_profile,
+                authentik::update_my_profile,
+                authentik::unlink_my_source,
+                authentik::get_my_player_info,
+                user_settings::get_my_settings,
+                user_settings::delete_my_session,
+                user_settings::revoke_my_consent,
+                user_settings::delete_my_mfa_device,
+                token::get_token_user_info,
             ],
         )
         .mount(
             format!("{}/Discord", base_url),
             routes![discord::get_user_by_discord, discord::check_verified],
+        )
+        .mount(format!("{}/Steam", base_url), routes![steam::authenticate])
+        .mount(
+            format!("{}/ByondHash", base_url),
+            routes![byond::byond_hash],
+        )
+        .mount(
+            format!("{}/Achievements", base_url),
+            routes![
+                achievements::get_achievements,
+                achievements::set_achievement
+            ],
         )
         .mount(
             "/",

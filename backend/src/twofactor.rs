@@ -3,7 +3,7 @@ use sqlx::query;
 
 use crate::{
     Cmdb,
-    admin::{Staff, AuthenticatedUser},
+    admin::{AuthenticatedUser, Staff},
 };
 
 #[get("/?<cid>&<ip>")]

@@ -6,6 +6,8 @@ export type User = {
 	email: string;
 	groups: string[];
 	manageable: string[];
+	isStaff: boolean;
+	isManagement: boolean;
 };
 
 type GlobalType = {

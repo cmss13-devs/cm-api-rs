@@ -7,14 +7,14 @@ use rocket::{
     futures::TryStreamExt,
     http::Status,
     request::{FromRequest, Outcome},
-    serde::{Serialize, json::Json},
+    serde::{Deserialize, Serialize, json::Json},
 };
 use rocket_db_pools::Connection;
 use sqlx::{MySqlConnection, Row, prelude::FromRow, query, query_as, types::BigDecimal};
 
 use crate::{
     Cmdb, Config,
-    admin::{AuthenticatedUser, Staff},
+    admin::{AuthenticatedUser, Player as PlayerPermission, Staff},
     logging::log_external,
 };
 
@@ -578,5 +578,246 @@ pub async fn get_vpn_whitelist(
     {
         Ok(whitelist) => Some(Json(whitelist)),
         Err(_) => None,
+    }
+}
+
+#[derive(Serialize, FromRow)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct BannedPlayer {
+    ckey: Option<String>,
+    is_time_banned: Option<i32>,
+    time_ban_reason: Option<String>,
+    time_ban_date: Option<String>,
+    time_ban_expiration: Option<i64>,
+    is_permabanned: Option<i32>,
+    permaban_reason: Option<String>,
+    permaban_date: Option<String>,
+}
+
+/// Returns all currently banned players (permabanned or active time bans)
+/// Accessible by any authenticated user
+/// Supports pagination with ?page=N (0-indexed, 20 results per page)
+/// Supports filtering by ckey with ?ckey=<search>
+#[get("/Banned?<page>&<ckey>")]
+pub async fn get_banned_players(
+    mut db: Connection<Cmdb>,
+    _user: AuthenticatedUser<PlayerPermission>,
+    page: Option<i64>,
+    ckey: Option<String>,
+) -> Json<Vec<BannedPlayer>> {
+    let byond_epoch = chrono::Utc
+        .with_ymd_and_hms(2000, 1, 1, 0, 0, 0)
+        .unwrap()
+        .timestamp();
+    let current_byond_time = (chrono::Utc::now().timestamp() - byond_epoch) / 60;
+
+    let page = page.unwrap_or(0).max(0);
+    let offset = page * 20;
+
+    let cutoff_date = "2026-02-24";
+
+    let result = if let Some(ckey_filter) = ckey {
+        let ckey_pattern = format!("%{}%", ckey_filter);
+        query_as(
+            r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
+                     is_permabanned, permaban_reason, permaban_date
+              FROM players
+              WHERE ckey LIKE ?
+                AND ((is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date LIKE '202%' AND permaban_date >= ?)
+                   OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date LIKE '202%' AND time_ban_date >= ? AND time_ban_expiration > ?))
+              ORDER BY COALESCE(permaban_date, time_ban_date) DESC
+              LIMIT 20 OFFSET ?",
+        )
+        .bind(ckey_pattern)
+        .bind(cutoff_date)
+        .bind(cutoff_date)
+        .bind(current_byond_time)
+        .bind(offset)
+        .fetch_all(&mut **db)
+        .await
+    } else {
+        query_as(
+            r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
+                     is_permabanned, permaban_reason, permaban_date
+              FROM players
+              WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date LIKE '202%' AND permaban_date >= ?)
+                 OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date LIKE '202%' AND time_ban_date >= ? AND time_ban_expiration > ?)
+              ORDER BY COALESCE(permaban_date, time_ban_date) DESC
+              LIMIT 20 OFFSET ?",
+        )
+        .bind(cutoff_date)
+        .bind(cutoff_date)
+        .bind(current_byond_time)
+        .bind(offset)
+        .fetch_all(&mut **db)
+        .await
+    };
+
+    match result {
+        Ok(players) => Json(players),
+        Err(_) => Json(Vec::new()),
+    }
+}
+
+#[derive(Serialize, FromRow)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct HistoricalBan {
+    ckey: Option<String>,
+    text: Option<String>,
+    date: String,
+    ban_time: Option<i64>,
+    round_id: Option<i32>,
+}
+
+/// Returns historical bans from player notes (is_ban = 1)
+/// Accessible by any authenticated user
+/// Supports pagination with ?page=N (0-indexed, 20 results per page)
+/// Supports filtering by ckey with ?ckey=<search>
+#[get("/BanHistory?<page>&<ckey>")]
+pub async fn get_ban_history(
+    mut db: Connection<Cmdb>,
+    _user: AuthenticatedUser<PlayerPermission>,
+    page: Option<i64>,
+    ckey: Option<String>,
+) -> Json<Vec<HistoricalBan>> {
+    let page = page.unwrap_or(0).max(0);
+    let offset = page * 20;
+
+    let cutoff_date = "2026-02-24";
+
+    let result = if let Some(ckey_filter) = ckey {
+        let ckey_pattern = format!("%{}%", ckey_filter);
+        query_as(
+            r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
+              FROM player_notes n
+              INNER JOIN players p ON n.player_id = p.id
+              WHERE n.is_ban = 1 AND p.ckey LIKE ? AND n.date LIKE '202%' AND n.date >= ?
+              ORDER BY n.id DESC
+              LIMIT 20 OFFSET ?",
+        )
+        .bind(ckey_pattern)
+        .bind(cutoff_date)
+        .bind(offset)
+        .fetch_all(&mut **db)
+        .await
+    } else {
+        query_as(
+            r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
+              FROM player_notes n
+              INNER JOIN players p ON n.player_id = p.id
+              WHERE n.is_ban = 1 AND n.date LIKE '202%' AND n.date >= ?
+              ORDER BY n.id DESC
+              LIMIT 20 OFFSET ?",
+        )
+        .bind(cutoff_date)
+        .bind(offset)
+        .fetch_all(&mut **db)
+        .await
+    };
+
+    match result {
+        Ok(bans) => Json(bans),
+        Err(_) => Json(Vec::new()),
+    }
+}
+
+#[derive(Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct KnownAltsResponse {
+    main_account: Option<String>,
+    alts: Vec<String>,
+}
+
+/// Returns known alts for a given ckey
+/// Checks if the ckey is a main account (player_ckey) or an alt account (ckey)
+#[get("/KnownAlts?<ckey>")]
+pub async fn get_known_alts(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Staff>,
+    ckey: String,
+) -> Json<KnownAltsResponse> {
+    let main_account: Option<String> =
+        query("SELECT player_ckey FROM known_alts WHERE ckey = ? LIMIT 1")
+            .bind(&ckey)
+            .fetch_optional(&mut **db)
+            .await
+            .ok()
+            .flatten()
+            .map(|row| row.get("player_ckey"));
+
+    let lookup_ckey = main_account.as_ref().unwrap_or(&ckey);
+
+    let alts: Vec<String> = match query("SELECT ckey FROM known_alts WHERE player_ckey = ?")
+        .bind(lookup_ckey)
+        .fetch_all(&mut **db)
+        .await
+    {
+        Ok(rows) => rows
+            .iter()
+            .filter_map(|row| row.get::<Option<String>, _>("ckey"))
+            .filter(|alt| alt != &ckey)
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+
+    Json(KnownAltsResponse {
+        main_account: if main_account.is_some() {
+            main_account
+        } else {
+            None
+        },
+        alts,
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct AddKnownAltRequest {
+    player_ckey: String,
+    alt_ckey: String,
+}
+
+/// Adds a known alt association
+#[post("/KnownAlts", data = "<request>")]
+pub async fn add_known_alt(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Staff>,
+    request: rocket::serde::json::Json<AddKnownAltRequest>,
+) -> Status {
+    let result = query("INSERT INTO known_alts (player_ckey, ckey) VALUES (?, ?)")
+        .bind(&request.player_ckey)
+        .bind(&request.alt_ckey)
+        .execute(&mut **db)
+        .await;
+
+    match result {
+        Ok(_) => Status::Created,
+        Err(_) => Status::InternalServerError,
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct RemoveKnownAltRequest {
+    player_ckey: String,
+    alt_ckey: String,
+}
+
+/// Removes a known alt association
+#[delete("/KnownAlts", data = "<request>")]
+pub async fn remove_known_alt(
+    mut db: Connection<Cmdb>,
+    _admin: AuthenticatedUser<Staff>,
+    request: rocket::serde::json::Json<RemoveKnownAltRequest>,
+) -> Status {
+    let result = query("DELETE FROM known_alts WHERE player_ckey = ? AND ckey = ?")
+        .bind(&request.player_ckey)
+        .bind(&request.alt_ckey)
+        .execute(&mut **db)
+        .await;
+
+    match result {
+        Ok(_) => Status::Ok,
+        Err(_) => Status::InternalServerError,
     }
 }

@@ -42,7 +42,10 @@ pub struct Staff;
 
 impl PermissionLevel for Staff {
     fn is_authorized(claims: &SessionClaims, oidc: &OidcClient) -> bool {
-        oidc.config.staff_groups.iter().any(|x| claims.groups.contains(x))
+        oidc.config
+            .staff_groups
+            .iter()
+            .any(|x| claims.groups.contains(x))
     }
 
     fn debug_username() -> &'static str {
@@ -54,13 +57,36 @@ impl PermissionLevel for Staff {
     }
 }
 
+pub struct Player;
+
+impl PermissionLevel for Player {
+    fn is_authorized(claims: &SessionClaims, _oidc: &OidcClient) -> bool {
+        !claims.sub.is_empty()
+    }
+
+    fn debug_groups() -> Vec<String> {
+        vec!["user".to_string()]
+    }
+
+    fn debug_username() -> &'static str {
+        "UserBot"
+    }
+}
+
 #[allow(dead_code)]
 pub struct Management;
 
 impl PermissionLevel for Management {
     fn is_authorized(claims: &SessionClaims, oidc: &OidcClient) -> bool {
-        oidc.config.staff_groups.iter().any(|x| claims.groups.contains(x))
-            && oidc.config.management_groups.iter().any(|x| claims.groups.contains(x))
+        oidc.config
+            .staff_groups
+            .iter()
+            .any(|x| claims.groups.contains(x))
+            && oidc
+                .config
+                .management_groups
+                .iter()
+                .any(|x| claims.groups.contains(x))
     }
 
     fn debug_username() -> &'static str {
@@ -79,16 +105,18 @@ pub struct AuthenticatedUser<P: PermissionLevel> {
     pub ckey: String,
     pub email: String,
     pub groups: Vec<String>,
+    pub sub: String,
     _permission: std::marker::PhantomData<P>,
 }
 
 impl<P: PermissionLevel> AuthenticatedUser<P> {
-    fn new(username: String, ckey: String, email: String, groups: Vec<String>) -> Self {
+    fn new(username: String, ckey: String, email: String, groups: Vec<String>, sub: String) -> Self {
         Self {
             username,
             ckey,
             email,
             groups,
+            sub,
             _permission: std::marker::PhantomData,
         }
     }
@@ -99,17 +127,16 @@ impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> 
     type Error = AuthError;
 
     async fn from_request(req: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
-        // Debug mode: return fake user
         if cfg!(debug_assertions) {
             return request::Outcome::Success(AuthenticatedUser::new(
                 P::debug_username().to_string(),
                 P::debug_username().to_lowercase(),
                 format!("{}@debug.local", P::debug_username().to_lowercase()),
                 P::debug_groups(),
+                "debug-sub".to_string(),
             ));
         }
 
-        // Get OIDC client from managed state
         let oidc = match req.rocket().state::<Arc<OidcClient>>() {
             Some(oidc) => oidc,
             None => {
@@ -120,13 +147,11 @@ impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> 
             }
         };
 
-        // Get session cookie
         let session_cookie = match req.cookies().get(SESSION_COOKIE_NAME) {
             Some(cookie) => cookie,
             None => return request::Outcome::Error((Status::Unauthorized, AuthError::Missing)),
         };
 
-        // Validate session JWT
         let claims = match validate_session_jwt(session_cookie.value(), &oidc.config.session_secret)
         {
             Ok(claims) => claims,
@@ -138,7 +163,6 @@ impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> 
             }
         };
 
-        // Check permission level
         if !P::is_authorized(&claims, oidc) {
             return request::Outcome::Error((Status::Forbidden, AuthError::Forbidden));
         }
@@ -148,6 +172,7 @@ impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> 
             claims.ckey,
             claims.email,
             claims.groups,
+            claims.sub,
         ))
     }
 }

@@ -31,7 +31,6 @@ export default function App(): React.ReactElement {
 
   useEffect(() => {
     if (!user) {
-      // In development with VITE_FAKE_USER, use fake user
       if (import.meta.env.VITE_FAKE_USER) {
         setUser({
           username: "debug",
@@ -39,18 +38,18 @@ export default function App(): React.ReactElement {
           email: "debug@debug.debug",
           groups: ["admin"],
           manageable: ["mentor"],
+          isStaff: true,
+          isManagement: true,
         });
         setAuthLoading(false);
         return;
       }
 
-      // Fetch user info from backend
       fetch(`${apiPath}/auth/userinfo`, {
         credentials: "include",
       })
         .then((response) => {
           if (response.status === 401) {
-            // Not authenticated, redirect to login
             const currentPath = window.location.pathname + window.location.hash;
             window.location.href = `/api/auth/login?redirect=${encodeURIComponent(
               currentPath,
@@ -69,7 +68,6 @@ export default function App(): React.ReactElement {
         })
         .catch((error) => {
           console.error("Auth error:", error);
-          // Redirect to login on error
           window.location.href = "/api/auth/login";
           setAuthLoading(false);
           return;
@@ -122,7 +120,6 @@ export default function App(): React.ReactElement {
     }
   }, [searchParams, setSearchParams, displayToast]);
 
-  // Show loading state while checking authentication
   if (authLoading) {
     return (
       <div className="w-full h-screen flex items-center justify-center foreground">
@@ -143,24 +140,40 @@ export default function App(): React.ReactElement {
         </LinkColor>
         |
         <LinkColor>
-          <Link to="/sticky">Sticky Menu</Link>
+          <Link to="/bans">Bans</Link>
         </LinkColor>
         |
         <LinkColor>
-          <Link to="/ticket">Tickets</Link>
+          <Link to="/ban-history">Ban History</Link>
         </LinkColor>
-        |
-        <LinkColor>
-          <Link to="/user">Users</Link>
-        </LinkColor>
-        |
-        <LinkColor>
-          <Link to="/whitelists">Whitelists</Link>
-        </LinkColor>
-        |
-        <LinkColor>
-          <Link to="/new_players">New Players</Link>
-        </LinkColor>
+        {user?.isStaff && (
+          <>
+            |
+            <LinkColor>
+              <Link to="/sticky">Sticky Menu</Link>
+            </LinkColor>
+            |
+            <LinkColor>
+              <Link to="/ticket">Tickets</Link>
+            </LinkColor>
+            |
+            <LinkColor>
+              <Link to="/user">Users</Link>
+            </LinkColor>
+            |
+            <LinkColor>
+              <Link to="/authentik">Authentik</Link>
+            </LinkColor>
+            |
+            <LinkColor>
+              <Link to="/whitelists">Whitelists</Link>
+            </LinkColor>
+            |
+            <LinkColor>
+              <Link to="/new_players">New Players</Link>
+            </LinkColor>
+          </>
+        )}
         {user?.manageable?.length && (
           <>
             |
@@ -172,8 +185,17 @@ export default function App(): React.ReactElement {
         {user && (
           <>
             <span className="ml-auto text-gray-400">
-              {user.username} (<NameExpand name={user.ckey}></NameExpand>)
+              {user.username} (
+              {user.isStaff ? (
+                <NameExpand name={user.ckey}></NameExpand>
+              ) : (
+                user.ckey
+              )}
+              )
             </span>
+            <LinkColor>
+              <Link to="/account">Account</Link>
+            </LinkColor>
             <button
               type="button"
               onClick={handleLogout}

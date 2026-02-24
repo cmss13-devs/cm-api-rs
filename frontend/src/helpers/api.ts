@@ -37,18 +37,15 @@ export const callApi = async (
   });
 
   if (response.status === 401) {
-    // Attempt token refresh
     const refreshed = await attemptRefresh();
 
     if (refreshed) {
-      // Retry original request
       return fetch(`${apiPath}${toCall}`, {
         ...init,
         credentials: "include",
       });
     }
 
-    // Refresh failed, redirect to login
     redirectToLogin();
   }
 

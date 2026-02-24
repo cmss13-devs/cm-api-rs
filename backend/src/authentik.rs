@@ -2,13 +2,14 @@ use std::collections::HashMap;
 
 use rocket::{State, http::Status, serde::json::Json};
 use rocket_db_pools::Connection;
+use sqlx::{query_as, FromRow, Row};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use serenity::all::{GuildId, Http, RoleId, UserId};
 
 use crate::{
     Cmdb, Config, DiscordBotConfig, ServerRoleConfig,
-    admin::{AuthenticatedUser, Management, Staff},
+    admin::{AuthenticatedUser, Management, Player, Staff},
     byond::refresh_admins,
     discord::{get_whitelist_status_by_ckey, resolve_whitelist_roles},
     logging::log_external,
@@ -33,6 +34,9 @@ pub struct DiscourseConfig {
 pub struct AuthentikConfig {
     pub token: String,
     pub base_url: String,
+    /// OIDC issuer URL for validating access tokens (e.g., "https://auth.example.com/application/o/myapp/")
+    /// Used to construct the userinfo endpoint for token validation
+    pub oidc_issuer_url: Option<String>,
     /// mapping of permission role names to the Authentik groups they can manage, eg:
     /// [authentik.group_permissions]
     /// staff_management = [ "admins", "moderators" ]
@@ -91,9 +95,45 @@ struct AuthentikGroup {
 pub struct AuthentikUser {
     pub pk: i64,
     pub uid: String,
+    pub uuid: Option<String>,
+    pub name: String,
     pub username: String,
     #[serde(default)]
     pub attributes: serde_json::Value,
+}
+
+/// Minimal group info from groups_obj in user response
+#[derive(Debug, Deserialize, Clone)]
+pub struct AuthentikGroupObj {
+    pub name: String,
+}
+
+/// Detailed Authentik user response with all fields from the API
+#[derive(Debug, Deserialize, Clone)]
+pub struct AuthentikUserDetailed {
+    pub pk: i64,
+    pub uid: String,
+    pub uuid: Option<String>,
+    pub name: String,
+    pub username: String,
+    pub email: Option<String>,
+    pub is_active: bool,
+    pub last_login: Option<String>,
+    #[serde(default)]
+    pub attributes: serde_json::Value,
+    #[serde(default)]
+    pub groups_obj: Vec<AuthentikGroupObj>,
+}
+
+impl AuthentikUserDetailed {
+    pub fn group_names(&self) -> Vec<String> {
+        self.groups_obj.iter().map(|g| g.name.clone()).collect()
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AuthentikUserDetailedSearchResponse {
+    pub results: Vec<AuthentikUserDetailed>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -102,6 +142,12 @@ pub struct OAuthSource {
     pub pk: String,
     pub name: String,
     pub slug: String,
+    pub icon: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OAuthSourcesResponse {
+    pub results: Vec<OAuthSource>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -217,6 +263,111 @@ pub struct DiscourseUserIdResponse {
     pub ckey: String,
     pub discourse_user_id: i64,
     pub discourse_username: String,
+}
+
+/// Full Authentik user response for UUID lookup
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct AuthentikUserFullResponse {
+    pub pk: i64,
+    pub uuid: Option<String>,
+    pub uid: String,
+    pub username: String,
+    pub name: String,
+    pub is_active: bool,
+    pub last_login: Option<String>,
+    pub attributes: serde_json::Value,
+    pub groups: Vec<String>,
+}
+
+/// Simplified Authentik user for search results
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct AuthentikUserSearchResult {
+    pub pk: i64,
+    pub uuid: Option<String>,
+    pub username: String,
+    pub name: String,
+    pub is_active: bool,
+}
+
+/// User profile response for self-service account management
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct UserProfileResponse {
+    pub pk: i64,
+    pub uuid: String,
+    pub username: String,
+    pub name: String,
+    pub email: Option<String>,
+    pub linked_sources: Vec<LinkedOAuthSource>,
+    pub available_sources: Vec<AvailableOAuthSource>,
+    pub authentik_base_url: String,
+}
+
+/// Linked OAuth source information
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct LinkedOAuthSource {
+    pub connection_pk: i64,
+    pub name: String,
+    pub slug: String,
+    pub icon: Option<String>,
+    pub identifier: String,
+    pub parsed_id: Option<String>,
+}
+
+/// Available OAuth source for linking
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct AvailableOAuthSource {
+    pub slug: String,
+    pub name: String,
+    pub icon: Option<String>,
+}
+
+/// Self-service player info response (limited data for the user's own record)
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct MyPlayerInfoResponse {
+    pub ckey: String,
+    pub display_name: String,
+    pub notes: Vec<PublicNote>,
+    pub job_bans: Vec<PublicJobBan>,
+}
+
+/// Non-confidential note visible to the player
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct PublicNote {
+    pub id: i64,
+    pub text: Option<String>,
+    pub date: String,
+    pub is_ban: bool,
+    pub ban_time: Option<i64>,
+    pub admin_rank: String,
+    pub note_category: Option<i32>,
+    pub round_id: Option<i32>,
+}
+
+/// Active job ban visible to the player
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct PublicJobBan {
+    pub id: i64,
+    pub text: String,
+    pub date: Option<String>,
+    pub ban_time: Option<i64>,
+    pub expiration: Option<i64>,
+    pub role: String,
+}
+
+/// Request to update user profile fields
+#[derive(Debug, Deserialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct UpdateProfileRequest {
+    pub name: Option<String>,
+    // Email changes require verification via Authentik flow, not direct update
 }
 
 #[derive(Debug, Clone)]
@@ -482,12 +633,48 @@ async fn get_user_by_pk(
     Ok(user)
 }
 
+/// Generic helper to query Authentik users API and expect exactly one result
+async fn query_single_user(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    url: &str,
+    field_name: &str,
+    field_value: &str,
+) -> Result<AuthentikUserDetailed, String> {
+    let response = client
+        .get(url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Authentik API returned error {}: {}", status, body));
+    }
+
+    let search_response: AuthentikUserDetailedSearchResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+
+    match search_response.results.len() {
+        0 => Err(format!("No user found with {} '{}'", field_name, field_value)),
+        1 => Ok(search_response.results.into_iter().next().unwrap()),
+        _ => Err(format!(
+            "Multiple users found with {} '{}', expected exactly one",
+            field_name, field_value
+        )),
+    }
+}
+
 /// find an Authentik user by their ckey attribute
 async fn get_user_by_ckey(
     client: &reqwest::Client,
     config: &AuthentikConfig,
     ckey: &str,
-) -> Result<AuthentikUser, String> {
+) -> Result<AuthentikUserDetailed, String> {
     get_user_by_attribute(client, config, "ckey", ckey).await
 }
 
@@ -497,12 +684,102 @@ pub async fn get_user_by_attribute(
     config: &AuthentikConfig,
     attribute_key: &str,
     attribute_value: &str,
-) -> Result<AuthentikUser, String> {
+) -> Result<AuthentikUserDetailed, String> {
     let url = format!(
         "{}/api/v3/core/users/?attributes={{\"{}\": \"{}\"}}",
         config.base_url.trim_end_matches('/'),
         attribute_key,
         attribute_value
+    );
+    query_single_user(client, config, &url, attribute_key, attribute_value).await
+}
+
+/// find an Authentik user by their UUID (normalizes UUID format)
+pub async fn get_user_by_uuid(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    uuid: &str,
+) -> Result<AuthentikUserDetailed, String> {
+    let uuid = crate::utils::normalize_uuid(uuid)
+        .ok_or_else(|| format!("Invalid UUID format: '{}'", uuid))?;
+    let url = format!(
+        "{}/api/v3/core/users/?uuid={}",
+        config.base_url.trim_end_matches('/'),
+        uuid
+    );
+    query_single_user(client, config, &url, "UUID", &uuid).await
+}
+
+/// Update user fields (name, email) on Authentik
+async fn update_user_fields(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    user_pk: i64,
+    name: Option<&str>,
+    email: Option<&str>,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/api/v3/core/users/{}/",
+        config.base_url.trim_end_matches('/'),
+        user_pk
+    );
+
+    let mut body = serde_json::Map::new();
+    if let Some(n) = name {
+        body.insert("name".to_string(), serde_json::json!(n));
+    }
+    if let Some(e) = email {
+        body.insert("email".to_string(), serde_json::json!(e));
+    }
+
+    if body.is_empty() {
+        return Ok(());
+    }
+
+    let response = client
+        .patch(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::Value::Object(body))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to update user: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to update user fields (status {}): {}",
+            status, body
+        ));
+    }
+
+    Ok(())
+}
+
+/// Parse a Steam ID from an OpenID URL identifier
+/// Example: "https://steamcommunity.com/openid/id/76561198012345678" -> "76561198012345678"
+fn parse_steam_id(identifier: &str) -> Option<String> {
+    if identifier.starts_with("https://steamcommunity.com/openid/id/") {
+        identifier
+            .strip_prefix("https://steamcommunity.com/openid/id/")
+            .map(|s| s.to_string())
+    } else {
+        None
+    }
+}
+
+/// fetch group names for a user by their pk
+#[allow(dead_code)]
+async fn fetch_user_groups(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    user_pk: i64,
+) -> Result<Vec<String>, String> {
+    let url = format!(
+        "{}/api/v3/core/groups/?members_by_pk={}",
+        config.base_url.trim_end_matches('/'),
+        user_pk
     );
 
     let response = client
@@ -518,26 +795,16 @@ pub async fn get_user_by_attribute(
         return Err(format!("Authentik API returned error {}: {}", status, body));
     }
 
-    let search_response: AuthentikUserSearchResponse = response
+    let search_response: AuthentikGroupSearchResponse = response
         .json()
         .await
         .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
 
-    if search_response.results.is_empty() {
-        return Err(format!(
-            "No user found with {} '{}'",
-            attribute_key, attribute_value
-        ));
-    }
-
-    if search_response.results.len() > 1 {
-        return Err(format!(
-            "Multiple users found with {} '{}', expected exactly one",
-            attribute_key, attribute_value
-        ));
-    }
-
-    Ok(search_response.results.into_iter().next().unwrap())
+    Ok(search_response
+        .results
+        .into_iter()
+        .map(|g| g.name)
+        .collect())
 }
 
 /// update the attributes on an Authentik user
@@ -574,6 +841,109 @@ async fn update_user_attributes(
     Ok(())
 }
 
+pub async fn create_user_with_steam_id(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    username: &str,
+    steam_id: &str,
+) -> Result<AuthentikUser, String> {
+    let url = format!(
+        "{}/api/v3/core/users/",
+        config.base_url.trim_end_matches('/')
+    );
+
+    let unique_username = format!(
+        "{}_{}",
+        username,
+        &steam_id[steam_id.len().saturating_sub(4)..]
+    );
+
+    let response = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "username": unique_username,
+            "name": username,
+            "is_active": true,
+            "attributes": {
+                "steam_id": steam_id
+            }
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to create user: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to create user (status {}): {}",
+            status, body
+        ));
+    }
+
+    let user: AuthentikUser = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse user creation response: {}", e))?;
+
+    let source_url = format!(
+        "{}/api/v3/sources/oauth/steam/",
+        config.base_url.trim_end_matches('/')
+    );
+
+    let source_response = client
+        .get(&source_url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch Steam source: {}", e))?;
+
+    if !source_response.status().is_success() {
+        let status = source_response.status();
+        let body = source_response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to fetch Steam source (status {}): {}",
+            status, body
+        ));
+    }
+
+    let steam_source: OAuthSource = source_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Steam source response: {}", e))?;
+
+    let source_connection_url = format!(
+        "{}/api/v3/sources/user_connections/oauth/",
+        config.base_url.trim_end_matches('/')
+    );
+
+    let connection_response = client
+        .post(&source_connection_url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({
+            "user": user.pk,
+            "source": steam_source.pk,
+            "identifier": format!("https://steamcommunity.com/openid/id/{}", steam_id)
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to create source connection: {}", e))?;
+
+    if !connection_response.status().is_success() {
+        let status = connection_response.status();
+        let body = connection_response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to create Steam source connection (status {}): {}",
+            status, body
+        ));
+    }
+
+    Ok(user)
+}
+
 /// Get a user's connected OAuth sources from Authentik
 pub async fn get_user_oauth_sources(
     client: &reqwest::Client,
@@ -607,15 +977,63 @@ pub async fn get_user_oauth_sources(
     Ok(connections_response.results)
 }
 
-#[allow(dead_code)]
-pub async fn user_has_oauth_source(
+/// Get all available OAuth sources from Authentik
+pub async fn get_all_oauth_sources(
     client: &reqwest::Client,
     config: &AuthentikConfig,
-    user_pk: i64,
-    source_slug: &str,
-) -> Result<bool, String> {
-    let sources = get_user_oauth_sources(client, config, user_pk).await?;
-    Ok(sources.iter().any(|s| s.source.slug == source_slug))
+) -> Result<Vec<OAuthSource>, String> {
+    let url = format!(
+        "{}/api/v3/sources/oauth/",
+        config.base_url.trim_end_matches('/')
+    );
+
+    let response = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to query Authentik API: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Authentik API returned error {}: {}", status, body));
+    }
+
+    let sources_response: OAuthSourcesResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
+
+    Ok(sources_response.results)
+}
+
+/// Unlink an OAuth source connection
+async fn unlink_oauth_source(
+    client: &reqwest::Client,
+    config: &AuthentikConfig,
+    connection_pk: i64,
+) -> Result<(), String> {
+    let url = format!(
+        "{}/api/v3/sources/user_connections/oauth/{}/",
+        config.base_url.trim_end_matches('/'),
+        connection_pk
+    );
+
+    let response = client
+        .delete(&url)
+        .header("Authorization", format!("Bearer {}", config.token))
+        .send()
+        .await
+        .map_err(|e| format!("Failed to unlink source: {}", e))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Failed to unlink source (status {}): {}", status, body));
+    }
+
+    Ok(())
 }
 
 /// find an Authentik group by name and return its UUID
@@ -1993,6 +2411,7 @@ pub struct UserLinkWebhook {
     pub linked_sources: Vec<String>,
     pub username: String,
     pub pk: i64,
+    pub uuid: Option<String>,
     pub ckey: Option<String>,
     pub discord_id: Option<String>,
 }
@@ -2043,6 +2462,7 @@ pub async fn check_verification_eligibility(
     db: &mut Connection<Cmdb>,
     linked_sources: &[String],
     ckey: Option<&str>,
+    uuid: Option<&str>,
     discord_id: Option<&str>,
     discord_config: &DiscordBotConfig,
 ) -> VerificationEligibility {
@@ -2051,24 +2471,32 @@ pub async fn check_verification_eligibility(
     let has_byond = linked_sources.iter().any(|s| s == "byond");
     let has_discord = linked_sources.iter().any(|s| s == "discord");
 
-    if !has_byond {
-        result.reason = Some("BYOND source is not linked".to_string());
-        return result;
-    }
-
     if !has_discord {
         result.reason = Some("Discord source is not linked".to_string());
         return result;
     }
 
-    let ckey = match ckey {
-        Some(c) if !c.is_empty() => c,
-        _ => {
-            result.reason = Some("ckey attribute is missing or empty".to_string());
-            return result;
+    // Use ckey if BYOND is linked, otherwise fall back to UUID (with hyphens removed) as ckey
+    let effective_ckey: String = if has_byond {
+        match ckey {
+            Some(c) if !c.is_empty() => c.to_string(),
+            _ => {
+                result.reason = Some("ckey attribute is missing or empty".to_string());
+                return result;
+            }
+        }
+    } else {
+        // No BYOND linked - use UUID with hyphens removed as ckey
+        match uuid {
+            Some(u) if !u.is_empty() => u.replace('-', ""),
+            _ => {
+                result.reason = Some("Neither BYOND is linked nor UUID is available".to_string());
+                return result;
+            }
         }
     };
-    result.ckey = Some(ckey.to_string());
+    result.ckey = Some(effective_ckey.clone());
+    let ckey = effective_ckey.as_str();
 
     let discord_id = match discord_id {
         Some(d) if !d.is_empty() => d,
@@ -2093,7 +2521,11 @@ pub async fn check_verification_eligibility(
         if !eligibility_result.eligible {
             all_servers_eligible = false;
             if let Some(required) = eligibility_result.required_playtime {
-                ineligible_servers.push((guild_id.clone(), required, eligibility_result.user_playtime));
+                ineligible_servers.push((
+                    guild_id.clone(),
+                    required,
+                    eligibility_result.user_playtime,
+                ));
             }
         }
     }
@@ -2102,13 +2534,22 @@ pub async fn check_verification_eligibility(
         let server_details: Vec<String> = ineligible_servers
             .iter()
             .map(|(server, required, user_playtime)| {
-                format!("{} (requires {} minutes, you have {})", server, required, user_playtime)
+                format!(
+                    "{} (requires {} minutes, you have {})",
+                    server, required, user_playtime
+                )
             })
             .collect();
-        result.reason = Some(format!(
+        let mut reason = format!(
             "Insufficient playtime for server(s): {}.",
             server_details.join(", ")
-        ));
+        );
+        if !has_byond {
+            reason.push_str(
+                " You may have more playtime on your BYOND account - try linking it to cmAuth.",
+            );
+        }
+        result.reason = Some(reason);
     }
 
     result
@@ -2558,6 +2999,7 @@ pub async fn webhook_user_linked(
         &mut db,
         &payload.linked_sources,
         payload.ckey.as_deref(),
+        payload.uuid.as_deref(),
         payload.discord_id.as_deref(),
         discord_config,
     )
@@ -2642,3 +3084,651 @@ pub async fn webhook_user_linked(
         message,
     }))
 }
+
+/// GET /Authentik/UserByDiscordId/<discord_id> - get full user details by Discord ID (Staff only)
+#[get("/UserByDiscordId/<discord_id>")]
+pub async fn get_user_by_discord_id(
+    _user: AuthenticatedUser<Staff>,
+    config: &State<Config>,
+    discord_id: String,
+) -> Result<Json<AuthentikUserFullResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let user = get_user_by_attribute(&http_client, authentik_config, "discord_id", &discord_id)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let groups = user.group_names();
+
+    Ok(Json(AuthentikUserFullResponse {
+        pk: user.pk,
+        uuid: user.uuid,
+        uid: user.uid,
+        username: user.username,
+        name: user.name,
+        is_active: user.is_active,
+        last_login: user.last_login,
+        attributes: user.attributes,
+        groups,
+    }))
+}
+
+/// GET /Authentik/UserByUuid/<uuid> - get full user details by UUID (Staff only)
+#[get("/UserByUuid/<uuid>")]
+pub async fn user_by_uuid_endpoint(
+    _user: AuthenticatedUser<Staff>,
+    config: &State<Config>,
+    uuid: String,
+) -> Result<Json<AuthentikUserFullResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let user = get_user_by_uuid(&http_client, authentik_config, &uuid)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let groups = user.group_names();
+
+    Ok(Json(AuthentikUserFullResponse {
+        pk: user.pk,
+        uuid: user.uuid,
+        uid: user.uid,
+        username: user.username,
+        name: user.name,
+        is_active: user.is_active,
+        last_login: user.last_login,
+        attributes: user.attributes,
+        groups,
+    }))
+}
+
+/// GET /Authentik/SearchUsers?query=<query> - search users by username or name (Staff only)
+#[get("/SearchUsers?<query>")]
+pub async fn search_users(
+    _user: AuthenticatedUser<Staff>,
+    config: &State<Config>,
+    query: String,
+) -> Result<Json<Vec<AuthentikUserSearchResult>>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+    let base_url = authentik_config.base_url.trim_end_matches('/');
+    let encoded_query = urlencoding::encode(&query);
+
+    let main_search_url = format!("{}/api/v3/core/users/?search={}", base_url, encoded_query);
+
+    let steam_id_url = format!(
+        "{}/api/v3/core/users/?attributes={{\"steam_id\":\"{}\"}}",
+        base_url, encoded_query
+    );
+
+    let ckey_url = format!(
+        "{}/api/v3/core/users/?attributes={{\"ckey\":\"{}\"}}",
+        base_url, encoded_query
+    );
+
+    let auth_header = format!("Bearer {}", authentik_config.token);
+    let (main_result, steam_id_result, ckey_result) = tokio::join!(
+        http_client
+            .get(&main_search_url)
+            .header("Authorization", &auth_header)
+            .send(),
+        http_client
+            .get(&steam_id_url)
+            .header("Authorization", &auth_header)
+            .send(),
+        http_client
+            .get(&ckey_url)
+            .header("Authorization", &auth_header)
+            .send()
+    );
+
+    let mut all_users: Vec<AuthentikUserDetailed> = Vec::new();
+    let mut main_request_error: Option<String> = None;
+
+    match main_result {
+        Ok(response) if response.status().is_success() => {
+            if let Ok(search_response) =
+                response.json::<AuthentikUserDetailedSearchResponse>().await
+            {
+                all_users.extend(search_response.results);
+            }
+        }
+        Ok(response) => {
+            main_request_error = Some(format!("HTTP {}", response.status()));
+        }
+        Err(e) => {
+            main_request_error = Some(e.to_string());
+        }
+    }
+
+    if let Ok(response) = steam_id_result
+        && response.status().is_success()
+        && let Ok(search_response) = response.json::<AuthentikUserDetailedSearchResponse>().await
+    {
+        all_users.extend(search_response.results);
+    }
+
+    if let Ok(response) = ckey_result
+        && response.status().is_success()
+        && let Ok(search_response) = response.json::<AuthentikUserDetailedSearchResponse>().await
+    {
+        all_users.extend(search_response.results);
+    }
+
+    if all_users.is_empty()
+        && let Some(error) = main_request_error
+    {
+        return Err((
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "api_error".to_string(),
+                message: format!("Failed to query Authentik API: {}", error),
+            }),
+        ));
+    }
+
+    let mut seen_pks = std::collections::HashSet::new();
+    let results: Vec<AuthentikUserSearchResult> = all_users
+        .into_iter()
+        .filter(|u| seen_pks.insert(u.pk))
+        .map(|u| AuthentikUserSearchResult {
+            pk: u.pk,
+            uuid: u.uuid,
+            username: u.username,
+            name: u.name,
+            is_active: u.is_active,
+        })
+        .collect();
+
+    Ok(Json(results))
+}
+
+/// GET /Authentik/MyProfile - get the current user's profile information
+#[get("/MyProfile")]
+pub async fn get_my_profile(
+    user: AuthenticatedUser<Player>,
+    config: &State<Config>,
+) -> Result<Json<UserProfileResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let authentik_user = get_user_by_uuid(&http_client, authentik_config, &user.sub)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    // Fetch user's linked sources and all available sources in parallel
+    let (user_sources_result, all_sources_result) = tokio::join!(
+        get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk),
+        get_all_oauth_sources(&http_client, authentik_config)
+    );
+
+    let user_sources = user_sources_result.map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "fetch_sources_failed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
+
+    let all_sources = all_sources_result.map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "fetch_sources_failed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
+
+    // Build set of linked source slugs
+    let linked_slugs: std::collections::HashSet<String> = user_sources
+        .iter()
+        .map(|s| s.source.slug.clone())
+        .collect();
+
+    let linked_sources: Vec<LinkedOAuthSource> = user_sources
+        .into_iter()
+        .map(|source| {
+            let parsed_id = match source.source.slug.as_str() {
+                "steam" => parse_steam_id(&source.identifier),
+                "discord" => Some(source.identifier.clone()),
+                "byond" => Some(
+                    source
+                        .identifier
+                        .strip_prefix("user:")
+                        .unwrap_or(&source.identifier)
+                        .to_string(),
+                ),
+                _ => None,
+            };
+            LinkedOAuthSource {
+                connection_pk: source.pk,
+                name: source.source.name,
+                slug: source.source.slug.clone(),
+                icon: source.source.icon,
+                identifier: source.identifier,
+                parsed_id,
+            }
+        })
+        .collect();
+
+    // Available sources are those not already linked
+    let available_sources: Vec<AvailableOAuthSource> = all_sources
+        .into_iter()
+        .filter(|s| !linked_slugs.contains(&s.slug))
+        .map(|s| AvailableOAuthSource {
+            slug: s.slug,
+            name: s.name,
+            icon: s.icon,
+        })
+        .collect();
+
+    Ok(Json(UserProfileResponse {
+        pk: authentik_user.pk,
+        uuid: authentik_user.uuid.unwrap_or_default(),
+        username: authentik_user.username,
+        name: authentik_user.name,
+        email: authentik_user.email,
+        linked_sources,
+        available_sources,
+        authentik_base_url: authentik_config.base_url.trim_end_matches('/').to_string(),
+    }))
+}
+
+/// PATCH /Authentik/MyProfile - update the current user's profile information
+#[patch("/MyProfile", format = "json", data = "<request>")]
+pub async fn update_my_profile(
+    user: AuthenticatedUser<Player>,
+    config: &State<Config>,
+    request: Json<UpdateProfileRequest>,
+) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    if request.name.is_none() {
+        return Err((
+            Status::BadRequest,
+            Json(AuthentikError {
+                error: "no_fields_to_update".to_string(),
+                message: "Name field must be provided".to_string(),
+            }),
+        ));
+    }
+
+    let http_client = reqwest::Client::new();
+
+    let authentik_user = get_user_by_uuid(&http_client, authentik_config, &user.sub)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    update_user_fields(
+        &http_client,
+        authentik_config,
+        authentik_user.pk,
+        request.name.as_deref(),
+        None, // Email changes require verification via Authentik flow
+    )
+    .await
+    .map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "update_failed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
+
+    Ok(Json(AuthentikSuccess {
+        message: "Successfully updated name".to_string(),
+    }))
+}
+
+/// DELETE /Authentik/MyProfile/UnlinkSource/<connection_pk> - unlink an OAuth source
+#[delete("/MyProfile/UnlinkSource/<connection_pk>")]
+pub async fn unlink_my_source(
+    user: AuthenticatedUser<Player>,
+    config: &State<Config>,
+    connection_pk: i64,
+) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    // Verify the user owns this connection by looking up their connections
+    let authentik_user = get_user_by_uuid(&http_client, authentik_config, &user.sub)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let user_sources = get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "fetch_sources_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    // Check that the connection belongs to this user
+    let connection = user_sources
+        .iter()
+        .find(|s| s.pk == connection_pk)
+        .ok_or_else(|| {
+            (
+                Status::Forbidden,
+                Json(AuthentikError {
+                    error: "not_your_connection".to_string(),
+                    message: "This connection does not belong to you".to_string(),
+                }),
+            )
+        })?;
+
+    let source_name = connection.source.name.clone();
+
+    unlink_oauth_source(&http_client, authentik_config, connection_pk)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "unlink_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    Ok(Json(AuthentikSuccess {
+        message: format!("Successfully unlinked {}", source_name),
+    }))
+}
+
+/// Database row for notes query
+#[derive(Debug, FromRow)]
+struct NoteRow {
+    id: i64,
+    text: Option<String>,
+    date: String,
+    is_ban: i32,
+    ban_time: Option<i64>,
+    admin_rank: String,
+    note_category: Option<i32>,
+    round_id: Option<i32>,
+}
+
+/// Database row for job bans query
+#[derive(Debug, FromRow)]
+struct JobBanRow {
+    id: i64,
+    text: String,
+    date: Option<String>,
+    ban_time: Option<i64>,
+    expiration: Option<i64>,
+    role: String,
+}
+
+/// GET /Authentik/MyPlayerInfo - get the current user's in-game player info (notes and job bans)
+#[get("/MyPlayerInfo")]
+pub async fn get_my_player_info(
+    user: AuthenticatedUser<Player>,
+    config: &State<Config>,
+    mut db: Connection<Cmdb>,
+) -> Result<Json<MyPlayerInfoResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    // Get the user's Authentik profile to determine their ckey
+    let authentik_user = get_user_by_uuid(&http_client, authentik_config, &user.sub)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    // Get linked sources to check for BYOND
+    let user_sources = get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "fetch_sources_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    // Determine ckey: BYOND if linked, else UUID without dashes (lowercase)
+    let byond_source = user_sources.iter().find(|s| s.source.slug == "byond");
+    let ckey = if let Some(byond) = byond_source {
+        byond
+            .identifier
+            .strip_prefix("user:")
+            .unwrap_or(&byond.identifier)
+            .to_lowercase()
+    } else {
+        authentik_user
+            .uuid
+            .as_ref()
+            .map(|u| u.replace('-', "").to_lowercase())
+            .ok_or_else(|| {
+                (
+                    Status::BadRequest,
+                    Json(AuthentikError {
+                        error: "no_ckey".to_string(),
+                        message: "No BYOND account linked and no UUID available".to_string(),
+                    }),
+                )
+            })?
+    };
+
+    // Get player ID from ckey
+    let player_id: i64 = sqlx::query("SELECT id FROM players WHERE ckey = ?")
+        .bind(&ckey)
+        .fetch_optional(&mut **db)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "database_error".to_string(),
+                    message: format!("Failed to query player: {}", e),
+                }),
+            )
+        })?
+        .map(|row| row.get("id"))
+        .ok_or_else(|| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "player_not_found".to_string(),
+                    message: "No player record found for your account".to_string(),
+                }),
+            )
+        })?;
+
+    // Fetch non-confidential notes (is_confidential = 0)
+    let notes: Vec<NoteRow> = query_as(
+        "SELECT id, text, date, is_ban, ban_time, admin_rank, note_category, round_id
+         FROM player_notes
+         WHERE player_id = ? AND is_confidential = 0
+         ORDER BY date DESC",
+    )
+    .bind(player_id)
+    .fetch_all(&mut **db)
+    .await
+    .map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "database_error".to_string(),
+                message: format!("Failed to query notes: {}", e),
+            }),
+        )
+    })?;
+
+    // Fetch active job bans (expiration is NULL or > current time)
+    let job_bans: Vec<JobBanRow> = query_as(
+        "SELECT id, text, date, ban_time, expiration, role
+         FROM player_job_bans
+         WHERE player_id = ? AND (expiration IS NULL OR expiration > UNIX_TIMESTAMP())
+         ORDER BY date DESC",
+    )
+    .bind(player_id)
+    .fetch_all(&mut **db)
+    .await
+    .map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "database_error".to_string(),
+                message: format!("Failed to query job bans: {}", e),
+            }),
+        )
+    })?;
+
+    // Convert to public types
+    let public_notes: Vec<PublicNote> = notes
+        .into_iter()
+        .map(|n| PublicNote {
+            id: n.id,
+            text: n.text,
+            date: n.date,
+            is_ban: n.is_ban != 0,
+            ban_time: n.ban_time,
+            admin_rank: n.admin_rank,
+            note_category: n.note_category,
+            round_id: n.round_id,
+        })
+        .collect();
+
+    let public_job_bans: Vec<PublicJobBan> = job_bans
+        .into_iter()
+        .map(|jb| PublicJobBan {
+            id: jb.id,
+            text: jb.text,
+            date: jb.date,
+            ban_time: jb.ban_time,
+            expiration: jb.expiration,
+            role: jb.role,
+        })
+        .collect();
+
+    Ok(Json(MyPlayerInfoResponse {
+        ckey,
+        display_name: authentik_user.name,
+        notes: public_notes,
+        job_bans: public_job_bans,
+    }))
+}
+

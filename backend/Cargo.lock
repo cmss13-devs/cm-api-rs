@@ -409,6 +409,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "hex",
  "http2byond",
  "jsonwebtoken",
  "openidconnect",

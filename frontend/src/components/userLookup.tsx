@@ -53,8 +53,8 @@ export const LookupMenu: React.FC<LookupMenuProps> = (
     (args: UpdateUserArguments) => {
       const { userCkey, userDiscordId } = args;
       setLoading(true);
-      const re = /[\\^]|[^a-z0-9@]/g;
-      const userCkeyChecked = userCkey?.toLowerCase().replace(re, "");
+      const re = /[^a-z0-9@]/g;
+      const userCkeyChecked = userCkey?.trim().toLowerCase().replace(re, "");
       callApi(
         userCkeyChecked
           ? `/User?ckey=${userCkeyChecked}`
@@ -92,10 +92,11 @@ export const LookupMenu: React.FC<LookupMenuProps> = (
 
     if (!potentialUser) return;
 
-    const re = /[\\^]|[^a-z0-9@]/g;
-    const checked = potentialUser.toLowerCase().replace(re, "");
+    const re = /[^a-z0-9@]/g;
+    const checked = potentialUser.trim().toLowerCase().replace(re, "");
+    if(!checked) return;
 
-    if (potentialUser && (!userData || userData.ckey !== checked)) {
+    if (!userData || userData.ckey !== checked) {
       updateUser({ userCkey: potentialUser as string });
     }
   }, [value, userData, discordId, updateUser, potentialUser, user, loading]);
@@ -188,6 +189,7 @@ const UserModal = (props: { player: Player }) => {
         <div className="flex flex-col gap-3 grow">
           <UserNotesModal player={player} />
           <UserJobBansModal player={player} />
+          <KnownAltsModal player={player} />
         </div>
       </div>
     </div>
@@ -857,15 +859,15 @@ const ConnectionTypeDetails = (props: {
   );
 };
 
-interface PlayerNote {
+export interface PlayerNote {
   id: number;
-  playerId: number;
-  adminId: number;
+  playerId?: number;
+  adminId?: number;
   text?: string;
   date: string;
   isBan: boolean;
   banTime?: number;
-  isConfidential: boolean;
+  isConfidential?: boolean;
   adminRank: string;
   noteCategory?: number;
   roundId?: number;
@@ -895,7 +897,7 @@ const UserNotesModal = (props: { player: Player }) => {
   );
 };
 
-const NotesList = (props: { notes?: PlayerNote[]; displayNoted?: boolean }) => {
+export const NotesList = (props: { notes?: PlayerNote[]; displayNoted?: boolean }) => {
   const { notes, displayNoted } = props;
 
   return (
@@ -1080,9 +1082,15 @@ const UserNote = (props: { note: PlayerNote; displayNoted?: boolean }) => {
             <NameExpand name={notedPlayerCkey} />
           </div>
         )}
-        {"by"}
-        <NameExpand name={notingAdminCkey} /> ({adminRank})
-        {!!isConfidential && "[CONFIDENTIALLY]"} on {date}
+        {"by "}
+        {notingAdminCkey ? (
+          <>
+            <NameExpand name={notingAdminCkey} /> ({adminRank})
+          </>
+        ) : (
+          <span>{adminRank}</span>
+        )}
+        {!!isConfidential && " [CONFIDENTIALLY]"} on {date}
         {roundId ? ` (#${roundId})` : ""}
       </div>
     </div>
@@ -1097,12 +1105,12 @@ const ColoredText = (props: ColoredTextType) => {
   return <div style={{ color: props.color }}>{props.children}</div>;
 };
 
-interface PlayerJobBan {
+export interface PlayerJobBan {
   id: number;
-  playerId: number;
-  adminId: number;
+  playerId?: number;
+  adminId?: number;
   text: string;
-  date: string;
+  date?: string;
   banTime?: number;
   expiration?: number;
   role: string;
@@ -1130,15 +1138,213 @@ const UserJobBansModal = (props: { player: Player }) => {
 };
 
 const JobBan = (props: { jobBan: PlayerJobBan }) => {
-  const { text, banningAdminCkey, date, role } = props.jobBan;
+  const { text, banningAdminCkey, date, role, expiration } = props.jobBan;
+
+  const formatExpiration = (exp: number | undefined): string | null => {
+    if (!exp) return null;
+    const expDate = new Date(exp * 1000);
+    return expDate.toLocaleDateString();
+  };
+
+  const expirationStr = formatExpiration(expiration);
 
   return (
     <div className="flex flex-col">
       <div>
         {role.toUpperCase()} - {text}
       </div>
-      <div className="flex flex-row justify-end italic">
-        by {banningAdminCkey} on {date}
+      <div className="flex flex-row justify-end italic gap-1">
+        {banningAdminCkey && `by ${banningAdminCkey}`}
+        {date && ` on ${date}`}
+        {expirationStr && ` (expires ${expirationStr})`}
+        {!expiration && " (permanent)"}
+      </div>
+    </div>
+  );
+};
+
+export const JobBansList = (props: { jobBans?: PlayerJobBan[] }) => {
+  const { jobBans } = props;
+
+  return (
+    <div className="border-[#3f3f3f] border-2 p-3 flex flex-col gap-3 max-h-96 overflow-auto">
+      {jobBans?.map((jobBan) => (
+        <JobBan jobBan={jobBan} key={jobBan.id} />
+      ))}
+      {!jobBans?.length && (
+        <div className="flex flex-row justify-center">No job bans.</div>
+      )}
+    </div>
+  );
+};
+
+interface KnownAltsResponse {
+  mainAccount: string | null;
+  alts: string[];
+}
+
+const KnownAltsModal = (props: { player: Player }) => {
+  const { player } = props;
+  const [altsData, setAltsData] = useState<KnownAltsResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [newAltCkey, setNewAltCkey] = useState("");
+  const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
+  const global = useContext(GlobalContext);
+
+  const fetchAlts = useCallback(() => {
+    if (!player.ckey) return;
+
+    setLoading(true);
+    callApi(`/User/KnownAlts?ckey=${player.ckey}`)
+      .then((response) => response.json())
+      .then((json: KnownAltsResponse) => {
+        setAltsData(json);
+      })
+      .catch((err) => {
+        console.error("Failed to fetch known alts:", err);
+        setAltsData({ mainAccount: null, alts: [] });
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [player.ckey]);
+
+  useEffect(() => {
+    fetchAlts();
+  }, [fetchAlts]);
+
+  const addAlt = useCallback(() => {
+    if (!player.ckey || !newAltCkey.trim()) return;
+
+    const playerCkey = altsData?.mainAccount || player.ckey;
+    const re = /[^a-z0-9@]/g;
+    const altCkey = newAltCkey.trim().toLowerCase().replace(re, "");
+    if (!altCkey) return;
+
+    callApi("/User/KnownAlts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerCkey, altCkey }),
+    })
+      .then((response) => {
+        if (response.ok) {
+          setNewAltCkey("");
+          fetchAlts();
+          global?.updateAndShowToast("Alt added.");
+        } else {
+          global?.updateAndShowToast("Failed to add alt.");
+        }
+      })
+      .catch(() => {
+        global?.updateAndShowToast("Failed to add alt.");
+      });
+  }, [player.ckey, newAltCkey, altsData, fetchAlts, global]);
+
+  const removeAlt = useCallback(
+    (altCkey: string) => {
+      if (!player.ckey) return;
+
+      const playerCkey = altsData?.mainAccount || player.ckey;
+
+      callApi("/User/KnownAlts", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ playerCkey, altCkey }),
+      })
+        .then((response) => {
+          if (response.ok) {
+            fetchAlts();
+            global?.updateAndShowToast("Alt removed.");
+          } else {
+            global?.updateAndShowToast("Failed to remove alt.");
+          }
+        })
+        .catch(() => {
+          global?.updateAndShowToast("Failed to remove alt.");
+        });
+    },
+    [player.ckey, altsData, fetchAlts, global]
+  );
+
+  const hasAlts = altsData && (altsData.mainAccount || altsData.alts.length > 0);
+
+  return (
+    <div className="flex flex-col">
+      <div className="text-2xl">Known Alts:</div>
+      <div className="border-[#3f3f3f] border-2 p-3 flex flex-col gap-3">
+        {loading && <div className="text-gray-400">Loading...</div>}
+        {!loading && !hasAlts && (
+          <div className="flex flex-row justify-center">No known alts.</div>
+        )}
+        {!loading && altsData?.mainAccount && (
+          <div className="flex flex-col">
+            <div className="text-yellow-400">This is an alt account of:</div>
+            <div className="ml-4">
+              <NameExpand name={altsData.mainAccount} />
+            </div>
+          </div>
+        )}
+        {!loading && altsData && altsData.alts.length > 0 && (
+          <div className="flex flex-col">
+            <div className="text-yellow-400">Known alt accounts:</div>
+            <div className="ml-4 flex flex-col gap-1">
+              {altsData.alts.map((alt) => (
+                <div key={alt} className="flex flex-row items-center gap-2">
+                  <NameExpand name={alt} />
+                  {confirmingRemove === alt ? (
+                    <>
+                      <button
+                        type="button"
+                        className="text-red-400 hover:text-red-300 text-sm"
+                        onClick={() => {
+                          removeAlt(alt);
+                          setConfirmingRemove(null);
+                        }}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        className="text-gray-400 hover:text-gray-300 text-sm"
+                        onClick={() => setConfirmingRemove(null)}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      className="text-red-400 hover:text-red-300 text-sm font-bold"
+                      onClick={() => setConfirmingRemove(alt)}
+                      title="Remove alt"
+                    >
+                      X
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {!loading && (
+          <div className="flex flex-row gap-2 items-center mt-2">
+            <input
+              type="text"
+              placeholder="Alt ckey"
+              value={newAltCkey}
+              onChange={(e) => setNewAltCkey(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addAlt()}
+              className="bg-[#2a2a2a] border border-[#3f3f3f] px-2 py-1 text-sm"
+            />
+            <button
+              type="button"
+              className="bg-[#3f3f3f] hover:bg-[#4f4f4f] px-2 py-1 text-sm"
+              onClick={addAlt}
+            >
+              Add Alt
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

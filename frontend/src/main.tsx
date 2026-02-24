@@ -3,7 +3,13 @@ import ReactDOM from "react-dom/client";
 import "./index.css";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import App from "./App";
+import { AccountSettings } from "./components/accountSettings";
+import { MyPlayerInfo } from "./components/myPlayerInfo";
+import { ActiveBans } from "./components/activeBans";
 import { AuthentikPanel } from "./components/authentikPanel";
+import { AuthentikUserPage } from "./components/authentikUserPage";
+import { BanHistory } from "./components/banHistory";
+import { DiscordLookupPage } from "./components/discordLookupPage";
 import HomePage from "./components/homePage";
 import { NewPlayers } from "./components/newPlayers";
 import { Stickybans } from "./components/stickybans";
@@ -57,6 +63,30 @@ const router = createBrowserRouter([
       {
         path: "/2fa",
         element: <TwoFactor />,
+      },
+      {
+        path: "/bans",
+        element: <ActiveBans />,
+      },
+      {
+        path: "/ban-history",
+        element: <BanHistory />,
+      },
+      {
+        path: "/authentik/:uuid?",
+        element: <AuthentikUserPage />,
+      },
+      {
+        path: "/discord-lookup/:discordId",
+        element: <DiscordLookupPage />,
+      },
+      {
+        path: "/account",
+        element: <AccountSettings />,
+      },
+      {
+        path: "/my-player-info",
+        element: <MyPlayerInfo />,
       },
     ],
   },

@@ -85,6 +85,8 @@ pub struct ServerStatusResponse {
     details: Option<GameResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     recommended_byond_version: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tags: Vec<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -134,7 +136,7 @@ pub async fn round(
         };
 
         if let Some(cache_time) = *cache_time_guard {
-            let cache_expiry = chrono::Utc::now() - Duration::seconds(60);
+            let cache_expiry = chrono::Utc::now() - Duration::seconds(20);
             if cache_time > cache_expiry {
                 let cached = match cache.cached_status.lock() {
                     Ok(real) => real,
@@ -179,6 +181,7 @@ pub async fn round(
 fn query_server(server: ServerConfig) -> ServerStatusResponse {
     let url = server.host.clone();
     let recommended_byond_version = server.recommended_byond_version.clone();
+    let tags = server.tags.clone();
 
     let topic = match serde_json::to_string(&GameRequest {
         query: "status".to_string(),
@@ -193,6 +196,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 status: "unavailable".to_string(),
                 details: None,
                 recommended_byond_version,
+                tags,
             };
         }
     };
@@ -207,6 +211,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                     status: "unavailable".to_string(),
                     details: None,
                     recommended_byond_version,
+                    tags,
                 };
             }
         },
@@ -217,6 +222,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 status: "unavailable".to_string(),
                 details: None,
                 recommended_byond_version,
+                tags,
             };
         }
     };
@@ -230,6 +236,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 status: "unavailable".to_string(),
                 details: None,
                 recommended_byond_version,
+                tags,
             };
         }
     };
@@ -243,6 +250,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
                 status: "unavailable".to_string(),
                 details: None,
                 recommended_byond_version,
+                tags,
             };
         }
     };
@@ -256,6 +264,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
             status: "available".to_string(),
             details: Some(game_response),
             recommended_byond_version,
+            tags,
         },
         Err(_) => ServerStatusResponse {
             name: server.name,
@@ -263,6 +272,7 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
             status: "unavailable".to_string(),
             details: None,
             recommended_byond_version,
+            tags,
         },
     }
 }
@@ -287,4 +297,20 @@ pub async fn recent(
         Ok(rounds) => Json(rounds),
         Err(_) => Json(Vec::new()),
     }
+}
+
+#[derive(serde::Serialize)]
+pub struct ByondHashResponse {
+    sha256: Option<String>,
+}
+
+/// Returns the expected SHA256 hash for a given BYOND version. **This is a public endpoint**.
+#[get("/?<byond_ver>")]
+pub async fn byond_hash(config: &State<Config>, byond_ver: &str) -> PublicCors<ByondHashResponse> {
+    let sha256 = config
+        .byond_hashes
+        .as_ref()
+        .and_then(|hashes| hashes.get(byond_ver).cloned());
+
+    PublicCors(ByondHashResponse { sha256 })
 }
