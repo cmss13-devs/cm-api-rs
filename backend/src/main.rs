@@ -170,10 +170,8 @@ async fn rocket() -> _ {
         Err(_) => "/api".to_string(),
     };
 
-    // Extract configuration
     let config: Config = figment.extract().expect("Failed to extract configuration");
 
-    // Get CORS allowed origin (default to * in debug mode)
     let allowed_origin = config
         .cors
         .as_ref()
@@ -214,7 +212,6 @@ async fn rocket() -> _ {
         .attach(AdHoc::config::<Config>())
         .attach(Cors::new(allowed_origin));
 
-    // Add OIDC client to managed state if available
     if let Some(client) = oidc_client {
         rocket_builder = rocket_builder.manage(client);
     } else {

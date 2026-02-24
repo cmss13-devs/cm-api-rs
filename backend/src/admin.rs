@@ -127,7 +127,6 @@ impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> 
     type Error = AuthError;
 
     async fn from_request(req: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
-        // Debug mode: return fake user
         if cfg!(debug_assertions) {
             return request::Outcome::Success(AuthenticatedUser::new(
                 P::debug_username().to_string(),
@@ -138,7 +137,6 @@ impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> 
             ));
         }
 
-        // Get OIDC client from managed state
         let oidc = match req.rocket().state::<Arc<OidcClient>>() {
             Some(oidc) => oidc,
             None => {
@@ -149,13 +147,11 @@ impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> 
             }
         };
 
-        // Get session cookie
         let session_cookie = match req.cookies().get(SESSION_COOKIE_NAME) {
             Some(cookie) => cookie,
             None => return request::Outcome::Error((Status::Unauthorized, AuthError::Missing)),
         };
 
-        // Validate session JWT
         let claims = match validate_session_jwt(session_cookie.value(), &oidc.config.session_secret)
         {
             Ok(claims) => claims,
@@ -167,7 +163,6 @@ impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> 
             }
         };
 
-        // Check permission level
         if !P::is_authorized(&claims, oidc) {
             return request::Outcome::Error((Status::Forbidden, AuthError::Forbidden));
         }

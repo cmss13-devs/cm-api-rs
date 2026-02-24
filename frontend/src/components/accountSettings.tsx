@@ -37,7 +37,6 @@ export const AccountSettings: React.FC = () => {
   const [pendingEmail, setPendingEmail] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // User settings state (sessions, consents, MFA devices)
   const [settings, setSettings] = useState<UserSettingsResponse | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
 
@@ -118,7 +117,6 @@ export const AccountSettings: React.FC = () => {
       return;
     }
 
-    // Redirect to Authentik email change flow with new email as query param
     const encodedEmail = encodeURIComponent(pendingEmail);
     window.location.href = `${profile.authentikBaseUrl}/if/flow/change-email/?email=${encodedEmail}`;
   };
@@ -735,7 +733,6 @@ const AvailableSourceRow: React.FC<{
   authentikBaseUrl: string;
 }> = ({ source, authentikBaseUrl }) => {
   const handleLink = () => {
-    // Redirect to Authentik link-source flow
     window.location.href = `${authentikBaseUrl}/source/oauth/login/${source.slug}/`;
   };
 

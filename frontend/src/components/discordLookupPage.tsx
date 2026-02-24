@@ -19,7 +19,6 @@ export const DiscordLookupPage: React.FC = () => {
 	useEffect(() => {
 		if (!discordId) return;
 
-		// Search game database
 		setGameLoading(true);
 		setGameError(null);
 		callApi(`/User?discord_id=${encodeURIComponent(discordId)}`)
@@ -35,7 +34,6 @@ export const DiscordLookupPage: React.FC = () => {
 			.catch(() => setGameError("Failed to search game database"))
 			.finally(() => setGameLoading(false));
 
-		// Search Authentik
 		setAuthentikLoading(true);
 		setAuthentikError(null);
 		callApi(`/Authentik/UserByDiscordId/${encodeURIComponent(discordId)}`)

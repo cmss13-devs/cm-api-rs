@@ -31,7 +31,6 @@ export default function App(): React.ReactElement {
 
   useEffect(() => {
     if (!user) {
-      // In development with VITE_FAKE_USER, use fake user
       if (import.meta.env.VITE_FAKE_USER) {
         setUser({
           username: "debug",
@@ -45,13 +44,11 @@ export default function App(): React.ReactElement {
         return;
       }
 
-      // Fetch user info from backend
       fetch(`${apiPath}/auth/userinfo`, {
         credentials: "include",
       })
         .then((response) => {
           if (response.status === 401) {
-            // Not authenticated, redirect to login
             const currentPath = window.location.pathname + window.location.hash;
             window.location.href = `/api/auth/login?redirect=${encodeURIComponent(
               currentPath,
@@ -70,7 +67,6 @@ export default function App(): React.ReactElement {
         })
         .catch((error) => {
           console.error("Auth error:", error);
-          // Redirect to login on error
           window.location.href = "/api/auth/login";
         })
         .finally(() => {
@@ -97,7 +93,6 @@ export default function App(): React.ReactElement {
     }
   }, [searchParams, setSearchParams, displayToast]);
 
-  // Show loading state while checking authentication
   if (authLoading) {
     return (
       <div className="w-full h-screen flex items-center justify-center foreground">
