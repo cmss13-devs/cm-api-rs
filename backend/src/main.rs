@@ -39,6 +39,7 @@ mod stickyban;
 mod ticket;
 mod token;
 mod twofactor;
+mod user_settings;
 mod utils;
 mod whitelist;
 
@@ -318,6 +319,10 @@ async fn rocket() -> _ {
                 authentik::get_my_profile,
                 authentik::update_my_profile,
                 authentik::unlink_my_source,
+                user_settings::get_my_settings,
+                user_settings::delete_my_session,
+                user_settings::revoke_my_consent,
+                user_settings::delete_my_mfa_device,
                 token::get_token_user_info,
             ],
         )

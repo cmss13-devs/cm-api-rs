@@ -105,3 +105,37 @@ export type UpdateProfileRequest = {
 	name?: string;
 	email?: string;
 };
+
+export type SessionInfo = {
+	uuid: string;
+	current: boolean;
+	device: string;
+	browser: string;
+	os: string;
+	lastIp: string;
+	lastUsed: string;
+	expires: string | null;
+};
+
+export type ConsentInfo = {
+	pk: number;
+	applicationName: string;
+	applicationSlug: string;
+	applicationIcon: string | null;
+	applicationUrl: string | null;
+	expires: string | null;
+};
+
+export type MfaDeviceInfo = {
+	pk: number;
+	name: string;
+	deviceType: string;
+	createdOn: string | null;
+	tokenCount: number | null;
+};
+
+export type UserSettingsResponse = {
+	sessions: SessionInfo[];
+	consents: ConsentInfo[];
+	mfaDevices: MfaDeviceInfo[];
+};

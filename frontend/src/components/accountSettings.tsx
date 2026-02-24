@@ -4,8 +4,12 @@ import { callApi } from "../helpers/api";
 import type {
   AuthentikError,
   AvailableOAuthSource,
+  ConsentInfo,
   LinkedOAuthSource,
+  MfaDeviceInfo,
+  SessionInfo,
   UserProfileResponse,
+  UserSettingsResponse,
 } from "../types/authentik";
 import { GlobalContext } from "../types/global";
 
@@ -21,6 +25,10 @@ export const AccountSettings: React.FC = () => {
   const [pendingName, setPendingName] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // User settings state (sessions, consents, MFA devices)
+  const [settings, setSettings] = useState<UserSettingsResponse | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(true);
 
   const fetchProfile = async () => {
     try {
@@ -40,8 +48,26 @@ export const AccountSettings: React.FC = () => {
     }
   };
 
+  const fetchSettings = async () => {
+    setSettingsLoading(true);
+    try {
+      const response = await callApi("/Authentik/MySettings");
+      if (!response.ok) {
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to fetch settings");
+      }
+      const data: UserSettingsResponse = await response.json();
+      setSettings(data);
+    } catch (err) {
+      console.error("Failed to load settings:", err);
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchProfile();
+    fetchSettings();
   }, []);
 
   const handleSaveName = async () => {
@@ -135,6 +161,71 @@ export const AccountSettings: React.FC = () => {
   const handleCancelEmail = () => {
     setPendingEmail(profile?.email || "");
     setEditingEmail(false);
+  };
+
+  const handleDeleteSession = async (uuid: string) => {
+    try {
+      const response = await callApi(`/Authentik/MySettings/Session/${uuid}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to delete session");
+      }
+
+      global?.updateAndShowToast("Session deleted");
+      await fetchSettings();
+    } catch (err) {
+      global?.updateAndShowToast(
+        err instanceof Error ? err.message : "Failed to delete session"
+      );
+    }
+  };
+
+  const handleRevokeConsent = async (pk: number, appName: string) => {
+    try {
+      const response = await callApi(`/Authentik/MySettings/Consent/${pk}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to revoke consent");
+      }
+
+      global?.updateAndShowToast(`Revoked consent for ${appName}`);
+      await fetchSettings();
+    } catch (err) {
+      global?.updateAndShowToast(
+        err instanceof Error ? err.message : "Failed to revoke consent"
+      );
+    }
+  };
+
+  const handleDeleteMfaDevice = async (
+    deviceType: string,
+    pk: number,
+    name: string
+  ) => {
+    try {
+      const response = await callApi(
+        `/Authentik/MySettings/MfaDevice/${deviceType}/${pk}`,
+        { method: "DELETE" }
+      );
+
+      if (!response.ok) {
+        const err: AuthentikError = await response.json();
+        throw new Error(err.message || "Failed to delete MFA device");
+      }
+
+      global?.updateAndShowToast(`Deleted MFA device: ${name}`);
+      await fetchSettings();
+    } catch (err) {
+      global?.updateAndShowToast(
+        err instanceof Error ? err.message : "Failed to delete MFA device"
+      );
+    }
   };
 
   if (loading) {
@@ -292,6 +383,73 @@ export const AccountSettings: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Sessions Section */}
+      <div className="flex flex-col gap-4">
+        <h2 className="text-lg font-semibold">Active Sessions</h2>
+
+        {settingsLoading ? (
+          <div className="text-gray-400">Loading sessions...</div>
+        ) : settings?.sessions.length === 0 ? (
+          <div className="text-gray-400">No active sessions</div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {settings?.sessions.map((session) => (
+              <SessionRow
+                key={session.uuid}
+                session={session}
+                onDelete={() => handleDeleteSession(session.uuid)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Application Consents Section */}
+      <div className="flex flex-col gap-4">
+        <h2 className="text-lg font-semibold">Application Consents</h2>
+
+        {settingsLoading ? (
+          <div className="text-gray-400">Loading consents...</div>
+        ) : settings?.consents.length === 0 ? (
+          <div className="text-gray-400">No application consents</div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {settings?.consents.map((consent) => (
+              <ConsentRow
+                key={consent.pk}
+                consent={consent}
+                onRevoke={() =>
+                  handleRevokeConsent(consent.pk, consent.applicationName)
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* MFA Devices Section */}
+      <div className="flex flex-col gap-4">
+        <h2 className="text-lg font-semibold">MFA Devices</h2>
+
+        {settingsLoading ? (
+          <div className="text-gray-400">Loading MFA devices...</div>
+        ) : settings?.mfaDevices.length === 0 ? (
+          <div className="text-gray-400">No MFA devices configured</div>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {settings?.mfaDevices.map((device) => (
+              <MfaDeviceRow
+                key={`${device.deviceType}-${device.pk}`}
+                device={device}
+                onDelete={() =>
+                  handleDeleteMfaDevice(device.deviceType, device.pk, device.name)
+                }
+              />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -390,6 +548,178 @@ const AvailableSourceRow: React.FC<{
         className="ml-auto text-green-400 hover:text-green-300 hover:underline text-sm"
       >
         Link
+      </button>
+    </div>
+  );
+};
+
+const SessionRow: React.FC<{
+  session: SessionInfo;
+  onDelete: () => void;
+}> = ({ session, onDelete }) => {
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteClick = async () => {
+    setDeleting(true);
+    await onDelete();
+    setDeleting(false);
+  };
+
+  const formatDate = (dateStr: string): string => {
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleString();
+    } catch {
+      return dateStr;
+    }
+  };
+
+  return (
+    <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
+      <div className="flex flex-col flex-1">
+        <div className="flex flex-row items-center gap-2">
+          <span className="font-medium">{session.browser}</span>
+          {session.current && (
+            <span className="text-xs bg-green-600 px-2 py-0.5 rounded">
+              Current
+            </span>
+          )}
+        </div>
+        <span className="text-sm text-gray-400">
+          {session.os} - {session.device}
+        </span>
+        <span className="text-sm text-gray-500">
+          Last used: {formatDate(session.lastUsed)} from {session.lastIp}
+        </span>
+      </div>
+      {!session.current && (
+        <button
+          type="button"
+          onClick={handleDeleteClick}
+          disabled={deleting}
+          className="text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500"
+        >
+          {deleting ? "Deleting..." : "Delete"}
+        </button>
+      )}
+    </div>
+  );
+};
+
+const ConsentRow: React.FC<{
+  consent: ConsentInfo;
+  onRevoke: () => void;
+}> = ({ consent, onRevoke }) => {
+  const [revoking, setRevoking] = useState(false);
+
+  const handleRevokeClick = async () => {
+    setRevoking(true);
+    await onRevoke();
+    setRevoking(false);
+  };
+
+  const formatDate = (dateStr: string | null): string => {
+    if (!dateStr) return "Never";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleString();
+    } catch {
+      return dateStr;
+    }
+  };
+
+  return (
+    <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
+      <div className="flex flex-col flex-1">
+        <span className="font-medium">{consent.applicationName}</span>
+        {consent.expires && (
+          <span className="text-sm text-gray-500">
+            Expires: {formatDate(consent.expires)}
+          </span>
+        )}
+      </div>
+      {consent.applicationUrl && (
+        <a
+          href={consent.applicationUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-400 hover:text-blue-300 hover:underline text-sm"
+        >
+          Open
+        </a>
+      )}
+      <button
+        type="button"
+        onClick={handleRevokeClick}
+        disabled={revoking}
+        className="text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500"
+      >
+        {revoking ? "Revoking..." : "Revoke"}
+      </button>
+    </div>
+  );
+};
+
+const MfaDeviceRow: React.FC<{
+  device: MfaDeviceInfo;
+  onDelete: () => void;
+}> = ({ device, onDelete }) => {
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteClick = async () => {
+    setDeleting(true);
+    await onDelete();
+    setDeleting(false);
+  };
+
+  const getDeviceTypeLabel = (type: string): string => {
+    switch (type) {
+      case "totp":
+        return "Authenticator App (TOTP)";
+      case "webauthn":
+        return "Security Key (WebAuthn)";
+      case "static":
+        return "Backup Codes";
+      default:
+        return type;
+    }
+  };
+
+  const formatDate = (dateStr: string | null): string => {
+    if (!dateStr) return "";
+    try {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString();
+    } catch {
+      return dateStr;
+    }
+  };
+
+  return (
+    <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
+      <div className="flex flex-col flex-1">
+        <span className="font-medium">{device.name}</span>
+        <span className="text-sm text-gray-400">
+          {getDeviceTypeLabel(device.deviceType)}
+        </span>
+        {device.createdOn && (
+          <span className="text-sm text-gray-500">
+            Added: {formatDate(device.createdOn)}
+          </span>
+        )}
+        {device.tokenCount !== null && (
+          <span className="text-sm text-gray-500">
+            Remaining codes: {device.tokenCount}
+          </span>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={handleDeleteClick}
+        disabled={deleting}
+        className="text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500"
+      >
+        {deleting ? "Deleting..." : "Delete"}
       </button>
     </div>
   );
