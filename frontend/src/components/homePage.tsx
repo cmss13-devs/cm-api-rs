@@ -19,6 +19,18 @@ export default function HomePage(): React.ReactElement {
           <div className="text-3xl underline text-center">[cmdb]</div>
         </div>
 
+        {user && (
+          <>
+            <Link
+              to={"/account"}
+              className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
+            >
+              Account Settings
+            </Link>
+            <hr className="border-[#3f3f3f] my-2" />
+          </>
+        )}
+
         <Link
           to={"/bans"}
           className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"

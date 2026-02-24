@@ -614,7 +614,7 @@ pub async fn get_banned_players(
     let page = page.unwrap_or(0).max(0);
     let offset = page * 20;
 
-    let cutoff_date = "2026-02-10";
+    let cutoff_date = "2026-02-24";
 
     let result = if let Some(ckey_filter) = ckey {
         let ckey_pattern = format!("%{}%", ckey_filter);
@@ -683,7 +683,7 @@ pub async fn get_ban_history(
     let page = page.unwrap_or(0).max(0);
     let offset = page * 20;
 
-    let cutoff_date = "2026-02-10";
+    let cutoff_date = "2026-02-24";
 
     let result = if let Some(ckey_filter) = ckey {
         let ckey_pattern = format!("%{}%", ckey_filter);
@@ -784,13 +784,11 @@ pub async fn add_known_alt(
     _admin: AuthenticatedUser<Staff>,
     request: rocket::serde::json::Json<AddKnownAltRequest>,
 ) -> Status {
-    let result = query(
-        "INSERT INTO known_alts (player_ckey, ckey) VALUES (?, ?)",
-    )
-    .bind(&request.player_ckey)
-    .bind(&request.alt_ckey)
-    .execute(&mut **db)
-    .await;
+    let result = query("INSERT INTO known_alts (player_ckey, ckey) VALUES (?, ?)")
+        .bind(&request.player_ckey)
+        .bind(&request.alt_ckey)
+        .execute(&mut **db)
+        .await;
 
     match result {
         Ok(_) => Status::Created,
@@ -812,13 +810,11 @@ pub async fn remove_known_alt(
     _admin: AuthenticatedUser<Staff>,
     request: rocket::serde::json::Json<RemoveKnownAltRequest>,
 ) -> Status {
-    let result = query(
-        "DELETE FROM known_alts WHERE player_ckey = ? AND ckey = ?",
-    )
-    .bind(&request.player_ckey)
-    .bind(&request.alt_ckey)
-    .execute(&mut **db)
-    .await;
+    let result = query("DELETE FROM known_alts WHERE player_ckey = ? AND ckey = ?")
+        .bind(&request.player_ckey)
+        .bind(&request.alt_ckey)
+        .execute(&mut **db)
+        .await;
 
     match result {
         Ok(_) => Status::Ok,
