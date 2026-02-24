@@ -28,6 +28,8 @@ pub struct AuthentikSession {
 pub struct UserAgentInfo {
     pub device: DeviceInfo,
     pub os: OsInfo,
+    /// Browser info - named "user_agent" in Authentik's nested response
+    #[serde(rename = "user_agent")]
     pub browser: BrowserInfo,
 }
 
@@ -43,13 +45,19 @@ pub struct DeviceInfo {
 #[derive(Debug, Deserialize, Clone)]
 pub struct OsInfo {
     pub family: String,
-    pub version: Option<String>,
+    /// OS version is split into major/minor/patch in Authentik
+    pub major: Option<String>,
+    #[allow(dead_code)]
+    pub minor: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct BrowserInfo {
     pub family: String,
-    pub version: Option<String>,
+    /// Browser version is split into major/minor/patch in Authentik
+    pub major: Option<String>,
+    #[allow(dead_code)]
+    pub minor: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -191,15 +199,10 @@ async fn get_user_sessions(
         return Err(format!("Authentik API returned error {}: {}", status, body));
     }
 
-    let body = response
-        .text()
+    let sessions_response: AuthentikSessionsResponse = response
+        .json()
         .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?;
-
-    eprintln!("DEBUG sessions response: {}", body);
-
-    let sessions_response: AuthentikSessionsResponse = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse Authentik sessions response: {} - body was: {}", e, body))?;
+        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
 
     Ok(sessions_response.results)
 }
@@ -260,15 +263,10 @@ async fn get_user_consents(
         return Err(format!("Authentik API returned error {}: {}", status, body));
     }
 
-    let body = response
-        .text()
+    let consents_response: AuthentikConsentsResponse = response
+        .json()
         .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?;
-
-    eprintln!("DEBUG consents response: {}", body);
-
-    let consents_response: AuthentikConsentsResponse = serde_json::from_str(&body)
-        .map_err(|e| format!("Failed to parse Authentik consents response: {} - body was: {}", e, body))?;
+        .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
 
     Ok(consents_response.results)
 }
@@ -493,12 +491,12 @@ pub async fn get_my_settings(
             browser: format!(
                 "{} {}",
                 s.user_agent.browser.family,
-                s.user_agent.browser.version.unwrap_or_default()
+                s.user_agent.browser.major.as_deref().unwrap_or_default()
             ),
             os: format!(
                 "{} {}",
                 s.user_agent.os.family,
-                s.user_agent.os.version.unwrap_or_default()
+                s.user_agent.os.major.as_deref().unwrap_or_default()
             ),
             last_ip: s.last_ip,
             last_used: s.last_used,
