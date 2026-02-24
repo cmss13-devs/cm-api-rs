@@ -271,6 +271,7 @@ export const AccountSettings: React.FC = () => {
                 key={source.slug}
                 source={source}
                 onUnlink={() => handleUnlink(source.connectionPk, source.name)}
+                authentikBaseUrl={profile.authentikBaseUrl}
               />
             ))}
           </div>
@@ -298,7 +299,8 @@ export const AccountSettings: React.FC = () => {
 const LinkedSourceRow: React.FC<{
   source: LinkedOAuthSource;
   onUnlink: () => void;
-}> = ({ source, onUnlink }) => {
+  authentikBaseUrl: string;
+}> = ({ source, onUnlink, authentikBaseUrl }) => {
   const [unlinking, setUnlinking] = useState(false);
 
   const getExternalLink = (
@@ -333,10 +335,12 @@ const LinkedSourceRow: React.FC<{
 
   const externalLink = getExternalLink(source.slug, source.parsedId);
 
+  const iconUrl = source.icon ? `${authentikBaseUrl}${source.icon}` : null;
+
   return (
     <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
-      {source.icon ? (
-        <img src={source.icon} alt={source.name} className="w-6 h-6" />
+      {iconUrl ? (
+        <img src={iconUrl} alt={source.name} className="w-6 h-6" />
       ) : (
         <div className="w-6 h-6 bg-gray-600 rounded" />
       )}
@@ -373,10 +377,12 @@ const AvailableSourceRow: React.FC<{
     window.location.href = `${authentikBaseUrl}/if/flow/link-source/?source=${source.slug}`;
   };
 
+  const iconUrl = source.icon ? `${authentikBaseUrl}${source.icon}` : null;
+
   return (
     <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
-      {source.icon ? (
-        <img src={source.icon} alt={source.name} className="w-6 h-6" />
+      {iconUrl ? (
+        <img src={iconUrl} alt={source.name} className="w-6 h-6" />
       ) : (
         <div className="w-6 h-6 bg-gray-600 rounded" />
       )}
