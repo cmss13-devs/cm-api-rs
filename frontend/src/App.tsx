@@ -37,6 +37,7 @@ export default function App(): React.ReactElement {
           ckey: "debug",
           email: "debug@debug.debug",
           groups: ["admin"],
+          manageable: ["mentor"],
           isStaff: true,
           isManagement: true,
         });
@@ -68,6 +69,32 @@ export default function App(): React.ReactElement {
         .catch((error) => {
           console.error("Auth error:", error);
           window.location.href = "/api/auth/login";
+          setAuthLoading(false);
+          return;
+        });
+
+      // Fetch allowed groups from backend
+      fetch(`${apiPath}/Authentik/AllowedGroups`, {
+        credentials: "include",
+      })
+        .then((response) => {
+          if (!response.ok) {
+            throw new Error("Failed to fetch allowed groups");
+          }
+          return response.json();
+        })
+        .then((json: { manageable: string[] }) => {
+          setUser((exitingUser) => {
+            if (exitingUser) {
+              return {
+                ...exitingUser,
+                manageable: json.manageable,
+              };
+            }
+          });
+        })
+        .catch((error) => {
+          console.error("Auth error:", error);
         })
         .finally(() => {
           setAuthLoading(false);
@@ -147,7 +174,7 @@ export default function App(): React.ReactElement {
             </LinkColor>
           </>
         )}
-        {user?.isManagement && (
+        {user?.manageable?.length && (
           <>
             |
             <LinkColor>
