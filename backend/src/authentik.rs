@@ -295,7 +295,7 @@ pub struct AuthentikUserSearchResult {
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct UserProfileResponse {
     pub pk: i64,
-    pub uid: String,
+    pub uuid: String,
     pub username: String,
     pub name: String,
     pub email: Option<String>,
@@ -3344,7 +3344,7 @@ pub async fn get_my_profile(
 
     Ok(Json(UserProfileResponse {
         pk: authentik_user.pk,
-        uid: authentik_user.uid,
+        uuid: authentik_user.uuid.unwrap_or_default(),
         username: authentik_user.username,
         name: authentik_user.name,
         email: authentik_user.email,

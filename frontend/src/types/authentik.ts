@@ -92,7 +92,7 @@ export type AvailableOAuthSource = {
 
 export type UserProfileResponse = {
 	pk: number;
-	uid: string;
+	uuid: string;
 	username: string;
 	name: string;
 	email: string | null;

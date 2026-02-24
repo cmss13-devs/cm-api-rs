@@ -458,6 +458,33 @@ const ProfileTab: React.FC<{
     </div>
 
     <div className="flex flex-col gap-4">
+      <h2 className="text-lg font-semibold">In-Game Identity</h2>
+
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-row items-center gap-2">
+          <span className="text-gray-400 w-32">Ckey:</span>
+          <span>
+            {(() => {
+              const byond = profile.linkedSources.find((s) => s.slug === "byond");
+              if (byond?.parsedId) {
+                return byond.parsedId;
+              }
+              // Fallback to Authentik UUID without dashes
+              return profile.uuid.replace(/-/g, "");
+            })()}
+          </span>
+          {!profile.linkedSources.find((s) => s.slug === "byond") && (
+            <span className="text-gray-500 text-sm">(link BYOND to use your ckey)</span>
+          )}
+        </div>
+        <div className="flex flex-row items-center gap-2">
+          <span className="text-gray-400 w-32">Display Name:</span>
+          <span>{profile.name}</span>
+        </div>
+      </div>
+    </div>
+
+    <div className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold">Linked Accounts</h2>
 
       {profile.linkedSources.length === 0 ? (
