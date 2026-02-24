@@ -92,13 +92,17 @@ export const AuthentikPanel: React.FC = () => {
   const handleAddUser = async () => {
     if (!addCkey.trim()) return;
 
+    const re = /[^a-z0-9@]/g;
+    const userCkeyChecked = addCkey.trim().toLowerCase().replace(re, "");
+    if (!userCkeyChecked) return;
+
     setAddLoading(true);
     try {
       const response = await callApi("/Authentik/AddUserToGroup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ckey: addCkey.trim(),
+          ckey: userCkeyChecked,
           group_name: selectedGroup,
         }),
       });
@@ -108,7 +112,7 @@ export const AuthentikPanel: React.FC = () => {
         throw new Error(err.message || "Failed to add user to group");
       }
 
-      global?.updateAndShowToast(`Added ${addCkey} to ${selectedGroup}`);
+      global?.updateAndShowToast(`Added ${userCkeyChecked} to ${selectedGroup}`);
       setShowAddDialog(false);
       setAddCkey("");
       fetchGroupMembers(selectedGroup);
