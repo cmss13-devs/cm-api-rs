@@ -27,6 +27,12 @@ export default function HomePage(): React.ReactElement {
             >
               Account Settings
             </Link>
+            <Link
+              to={"/my-player-info"}
+              className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
+            >
+              My Player Info
+            </Link>
             <hr className="border-[#3f3f3f] my-2" />
           </>
         )}

@@ -858,15 +858,15 @@ const ConnectionTypeDetails = (props: {
   );
 };
 
-interface PlayerNote {
+export interface PlayerNote {
   id: number;
-  playerId: number;
-  adminId: number;
+  playerId?: number;
+  adminId?: number;
   text?: string;
   date: string;
   isBan: boolean;
   banTime?: number;
-  isConfidential: boolean;
+  isConfidential?: boolean;
   adminRank: string;
   noteCategory?: number;
   roundId?: number;
@@ -896,7 +896,7 @@ const UserNotesModal = (props: { player: Player }) => {
   );
 };
 
-const NotesList = (props: { notes?: PlayerNote[]; displayNoted?: boolean }) => {
+export const NotesList = (props: { notes?: PlayerNote[]; displayNoted?: boolean }) => {
   const { notes, displayNoted } = props;
 
   return (
@@ -1081,9 +1081,15 @@ const UserNote = (props: { note: PlayerNote; displayNoted?: boolean }) => {
             <NameExpand name={notedPlayerCkey} />
           </div>
         )}
-        {"by"}
-        <NameExpand name={notingAdminCkey} /> ({adminRank})
-        {!!isConfidential && "[CONFIDENTIALLY]"} on {date}
+        {"by "}
+        {notingAdminCkey ? (
+          <>
+            <NameExpand name={notingAdminCkey} /> ({adminRank})
+          </>
+        ) : (
+          <span>{adminRank}</span>
+        )}
+        {!!isConfidential && " [CONFIDENTIALLY]"} on {date}
         {roundId ? ` (#${roundId})` : ""}
       </div>
     </div>
@@ -1098,12 +1104,12 @@ const ColoredText = (props: ColoredTextType) => {
   return <div style={{ color: props.color }}>{props.children}</div>;
 };
 
-interface PlayerJobBan {
+export interface PlayerJobBan {
   id: number;
-  playerId: number;
-  adminId: number;
+  playerId?: number;
+  adminId?: number;
   text: string;
-  date: string;
+  date?: string;
   banTime?: number;
   expiration?: number;
   role: string;
@@ -1131,16 +1137,42 @@ const UserJobBansModal = (props: { player: Player }) => {
 };
 
 const JobBan = (props: { jobBan: PlayerJobBan }) => {
-  const { text, banningAdminCkey, date, role } = props.jobBan;
+  const { text, banningAdminCkey, date, role, expiration } = props.jobBan;
+
+  const formatExpiration = (exp: number | undefined): string | null => {
+    if (!exp) return null;
+    const expDate = new Date(exp * 1000);
+    return expDate.toLocaleDateString();
+  };
+
+  const expirationStr = formatExpiration(expiration);
 
   return (
     <div className="flex flex-col">
       <div>
         {role.toUpperCase()} - {text}
       </div>
-      <div className="flex flex-row justify-end italic">
-        by {banningAdminCkey} on {date}
+      <div className="flex flex-row justify-end italic gap-1">
+        {banningAdminCkey && `by ${banningAdminCkey}`}
+        {date && ` on ${date}`}
+        {expirationStr && ` (expires ${expirationStr})`}
+        {!expiration && " (permanent)"}
       </div>
+    </div>
+  );
+};
+
+export const JobBansList = (props: { jobBans?: PlayerJobBan[] }) => {
+  const { jobBans } = props;
+
+  return (
+    <div className="border-[#3f3f3f] border-2 p-3 flex flex-col gap-3 max-h-96 overflow-auto">
+      {jobBans?.map((jobBan) => (
+        <JobBan jobBan={jobBan} key={jobBan.id} />
+      ))}
+      {!jobBans?.length && (
+        <div className="flex flex-row justify-center">No job bans.</div>
+      )}
     </div>
   );
 };

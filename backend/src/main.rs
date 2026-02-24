@@ -319,6 +319,7 @@ async fn rocket() -> _ {
                 authentik::get_my_profile,
                 authentik::update_my_profile,
                 authentik::unlink_my_source,
+                authentik::get_my_player_info,
                 user_settings::get_my_settings,
                 user_settings::delete_my_session,
                 user_settings::revoke_my_consent,

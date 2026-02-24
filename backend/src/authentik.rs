@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use rocket::{State, http::Status, serde::json::Json};
 use rocket_db_pools::Connection;
+use sqlx::{query_as, FromRow, Row};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use serenity::all::{GuildId, Http, RoleId, UserId};
@@ -323,6 +324,42 @@ pub struct AvailableOAuthSource {
     pub slug: String,
     pub name: String,
     pub icon: Option<String>,
+}
+
+/// Self-service player info response (limited data for the user's own record)
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct MyPlayerInfoResponse {
+    pub ckey: String,
+    pub display_name: String,
+    pub notes: Vec<PublicNote>,
+    pub job_bans: Vec<PublicJobBan>,
+}
+
+/// Non-confidential note visible to the player
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct PublicNote {
+    pub id: i64,
+    pub text: Option<String>,
+    pub date: String,
+    pub is_ban: bool,
+    pub ban_time: Option<i64>,
+    pub admin_rank: String,
+    pub note_category: Option<i32>,
+    pub round_id: Option<i32>,
+}
+
+/// Active job ban visible to the player
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct PublicJobBan {
+    pub id: i64,
+    pub text: String,
+    pub date: Option<String>,
+    pub ban_time: Option<i64>,
+    pub expiration: Option<i64>,
+    pub role: String,
 }
 
 /// Request to update user profile fields
@@ -3499,6 +3536,199 @@ pub async fn unlink_my_source(
 
     Ok(Json(AuthentikSuccess {
         message: format!("Successfully unlinked {}", source_name),
+    }))
+}
+
+/// Database row for notes query
+#[derive(Debug, FromRow)]
+struct NoteRow {
+    id: i64,
+    text: Option<String>,
+    date: String,
+    is_ban: i32,
+    ban_time: Option<i64>,
+    admin_rank: String,
+    note_category: Option<i32>,
+    round_id: Option<i32>,
+}
+
+/// Database row for job bans query
+#[derive(Debug, FromRow)]
+struct JobBanRow {
+    id: i64,
+    text: String,
+    date: Option<String>,
+    ban_time: Option<i64>,
+    expiration: Option<i64>,
+    role: String,
+}
+
+/// GET /Authentik/MyPlayerInfo - get the current user's in-game player info (notes and job bans)
+#[get("/MyPlayerInfo")]
+pub async fn get_my_player_info(
+    user: AuthenticatedUser<Player>,
+    config: &State<Config>,
+    mut db: Connection<Cmdb>,
+) -> Result<Json<MyPlayerInfoResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    // Get the user's Authentik profile to determine their ckey
+    let authentik_user = get_user_by_uuid(&http_client, authentik_config, &user.sub)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    // Get linked sources to check for BYOND
+    let user_sources = get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "fetch_sources_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    // Determine ckey: BYOND if linked, else UUID without dashes (lowercase)
+    let byond_source = user_sources.iter().find(|s| s.source.slug == "byond");
+    let ckey = if let Some(byond) = byond_source {
+        byond
+            .identifier
+            .strip_prefix("user:")
+            .unwrap_or(&byond.identifier)
+            .to_lowercase()
+    } else {
+        authentik_user
+            .uuid
+            .as_ref()
+            .map(|u| u.replace('-', "").to_lowercase())
+            .ok_or_else(|| {
+                (
+                    Status::BadRequest,
+                    Json(AuthentikError {
+                        error: "no_ckey".to_string(),
+                        message: "No BYOND account linked and no UUID available".to_string(),
+                    }),
+                )
+            })?
+    };
+
+    // Get player ID from ckey
+    let player_id: i64 = sqlx::query("SELECT id FROM players WHERE ckey = ?")
+        .bind(&ckey)
+        .fetch_optional(&mut **db)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "database_error".to_string(),
+                    message: format!("Failed to query player: {}", e),
+                }),
+            )
+        })?
+        .map(|row| row.get("id"))
+        .ok_or_else(|| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "player_not_found".to_string(),
+                    message: "No player record found for your account".to_string(),
+                }),
+            )
+        })?;
+
+    // Fetch non-confidential notes (is_confidential = 0)
+    let notes: Vec<NoteRow> = query_as(
+        "SELECT id, text, date, is_ban, ban_time, admin_rank, note_category, round_id
+         FROM player_notes
+         WHERE player_id = ? AND is_confidential = 0
+         ORDER BY date DESC",
+    )
+    .bind(player_id)
+    .fetch_all(&mut **db)
+    .await
+    .map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "database_error".to_string(),
+                message: format!("Failed to query notes: {}", e),
+            }),
+        )
+    })?;
+
+    // Fetch active job bans (expiration is NULL or > current time)
+    let job_bans: Vec<JobBanRow> = query_as(
+        "SELECT id, text, date, ban_time, expiration, role
+         FROM player_job_bans
+         WHERE player_id = ? AND (expiration IS NULL OR expiration > UNIX_TIMESTAMP())
+         ORDER BY date DESC",
+    )
+    .bind(player_id)
+    .fetch_all(&mut **db)
+    .await
+    .map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "database_error".to_string(),
+                message: format!("Failed to query job bans: {}", e),
+            }),
+        )
+    })?;
+
+    // Convert to public types
+    let public_notes: Vec<PublicNote> = notes
+        .into_iter()
+        .map(|n| PublicNote {
+            id: n.id,
+            text: n.text,
+            date: n.date,
+            is_ban: n.is_ban != 0,
+            ban_time: n.ban_time,
+            admin_rank: n.admin_rank,
+            note_category: n.note_category,
+            round_id: n.round_id,
+        })
+        .collect();
+
+    let public_job_bans: Vec<PublicJobBan> = job_bans
+        .into_iter()
+        .map(|jb| PublicJobBan {
+            id: jb.id,
+            text: jb.text,
+            date: jb.date,
+            ban_time: jb.ban_time,
+            expiration: jb.expiration,
+            role: jb.role,
+        })
+        .collect();
+
+    Ok(Json(MyPlayerInfoResponse {
+        ckey,
+        display_name: authentik_user.name,
+        notes: public_notes,
+        job_bans: public_job_bans,
     }))
 }
 

@@ -1,141 +1,148 @@
 export type GroupMember = {
-	pk: number;
-	username: string;
-	ckey: string | null;
+  pk: number;
+  username: string;
+  ckey: string | null;
 };
 
 export type GroupMembersResponse = {
-	groupName: string;
-	members: GroupMember[];
+  groupName: string;
+  members: GroupMember[];
 };
 
 export type UserGroupRequest = {
-	ckey: string;
-	group_name: string;
+  ckey: string;
+  group_name: string;
 };
 
 export type AuthentikSuccess = {
-	message: string;
+  message: string;
 };
 
 export type AuthentikError = {
-	error: string;
-	message: string;
+  error: string;
+  message: string;
 };
 
 export type GroupAdminRanksResponse = {
-	groupName: string;
-	adminRanks: string[];
-	allowedRanks: string[];
+  groupName: string;
+  adminRanks: string[];
+  allowedRanks: string[];
 };
 
 export type UpdateAdminRanksRequest = {
-	groupName: string;
-	adminRanks: string[];
-	instanceName: string;
+  groupName: string;
+  adminRanks: string[];
+  instanceName: string;
 };
 
 export type GroupDisplayNameResponse = {
-	groupName: string;
-	displayName: string | null;
+  groupName: string;
+  displayName: string | null;
 };
 
 export type UpdateDisplayNameRequest = {
-	groupName: string;
-	displayName: string;
+  groupName: string;
+  displayName: string;
 };
 
 export type UserAdditionalTitlesResponse = {
-	ckey: string;
-	additionalTitles: string | null;
+  ckey: string;
+  additionalTitles: string | null;
 };
 
 export type UpdateAdditionalTitlesRequest = {
-	ckey: string;
-	additionalTitles: string;
+  ckey: string;
+  additionalTitles: string;
 };
 
 export type AuthentikUserFullResponse = {
-	pk: number;
-	uuid: string | null;
-	uid: string;
-	username: string;
-	name: string;
-	isActive: boolean;
-	lastLogin: string | null;
-	attributes: Record<string, unknown>;
-	groups: string[];
+  pk: number;
+  uuid: string | null;
+  uid: string;
+  username: string;
+  name: string;
+  isActive: boolean;
+  lastLogin: string | null;
+  attributes: Record<string, unknown>;
+  groups: string[];
 };
 
 export type AuthentikUserSearchResult = {
-	pk: number;
-	uuid: string | null;
-	username: string;
-	name: string;
-	isActive: boolean;
+  pk: number;
+  uuid: string | null;
+  username: string;
+  name: string;
+  isActive: boolean;
 };
 
 export type LinkedOAuthSource = {
-	connectionPk: number;
-	name: string;
-	slug: string;
-	icon: string | null;
-	identifier: string;
-	parsedId: string | null;
+  connectionPk: number;
+  name: string;
+  slug: string;
+  icon: string | null;
+  identifier: string;
+  parsedId: string | null;
 };
 
 export type AvailableOAuthSource = {
-	slug: string;
-	name: string;
-	icon: string | null;
+  slug: string;
+  name: string;
+  icon: string | null;
 };
 
 export type UserProfileResponse = {
-	pk: number;
-	uuid: string;
-	username: string;
-	name: string;
-	email: string | null;
-	linkedSources: LinkedOAuthSource[];
-	availableSources: AvailableOAuthSource[];
-	authentikBaseUrl: string;
+  pk: number;
+  uuid: string;
+  username: string;
+  name: string;
+  email: string | null;
+  linkedSources: LinkedOAuthSource[];
+  availableSources: AvailableOAuthSource[];
+  authentikBaseUrl: string;
 };
 
 export type UpdateProfileRequest = {
-	name?: string;
-	// Email changes require verification via Authentik flow, not direct update
+  name?: string;
+  // Email changes require verification via Authentik flow, not direct update
 };
 
 export type SessionInfo = {
-	uuid: string;
-	current: boolean;
-	device: string;
-	browser: string;
-	os: string;
-	lastIp: string;
-	lastUsed: string;
-	expires: string | null;
+  uuid: string;
+  current: boolean;
+  device: string;
+  browser: string;
+  os: string;
+  lastIp: string;
+  lastUsed: string;
+  expires: string | null;
 };
 
 export type ConsentInfo = {
-	pk: number;
-	applicationName: string;
-	applicationSlug: string;
-	applicationIcon: string | null;
-	applicationUrl: string | null;
-	expires: string | null;
+  pk: number;
+  applicationName: string;
+  applicationSlug: string;
+  applicationIcon: string | null;
+  applicationUrl: string | null;
+  expires: string | null;
 };
 
 export type MfaDeviceInfo = {
-	pk: string;
-	name: string;
-	deviceType: string;
-	created: string | null;
-	lastUsed: string | null;
+  pk: string;
+  name: string;
+  deviceType: string;
+  created: string | null;
+  lastUsed: string | null;
 };
 
 export type UserSettingsResponse = {
-	sessions: SessionInfo[];
-	consents: ConsentInfo[];
-	mfaDevices: MfaDeviceInfo[];
+  sessions: SessionInfo[];
+  consents: ConsentInfo[];
+  mfaDevices: MfaDeviceInfo[];
+};
+
+export type MyPlayerInfoResponse = {
+  ckey: string;
+  displayName: string;
+  notes: import("../components/userLookup").PlayerNote[];
+  jobBans: import("../components/userLookup").PlayerJobBan[];
 };
