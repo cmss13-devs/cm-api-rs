@@ -119,7 +119,7 @@ export const AccountSettings: React.FC = () => {
       }
 
       global?.updateAndShowToast(`Unlinked ${sourceName}`);
-      fetchProfile();
+      await fetchProfile();
     } catch (err) {
       global?.updateAndShowToast(
         err instanceof Error ? err.message : "Failed to unlink source"
@@ -335,15 +335,13 @@ const LinkedSourceRow: React.FC<{
 
   const externalLink = getExternalLink(source.slug, source.parsedId);
 
-  const iconUrl = source.icon ? `${authentikBaseUrl}${source.icon}` : null;
+  const iconUrl = source.icon
+    ? `${authentikBaseUrl}${source.icon}`
+    : `${authentikBaseUrl}/static/authentik/sources/${source.slug}.svg`;
 
   return (
     <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
-      {iconUrl ? (
-        <img src={iconUrl} alt={source.name} className="w-6 h-6" />
-      ) : (
-        <div className="w-6 h-6 bg-gray-600 rounded" />
-      )}
+      <img src={iconUrl} alt={source.name} className="w-6 h-6" />
       <span className="font-medium w-24">{source.name}</span>
       <span className="text-gray-300">{getDisplayId()}</span>
       {externalLink && (
@@ -377,15 +375,13 @@ const AvailableSourceRow: React.FC<{
     window.location.href = `${authentikBaseUrl}/if/flow/link-source/?source=${source.slug}`;
   };
 
-  const iconUrl = source.icon ? `${authentikBaseUrl}${source.icon}` : null;
+  const iconUrl = source.icon
+    ? `${authentikBaseUrl}${source.icon}`
+    : `${authentikBaseUrl}/static/authentik/sources/${source.slug}.svg`;
 
   return (
     <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
-      {iconUrl ? (
-        <img src={iconUrl} alt={source.name} className="w-6 h-6" />
-      ) : (
-        <div className="w-6 h-6 bg-gray-600 rounded" />
-      )}
+      <img src={iconUrl} alt={source.name} className="w-6 h-6" />
       <span className="font-medium w-24">{source.name}</span>
       <span className="text-gray-500">Not linked</span>
       <button
