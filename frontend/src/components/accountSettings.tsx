@@ -466,8 +466,12 @@ const ProfileTab: React.FC<{
           <span>
             {(() => {
               const byond = profile.linkedSources.find((s) => s.slug === "byond");
-              if (byond?.parsedId) {
-                return byond.parsedId;
+              if (byond) {
+                // Strip "user:" prefix if present
+                if (byond.identifier.startsWith("user:")) {
+                  return byond.identifier.slice(5);
+                }
+                return byond.identifier;
               }
               // Fallback to Authentik UUID without dashes
               return profile.uuid.replace(/-/g, "");
@@ -736,7 +740,7 @@ const AvailableSourceRow: React.FC<{
 }> = ({ source, authentikBaseUrl }) => {
   const handleLink = () => {
     // Redirect to Authentik link-source flow
-    window.location.href = `${authentikBaseUrl}/if/flow/link-source/?source=${source.slug}`;
+    window.location.href = `${authentikBaseUrl}/source/oauth/login/${source.slug}/`;
   };
 
   const iconUrl = source.icon
