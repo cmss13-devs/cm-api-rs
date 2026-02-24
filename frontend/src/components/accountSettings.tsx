@@ -331,6 +331,7 @@ export const AccountSettings: React.FC = () => {
             settings={settings}
             settingsLoading={settingsLoading}
             onDeleteDevice={handleDeleteMfaDevice}
+            authentikBaseUrl={profile.authentikBaseUrl}
           />
         )}
       </div>
@@ -573,29 +574,87 @@ const MfaTab: React.FC<{
   settings: UserSettingsResponse | null;
   settingsLoading: boolean;
   onDeleteDevice: (deviceType: string, pk: string, name: string) => void;
-}> = ({ settings, settingsLoading, onDeleteDevice }) => (
-  <div className="flex flex-col gap-4">
-    <h2 className="text-lg font-semibold">MFA Devices</h2>
+  authentikBaseUrl: string;
+}> = ({ settings, settingsLoading, onDeleteDevice, authentikBaseUrl }) => {
+  const [enrollOpen, setEnrollOpen] = useState(false);
 
-    {settingsLoading ? (
-      <div className="text-gray-400">Loading MFA devices...</div>
-    ) : settings?.mfaDevices.length === 0 ? (
-      <div className="text-gray-400">No MFA devices configured</div>
-    ) : (
-      <div className="flex flex-col gap-2">
-        {settings?.mfaDevices.map((device) => (
-          <MfaDeviceRow
-            key={`${device.deviceType}-${device.pk}`}
-            device={device}
-            onDelete={() =>
-              onDeleteDevice(device.deviceType, device.pk, device.name)
-            }
-          />
-        ))}
+  const enrollOptions = [
+    {
+      label: "Authenticator App (TOTP)",
+      path: "/if/flow/default-authenticator-totp-setup/",
+    },
+    {
+      label: "Passkey (WebAuthn)",
+      path: "/if/flow/default-authenticator-webauthn-setup/",
+    },
+    {
+      label: "Backup Codes",
+      path: "/if/flow/default-authenticator-static-setup/",
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-row items-center justify-between">
+        <h2 className="text-lg font-semibold">MFA Devices</h2>
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setEnrollOpen(!enrollOpen)}
+            className="bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded text-sm flex items-center gap-1"
+          >
+            Enroll
+            <svg
+              className={`w-4 h-4 transition-transform ${enrollOpen ? "rotate-180" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19 9l-7 7-7-7"
+              />
+            </svg>
+          </button>
+          {enrollOpen && (
+            <div className="absolute right-0 mt-1 w-48 bg-[#2a2a2a] border border-[#3f3f3f] rounded shadow-lg z-10">
+              {enrollOptions.map((option) => (
+                <a
+                  key={option.path}
+                  href={`${authentikBaseUrl}${option.path}`}
+                  className="block px-4 py-2 text-sm hover:bg-[#3f3f3f] first:rounded-t last:rounded-b"
+                >
+                  {option.label}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-    )}
-  </div>
-);
+
+      {settingsLoading ? (
+        <div className="text-gray-400">Loading MFA devices...</div>
+      ) : settings?.mfaDevices.length === 0 ? (
+        <div className="text-gray-400">No MFA devices configured</div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {settings?.mfaDevices.map((device) => (
+            <MfaDeviceRow
+              key={`${device.deviceType}-${device.pk}`}
+              device={device}
+              onDelete={() =>
+                onDeleteDevice(device.deviceType, device.pk, device.name)
+              }
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const LinkedSourceRow: React.FC<{
   source: LinkedOAuthSource;

@@ -153,12 +153,12 @@ pub struct UserSettingsResponse {
 async fn get_user_sessions(
     client: &reqwest::Client,
     config: &AuthentikConfig,
-    user_pk: i64,
+    username: &str,
 ) -> Result<Vec<AuthentikSession>, String> {
     let url = format!(
-        "{}/api/v3/core/authenticated_sessions/?user={}",
+        "{}/api/v3/core/authenticated_sessions/?user__username={}",
         config.base_url.trim_end_matches('/'),
-        user_pk
+        username
     );
 
     let response = client
@@ -397,7 +397,7 @@ pub async fn get_my_settings(
 
     // Fetch sessions, consents, and MFA devices in parallel
     let (sessions_result, consents_result, mfa_result) = tokio::join!(
-        get_user_sessions(&http_client, authentik_config, authentik_user.pk),
+        get_user_sessions(&http_client, authentik_config, &authentik_user.username),
         get_user_consents(&http_client, authentik_config, authentik_user.pk),
         get_user_mfa_devices(&http_client, authentik_config, authentik_user.pk)
     );
@@ -503,7 +503,7 @@ pub async fn delete_my_session(
             )
         })?;
 
-    let sessions = get_user_sessions(&http_client, authentik_config, authentik_user.pk)
+    let sessions = get_user_sessions(&http_client, authentik_config, &authentik_user.username)
         .await
         .map_err(|e| {
             (
