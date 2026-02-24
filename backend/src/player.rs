@@ -596,12 +596,14 @@ pub struct BannedPlayer {
 
 /// Returns all currently banned players (permabanned or active time bans)
 /// Accessible by any authenticated user
+/// Staff users see all bans; non-staff users see only bans after the cutoff date
 /// Supports pagination with ?page=N (0-indexed, 20 results per page)
 /// Supports filtering by ckey with ?ckey=<search>
 #[get("/Banned?<page>&<ckey>")]
 pub async fn get_banned_players(
     mut db: Connection<Cmdb>,
     _user: AuthenticatedUser<PlayerPermission>,
+    staff: Option<AuthenticatedUser<Staff>>,
     page: Option<i64>,
     ckey: Option<String>,
 ) -> Json<Vec<BannedPlayer>> {
@@ -614,43 +616,81 @@ pub async fn get_banned_players(
     let page = page.unwrap_or(0).max(0);
     let offset = page * 20;
 
-    let cutoff_date = "2026-02-24";
+    let is_staff = staff.is_some();
 
-    let result = if let Some(ckey_filter) = ckey {
-        let ckey_pattern = format!("%{}%", ckey_filter);
-        query_as(
-            r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
-                     is_permabanned, permaban_reason, permaban_date
-              FROM players
-              WHERE ckey LIKE ?
-                AND ((is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date LIKE '202%' AND permaban_date >= ?)
-                   OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date LIKE '202%' AND time_ban_date >= ? AND time_ban_expiration > ?))
-              ORDER BY COALESCE(permaban_date, time_ban_date) DESC
-              LIMIT 20 OFFSET ?",
-        )
-        .bind(ckey_pattern)
-        .bind(cutoff_date)
-        .bind(cutoff_date)
-        .bind(current_byond_time)
-        .bind(offset)
-        .fetch_all(&mut **db)
-        .await
-    } else {
-        query_as(
-            r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
-                     is_permabanned, permaban_reason, permaban_date
-              FROM players
-              WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date LIKE '202%' AND permaban_date >= ?)
-                 OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date LIKE '202%' AND time_ban_date >= ? AND time_ban_expiration > ?)
-              ORDER BY COALESCE(permaban_date, time_ban_date) DESC
-              LIMIT 20 OFFSET ?",
-        )
-        .bind(cutoff_date)
-        .bind(cutoff_date)
-        .bind(current_byond_time)
-        .bind(offset)
-        .fetch_all(&mut **db)
-        .await
+    let result = match (ckey.as_ref(), is_staff) {
+        (Some(ckey_filter), true) => {
+            let ckey_pattern = format!("%{}%", ckey_filter);
+            query_as(
+                r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
+                         is_permabanned, permaban_reason, permaban_date
+                  FROM players
+                  WHERE ckey LIKE ?
+                    AND ((is_permabanned = 1 AND permaban_reason IS NOT NULL)
+                       OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_expiration > ?))
+                  ORDER BY COALESCE(permaban_date, time_ban_date) DESC
+                  LIMIT 20 OFFSET ?",
+            )
+            .bind(ckey_pattern)
+            .bind(current_byond_time)
+            .bind(offset)
+            .fetch_all(&mut **db)
+            .await
+        }
+        (Some(ckey_filter), false) => {
+            let ckey_pattern = format!("%{}%", ckey_filter);
+            let cutoff_date = "2026-02-24";
+            query_as(
+                r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
+                         is_permabanned, permaban_reason, permaban_date
+                  FROM players
+                  WHERE ckey LIKE ?
+                    AND ((is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date LIKE '202%' AND permaban_date >= ?)
+                       OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date LIKE '202%' AND time_ban_date >= ? AND time_ban_expiration > ?))
+                  ORDER BY COALESCE(permaban_date, time_ban_date) DESC
+                  LIMIT 20 OFFSET ?",
+            )
+            .bind(ckey_pattern)
+            .bind(cutoff_date)
+            .bind(cutoff_date)
+            .bind(current_byond_time)
+            .bind(offset)
+            .fetch_all(&mut **db)
+            .await
+        }
+        (None, true) => {
+            query_as(
+                r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
+                         is_permabanned, permaban_reason, permaban_date
+                  FROM players
+                  WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL)
+                     OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_expiration > ?)
+                  ORDER BY COALESCE(permaban_date, time_ban_date) DESC
+                  LIMIT 20 OFFSET ?",
+            )
+            .bind(current_byond_time)
+            .bind(offset)
+            .fetch_all(&mut **db)
+            .await
+        }
+        (None, false) => {
+            let cutoff_date = "2026-02-24";
+            query_as(
+                r"SELECT ckey, is_time_banned, time_ban_reason, time_ban_date, time_ban_expiration,
+                         is_permabanned, permaban_reason, permaban_date
+                  FROM players
+                  WHERE (is_permabanned = 1 AND permaban_reason IS NOT NULL AND permaban_date LIKE '202%' AND permaban_date >= ?)
+                     OR (is_time_banned = 1 AND time_ban_date IS NOT NULL AND time_ban_date LIKE '202%' AND time_ban_date >= ? AND time_ban_expiration > ?)
+                  ORDER BY COALESCE(permaban_date, time_ban_date) DESC
+                  LIMIT 20 OFFSET ?",
+            )
+            .bind(cutoff_date)
+            .bind(cutoff_date)
+            .bind(current_byond_time)
+            .bind(offset)
+            .fetch_all(&mut **db)
+            .await
+        }
     };
 
     match result {
@@ -671,48 +711,83 @@ pub struct HistoricalBan {
 
 /// Returns historical bans from player notes (is_ban = 1)
 /// Accessible by any authenticated user
+/// Staff users see all bans; non-staff users see only bans after the cutoff date
 /// Supports pagination with ?page=N (0-indexed, 20 results per page)
 /// Supports filtering by ckey with ?ckey=<search>
 #[get("/BanHistory?<page>&<ckey>")]
 pub async fn get_ban_history(
     mut db: Connection<Cmdb>,
     _user: AuthenticatedUser<PlayerPermission>,
+    staff: Option<AuthenticatedUser<Staff>>,
     page: Option<i64>,
     ckey: Option<String>,
 ) -> Json<Vec<HistoricalBan>> {
     let page = page.unwrap_or(0).max(0);
     let offset = page * 20;
 
-    let cutoff_date = "2026-02-24";
+    let is_staff = staff.is_some();
 
-    let result = if let Some(ckey_filter) = ckey {
-        let ckey_pattern = format!("%{}%", ckey_filter);
-        query_as(
-            r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
-              FROM player_notes n
-              INNER JOIN players p ON n.player_id = p.id
-              WHERE n.is_ban = 1 AND p.ckey LIKE ? AND n.date LIKE '202%' AND n.date >= ?
-              ORDER BY n.id DESC
-              LIMIT 20 OFFSET ?",
-        )
-        .bind(ckey_pattern)
-        .bind(cutoff_date)
-        .bind(offset)
-        .fetch_all(&mut **db)
-        .await
-    } else {
-        query_as(
-            r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
-              FROM player_notes n
-              INNER JOIN players p ON n.player_id = p.id
-              WHERE n.is_ban = 1 AND n.date LIKE '202%' AND n.date >= ?
-              ORDER BY n.id DESC
-              LIMIT 20 OFFSET ?",
-        )
-        .bind(cutoff_date)
-        .bind(offset)
-        .fetch_all(&mut **db)
-        .await
+    let result = match (ckey.as_ref(), is_staff) {
+        (Some(ckey_filter), true) => {
+            let ckey_pattern = format!("%{}%", ckey_filter);
+            query_as(
+                r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
+                  FROM player_notes n
+                  INNER JOIN players p ON n.player_id = p.id
+                  WHERE n.is_ban = 1 AND p.ckey LIKE ?
+                  ORDER BY n.id DESC
+                  LIMIT 20 OFFSET ?",
+            )
+            .bind(ckey_pattern)
+            .bind(offset)
+            .fetch_all(&mut **db)
+            .await
+        }
+        (Some(ckey_filter), false) => {
+            let ckey_pattern = format!("%{}%", ckey_filter);
+            let cutoff_date = "2026-02-24";
+            query_as(
+                r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
+                  FROM player_notes n
+                  INNER JOIN players p ON n.player_id = p.id
+                  WHERE n.is_ban = 1 AND p.ckey LIKE ? AND n.date LIKE '202%' AND n.date >= ?
+                  ORDER BY n.id DESC
+                  LIMIT 20 OFFSET ?",
+            )
+            .bind(ckey_pattern)
+            .bind(cutoff_date)
+            .bind(offset)
+            .fetch_all(&mut **db)
+            .await
+        }
+        (None, true) => {
+            query_as(
+                r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
+                  FROM player_notes n
+                  INNER JOIN players p ON n.player_id = p.id
+                  WHERE n.is_ban = 1
+                  ORDER BY n.id DESC
+                  LIMIT 20 OFFSET ?",
+            )
+            .bind(offset)
+            .fetch_all(&mut **db)
+            .await
+        }
+        (None, false) => {
+            let cutoff_date = "2026-02-24";
+            query_as(
+                r"SELECT p.ckey, n.text, n.date, n.ban_time, n.round_id
+                  FROM player_notes n
+                  INNER JOIN players p ON n.player_id = p.id
+                  WHERE n.is_ban = 1 AND n.date LIKE '202%' AND n.date >= ?
+                  ORDER BY n.id DESC
+                  LIMIT 20 OFFSET ?",
+            )
+            .bind(cutoff_date)
+            .bind(offset)
+            .fetch_all(&mut **db)
+            .await
+        }
     };
 
     match result {
