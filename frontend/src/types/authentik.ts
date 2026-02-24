@@ -103,7 +103,7 @@ export type UserProfileResponse = {
 
 export type UpdateProfileRequest = {
 	name?: string;
-	email?: string;
+	// Email changes require verification via Authentik flow, not direct update
 };
 
 export type SessionInfo = {

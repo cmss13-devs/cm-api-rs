@@ -112,35 +112,15 @@ export const AccountSettings: React.FC = () => {
     }
   };
 
-  const handleSaveEmail = async () => {
-    if (!profile || pendingEmail === (profile.email || "")) {
+  const handleChangeEmail = () => {
+    if (!profile || !pendingEmail || pendingEmail === (profile.email || "")) {
       setEditingEmail(false);
       return;
     }
 
-    setSaving(true);
-    try {
-      const response = await callApi("/Authentik/MyProfile", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: pendingEmail }),
-      });
-
-      if (!response.ok) {
-        const err: AuthentikError = await response.json();
-        throw new Error(err.message || "Failed to update email");
-      }
-
-      setProfile({ ...profile, email: pendingEmail || null });
-      setEditingEmail(false);
-      global?.updateAndShowToast("Email updated");
-    } catch (err) {
-      global?.updateAndShowToast(
-        err instanceof Error ? err.message : "Failed to update email"
-      );
-    } finally {
-      setSaving(false);
-    }
+    // Redirect to Authentik email change flow with new email as query param
+    const encodedEmail = encodeURIComponent(pendingEmail);
+    window.location.href = `${profile.authentikBaseUrl}/if/flow/change-email/?email=${encodedEmail}`;
   };
 
   const handleUnlink = async (connectionPk: number, sourceName: string) => {
@@ -303,7 +283,7 @@ export const AccountSettings: React.FC = () => {
             setPendingName={setPendingName}
             setPendingEmail={setPendingEmail}
             handleSaveName={handleSaveName}
-            handleSaveEmail={handleSaveEmail}
+            handleChangeEmail={handleChangeEmail}
             handleCancelName={handleCancelName}
             handleCancelEmail={handleCancelEmail}
             handleUnlink={handleUnlink}
@@ -352,7 +332,7 @@ const ProfileTab: React.FC<{
   setPendingName: (v: string) => void;
   setPendingEmail: (v: string) => void;
   handleSaveName: () => void;
-  handleSaveEmail: () => void;
+  handleChangeEmail: () => void;
   handleCancelName: () => void;
   handleCancelEmail: () => void;
   handleUnlink: (pk: number, name: string) => void;
@@ -368,7 +348,7 @@ const ProfileTab: React.FC<{
   setPendingName,
   setPendingEmail,
   handleSaveName,
-  handleSaveEmail,
+  handleChangeEmail,
   handleCancelName,
   handleCancelEmail,
   handleUnlink,
@@ -438,25 +418,22 @@ const ProfileTab: React.FC<{
                 type="email"
                 value={pendingEmail}
                 onChange={(e) => setPendingEmail(e.target.value)}
-                disabled={saving}
                 className="bg-[#2a2a2a] border border-[#3f3f3f] rounded px-2 py-1 text-white flex-1 max-w-xs"
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") handleSaveEmail();
+                  if (e.key === "Enter") handleChangeEmail();
                   if (e.key === "Escape") handleCancelEmail();
                 }}
               />
               <button
                 type="button"
-                onClick={handleSaveEmail}
-                disabled={saving}
-                className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 px-3 py-1 rounded text-sm"
+                onClick={handleChangeEmail}
+                className="bg-green-600 hover:bg-green-700 px-3 py-1 rounded text-sm"
               >
-                {saving ? "Saving..." : "Save"}
+                Verify
               </button>
               <button
                 type="button"
                 onClick={handleCancelEmail}
-                disabled={saving}
                 className="bg-gray-600 hover:bg-gray-700 px-3 py-1 rounded text-sm"
               >
                 Cancel

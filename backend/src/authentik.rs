@@ -330,7 +330,7 @@ pub struct AvailableOAuthSource {
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct UpdateProfileRequest {
     pub name: Option<String>,
-    pub email: Option<String>,
+    // Email changes require verification via Authentik flow, not direct update
 }
 
 #[derive(Debug, Clone)]
@@ -3371,12 +3371,12 @@ pub async fn update_my_profile(
         )
     })?;
 
-    if request.name.is_none() && request.email.is_none() {
+    if request.name.is_none() {
         return Err((
             Status::BadRequest,
             Json(AuthentikError {
                 error: "no_fields_to_update".to_string(),
-                message: "At least one field (name or email) must be provided".to_string(),
+                message: "Name field must be provided".to_string(),
             }),
         ));
     }
@@ -3400,7 +3400,7 @@ pub async fn update_my_profile(
         authentik_config,
         authentik_user.pk,
         request.name.as_deref(),
-        request.email.as_deref(),
+        None, // Email changes require verification via Authentik flow
     )
     .await
     .map_err(|e| {
@@ -3413,16 +3413,8 @@ pub async fn update_my_profile(
         )
     })?;
 
-    let mut updated_fields = Vec::new();
-    if request.name.is_some() {
-        updated_fields.push("name");
-    }
-    if request.email.is_some() {
-        updated_fields.push("email");
-    }
-
     Ok(Json(AuthentikSuccess {
-        message: format!("Successfully updated: {}", updated_fields.join(", ")),
+        message: "Successfully updated name".to_string(),
     }))
 }
 
