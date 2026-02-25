@@ -1,8 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { LinkColor } from "./link";
-import { NameExpand } from "./nameExpand";
 import type { User } from "../types/global";
+import { NameExpand } from "./nameExpand";
 
 interface NavDropdownProps {
   label: string;
@@ -28,7 +27,7 @@ function NavDropdown({ label, children }: NavDropdownProps) {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="text-cyan-400 hover:text-cyan-300 hover:underline flex items-center gap-1"
+        className="text-gray-300 hover:text-white hover:underline flex items-center gap-1"
       >
         {label}
         <svg
@@ -36,6 +35,7 @@ function NavDropdown({ label, children }: NavDropdownProps) {
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
+          aria-hidden="true"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
@@ -60,7 +60,7 @@ function NavDropdownItem({ to, children, onClick }: NavDropdownItemProps) {
     <Link
       to={to}
       onClick={onClick}
-      className="block px-3 py-1.5 text-cyan-400 hover:text-cyan-300 hover:bg-gray-700/50"
+      className="block px-3 py-1.5 text-gray-300 hover:text-white hover:bg-gray-700/50"
     >
       {children}
     </Link>
@@ -81,24 +81,18 @@ export function Navigation({ user, onLogout }: NavigationProps) {
     <nav className="w-full foreground p-3">
       {/* Desktop Navigation */}
       <div className="hidden md:flex flex-row items-center gap-3">
-        <LinkColor>
-          <Link to="/" className="underline font-bold">
-            [cmdb]
-          </Link>
-        </LinkColor>
+        <Link to="/" className="text-white hover:underline font-bold">
+          [cmdb]
+        </Link>
 
         <span className="text-gray-500">|</span>
 
-        {/* Players Dropdown */}
-        <NavDropdown label="Players">
+        {/* Bans Dropdown */}
+        <NavDropdown label="Bans">
           <NavDropdownItem to="/bans">Active Bans</NavDropdownItem>
           <NavDropdownItem to="/ban-history">Ban History</NavDropdownItem>
           {user?.isStaff && (
-            <>
-              <NavDropdownItem to="/user">User Lookup</NavDropdownItem>
-              <NavDropdownItem to="/new_players">New Players</NavDropdownItem>
-              <NavDropdownItem to="/whitelists">Whitelists</NavDropdownItem>
-            </>
+            <NavDropdownItem to="/sticky">Stickybans</NavDropdownItem>
           )}
         </NavDropdown>
 
@@ -106,11 +100,19 @@ export function Navigation({ user, onLogout }: NavigationProps) {
           <>
             <span className="text-gray-500">|</span>
 
-            {/* Admin Tools Dropdown */}
-            <NavDropdown label="Admin">
+            {/* Lookup Dropdown */}
+            <NavDropdown label="Lookup">
+              <NavDropdownItem to="/user">Player Lookup</NavDropdownItem>
+              <NavDropdownItem to="/authentik">User Lookup</NavDropdownItem>
+            </NavDropdown>
+
+            <span className="text-gray-500">|</span>
+
+            {/* Administrative Dropdown */}
+            <NavDropdown label="Administrative">
               <NavDropdownItem to="/ticket">Tickets</NavDropdownItem>
-              <NavDropdownItem to="/sticky">Stickybans</NavDropdownItem>
-              <NavDropdownItem to="/authentik">Authentik</NavDropdownItem>
+              <NavDropdownItem to="/new_players">New Players</NavDropdownItem>
+              <NavDropdownItem to="/whitelists">Whitelists</NavDropdownItem>
             </NavDropdown>
           </>
         )}
@@ -118,9 +120,9 @@ export function Navigation({ user, onLogout }: NavigationProps) {
         {user?.manageable?.length ? (
           <>
             <span className="text-gray-500">|</span>
-            <LinkColor>
-              <Link to="/user_manager">User Manager</Link>
-            </LinkColor>
+            <Link to="/user_manager" className="text-gray-300 hover:text-white hover:underline">
+              User Manager
+            </Link>
           </>
         ) : null}
 
@@ -132,9 +134,9 @@ export function Navigation({ user, onLogout }: NavigationProps) {
               {user.isStaff ? <NameExpand name={user.ckey} /> : user.ckey}
               )
             </span>
-            <LinkColor>
-              <Link to="/account">Account</Link>
-            </LinkColor>
+            <Link to="/account" className="text-gray-300 hover:text-white hover:underline">
+              Account
+            </Link>
             <button
               type="button"
               onClick={onLogout}
@@ -148,11 +150,9 @@ export function Navigation({ user, onLogout }: NavigationProps) {
 
       {/* Mobile Navigation */}
       <div className="md:hidden flex items-center justify-between">
-        <LinkColor>
-          <Link to="/" className="underline font-bold">
-            [cmdb]
-          </Link>
-        </LinkColor>
+        <Link to="/" className="text-white hover:underline font-bold">
+          [cmdb]
+        </Link>
 
         <button
           type="button"
@@ -161,11 +161,11 @@ export function Navigation({ user, onLogout }: NavigationProps) {
           aria-label="Toggle menu"
         >
           {mobileMenuOpen ? (
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           ) : (
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           )}
@@ -181,38 +181,38 @@ export function Navigation({ user, onLogout }: NavigationProps) {
             </div>
           )}
 
-          <div className="text-gray-500 text-xs uppercase mt-2">Players</div>
-          <Link to="/bans" onClick={closeMobileMenu} className="text-cyan-400 hover:text-cyan-300 pl-2">
+          <div className="text-gray-500 text-xs uppercase mt-2">Bans</div>
+          <Link to="/bans" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
             Active Bans
           </Link>
-          <Link to="/ban-history" onClick={closeMobileMenu} className="text-cyan-400 hover:text-cyan-300 pl-2">
+          <Link to="/ban-history" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
             Ban History
           </Link>
           {user?.isStaff && (
-            <>
-              <Link to="/user" onClick={closeMobileMenu} className="text-cyan-400 hover:text-cyan-300 pl-2">
-                User Lookup
-              </Link>
-              <Link to="/new_players" onClick={closeMobileMenu} className="text-cyan-400 hover:text-cyan-300 pl-2">
-                New Players
-              </Link>
-              <Link to="/whitelists" onClick={closeMobileMenu} className="text-cyan-400 hover:text-cyan-300 pl-2">
-                Whitelists
-              </Link>
-            </>
+            <Link to="/sticky" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
+              Stickybans
+            </Link>
           )}
 
           {user?.isStaff && (
             <>
-              <div className="text-gray-500 text-xs uppercase mt-3">Admin</div>
-              <Link to="/ticket" onClick={closeMobileMenu} className="text-cyan-400 hover:text-cyan-300 pl-2">
+              <div className="text-gray-500 text-xs uppercase mt-3">Lookup</div>
+              <Link to="/user" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
+                Player Lookup
+              </Link>
+              <Link to="/authentik" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
+                User Lookup
+              </Link>
+
+              <div className="text-gray-500 text-xs uppercase mt-3">Administrative</div>
+              <Link to="/ticket" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
                 Tickets
               </Link>
-              <Link to="/sticky" onClick={closeMobileMenu} className="text-cyan-400 hover:text-cyan-300 pl-2">
-                Stickybans
+              <Link to="/new_players" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
+                New Players
               </Link>
-              <Link to="/authentik" onClick={closeMobileMenu} className="text-cyan-400 hover:text-cyan-300 pl-2">
-                Authentik
+              <Link to="/whitelists" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
+                Whitelists
               </Link>
             </>
           )}
@@ -220,7 +220,7 @@ export function Navigation({ user, onLogout }: NavigationProps) {
           {user?.manageable?.length ? (
             <>
               <div className="text-gray-500 text-xs uppercase mt-3">Management</div>
-              <Link to="/user_manager" onClick={closeMobileMenu} className="text-cyan-400 hover:text-cyan-300 pl-2">
+              <Link to="/user_manager" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
                 User Manager
               </Link>
             </>
@@ -229,7 +229,7 @@ export function Navigation({ user, onLogout }: NavigationProps) {
           {user && (
             <>
               <div className="text-gray-500 text-xs uppercase mt-3">Account</div>
-              <Link to="/account" onClick={closeMobileMenu} className="text-cyan-400 hover:text-cyan-300 pl-2">
+              <Link to="/account" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
                 Settings
               </Link>
               <button
