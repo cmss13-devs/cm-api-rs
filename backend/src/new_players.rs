@@ -8,6 +8,18 @@ use crate::{
     player::Player,
 };
 
+/// Get players who joined within the last N minutes
+#[utoipa::path(
+    get,
+    path = "/api/NewPlayers/{minutes}",
+    tag = "new_players",
+    security(("session_cookie" = [])),
+    params(("minutes" = i64, Path, description = "Minutes to look back")),
+    responses(
+        (status = 200, description = "List of new players", body = Vec<crate::player::Player>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/<minutes>")]
 pub async fn get_new_players(
     mut db: Connection<Cmdb>,

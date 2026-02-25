@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use rocket::{State, http::Status, serde::json::Json};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use crate::{
     Config,
@@ -10,13 +11,13 @@ use crate::{
     steam::SteamConfig,
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(crate = "rocket::serde")]
 pub struct AchievementsResponse {
     pub achievements: Vec<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)]
 #[serde(crate = "rocket::serde")]
 pub struct SetAchievementRequest {
     pub ckey: String,
@@ -30,7 +31,7 @@ fn default_instance() -> String {
     "default".to_string()
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(crate = "rocket::serde")]
 pub struct SetAchievementResponse {
     pub success: bool,
@@ -243,6 +244,22 @@ async fn get_steam_id_for_ckey(
 /// Returns list of uncompleted achievement keys.
 /// Requires Bearer token authorization.
 /// `instance` parameter selects which Steam app to query (e.g., "default", "playtest"). Defaults to "default".
+#[utoipa::path(
+    get,
+    path = "/api/Achievements",
+    tag = "achievements",
+    security(("bearer_token" = [])),
+    params(
+        ("ckey" = String, Query, description = "Player ckey"),
+        ("instance" = Option<String>, Query, description = "Steam app instance (e.g., 'default', 'playtest')")
+    ),
+    responses(
+        (status = 200, description = "List of earned achievements", body = AchievementsResponse),
+        (status = 401, description = "Not authorized"),
+        (status = 424, description = "Steam API error"),
+        (status = 500, description = "Server error")
+    )
+)]
 #[get("/?<ckey>&<instance>")]
 pub async fn get_achievements(
     auth_header: AuthorizationHeader,
@@ -333,6 +350,18 @@ pub async fn get_achievements(
 ///
 /// Expects JSON body with ckey and achievement key.
 /// Requires Bearer token authorization.
+#[utoipa::path(
+    post,
+    path = "/api/Achievements",
+    tag = "achievements",
+    security(("bearer_token" = [])),
+    request_body = SetAchievementRequest,
+    responses(
+        (status = 200, description = "Achievement set result", body = SetAchievementResponse),
+        (status = 401, description = "Not authorized"),
+        (status = 500, description = "Server error")
+    )
+)]
 #[post("/", format = "json", data = "<request>")]
 pub async fn set_achievement(
     auth_header: AuthorizationHeader,

@@ -11,6 +11,7 @@ use rocket::{
 };
 use rocket_db_pools::Connection;
 use sqlx::{MySqlConnection, Row, prelude::FromRow, query, query_as, types::BigDecimal};
+use utoipa::ToSchema;
 
 use crate::{
     Cmdb, Config,
@@ -50,7 +51,7 @@ pub fn validate_auth_header(auth_header: Option<&str>, config: &Config) -> bool 
     token == api_auth.token
 }
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize, FromRow, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct Player {
     id: i64,
@@ -121,7 +122,7 @@ impl Player {
     }
 }
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize, FromRow, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct Note {
     id: i64,
@@ -161,6 +162,20 @@ async fn get_player_notes(db: &mut MySqlConnection, id: i64) -> Option<Vec<Note>
     Some(user_notes)
 }
 
+/// Get notes applied by an admin
+#[utoipa::path(
+    get,
+    path = "/api/User/{id}/AppliedNotes",
+    tag = "player",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Admin player ID")
+    ),
+    responses(
+        (status = 200, description = "Notes applied by this admin", body = Vec<Note>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/<id>/AppliedNotes")]
 pub async fn applied_notes(
     mut db: Connection<Cmdb>,
@@ -184,7 +199,7 @@ pub async fn applied_notes(
     Json(user_notes)
 }
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize, FromRow, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct JobBan {
     id: i64,
@@ -231,6 +246,23 @@ async fn get_discord_id_from_player_id(db: &mut MySqlConnection, id: i64) -> Opt
     }
 }
 
+/// Get player by ckey or discord_id
+#[utoipa::path(
+    get,
+    path = "/api/User",
+    tag = "player",
+    security(("session_cookie" = []), ("bearer_token" = [])),
+    params(
+        ("ckey" = Option<String>, Query, description = "Player ckey"),
+        ("discord_id" = Option<String>, Query, description = "Player discord ID")
+    ),
+    responses(
+        (status = 200, description = "Player found", body = Player),
+        (status = 400, description = "Missing ckey or discord_id parameter"),
+        (status = 401, description = "Not authorized"),
+        (status = 404, description = "Player not found")
+    )
+)]
 #[get("/?<ckey>&<discord_id>")]
 pub async fn index(
     mut db: Connection<Cmdb>,
@@ -280,6 +312,20 @@ pub async fn index(
     Ok(Json(user.add_metadata(&mut db).await))
 }
 
+/// Get player by database ID
+#[utoipa::path(
+    get,
+    path = "/api/User/{id}",
+    tag = "player",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i32, Path, description = "Player database ID")
+    ),
+    responses(
+        (status = 200, description = "Player found", body = Player),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/<id>")]
 pub async fn id(
     mut db: Connection<Cmdb>,
@@ -375,7 +421,7 @@ pub async fn create_note(
     }
 }
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize, FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Playtime {
     id: i64,
@@ -384,6 +430,20 @@ pub struct Playtime {
     total_minutes: i32,
 }
 
+/// Get player playtime breakdown by role
+#[utoipa::path(
+    get,
+    path = "/api/User/{id}/Playtime",
+    tag = "player",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Player database ID")
+    ),
+    responses(
+        (status = 200, description = "Playtime breakdown", body = Vec<Playtime>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/<id>/Playtime")]
 pub async fn get_playtime(
     mut db: Connection<Cmdb>,
@@ -418,6 +478,20 @@ pub async fn query_total_playtime_minutes(db: &mut Connection<Cmdb>, ckey: &str)
     }
 }
 
+/// Get total playtime in minutes for a player
+#[utoipa::path(
+    get,
+    path = "/api/User/TotalPlaytime",
+    tag = "player",
+    security(("session_cookie" = []), ("bearer_token" = [])),
+    params(
+        ("ckey" = String, Query, description = "Player ckey")
+    ),
+    responses(
+        (status = 200, description = "Total playtime in minutes", body = String),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/TotalPlaytime?<ckey>")]
 pub async fn get_total_playtime(
     mut db: Connection<Cmdb>,
@@ -440,6 +514,21 @@ pub async fn get_total_playtime(
     }
 }
 
+/// Get recent playtime for a player within the last N days
+#[utoipa::path(
+    get,
+    path = "/api/User/{id}/Playtime/{days}",
+    tag = "player",
+    security(("session_cookie" = [])),
+    params(
+        ("id" = i64, Path, description = "Player database ID"),
+        ("days" = i64, Path, description = "Number of days to look back")
+    ),
+    responses(
+        (status = 200, description = "Recent playtime breakdown", body = Vec<Playtime>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/<id>/Playtime/<days>")]
 pub async fn get_recent_playtime(
     mut db: Connection<Cmdb>,
@@ -525,6 +614,21 @@ pub async fn get_player_ckey(db: &mut MySqlConnection, id: i64) -> Option<String
     Some(player_ckey)
 }
 
+/// Add a player to VPN whitelist
+#[utoipa::path(
+    post,
+    path = "/api/User/VpnWhitelist",
+    tag = "player",
+    security(("session_cookie" = [])),
+    params(
+        ("ckey" = String, Query, description = "Player ckey to whitelist")
+    ),
+    responses(
+        (status = 201, description = "Player added to VPN whitelist"),
+        (status = 401, description = "Not authorized"),
+        (status = 500, description = "Database error")
+    )
+)]
 #[post("/VpnWhitelist?<ckey>")]
 pub async fn add_vpn_whitelist(
     mut db: Connection<Cmdb>,
@@ -542,6 +646,21 @@ pub async fn add_vpn_whitelist(
     }
 }
 
+/// Remove a player from VPN whitelist
+#[utoipa::path(
+    delete,
+    path = "/api/User/VpnWhitelist",
+    tag = "player",
+    security(("session_cookie" = [])),
+    params(
+        ("ckey" = String, Query, description = "Player ckey to remove from whitelist")
+    ),
+    responses(
+        (status = 200, description = "Player removed from VPN whitelist"),
+        (status = 401, description = "Not authorized"),
+        (status = 500, description = "Database error")
+    )
+)]
 #[delete("/VpnWhitelist?<ckey>")]
 pub async fn remove_vpn_whitelist(
     mut db: Connection<Cmdb>,
@@ -558,13 +677,28 @@ pub async fn remove_vpn_whitelist(
     }
 }
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize, FromRow, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct VpnWhitelist {
     ckey: String,
     admin_ckey: String,
 }
 
+/// Check if a player is VPN whitelisted
+#[utoipa::path(
+    get,
+    path = "/api/User/VpnWhitelist",
+    tag = "player",
+    security(("session_cookie" = [])),
+    params(
+        ("ckey" = String, Query, description = "Player ckey to check")
+    ),
+    responses(
+        (status = 200, description = "Player is VPN whitelisted", body = VpnWhitelist),
+        (status = 401, description = "Not authorized"),
+        (status = 404, description = "Player not whitelisted")
+    )
+)]
 #[get("/VpnWhitelist?<ckey>")]
 pub async fn get_vpn_whitelist(
     mut db: Connection<Cmdb>,
@@ -581,7 +715,7 @@ pub async fn get_vpn_whitelist(
     }
 }
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize, FromRow, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct BannedPlayer {
     ckey: Option<String>,
@@ -599,6 +733,20 @@ pub struct BannedPlayer {
 /// Staff users see all bans; non-staff users see only bans after the cutoff date
 /// Supports pagination with ?page=N (0-indexed, 20 results per page)
 /// Supports filtering by ckey with ?ckey=<search>
+#[utoipa::path(
+    get,
+    path = "/api/User/Banned",
+    tag = "player",
+    security(("session_cookie" = [])),
+    params(
+        ("page" = Option<i64>, Query, description = "Page number (0-indexed, 20 results per page)"),
+        ("ckey" = Option<String>, Query, description = "Filter by ckey (partial match)")
+    ),
+    responses(
+        (status = 200, description = "List of banned players", body = Vec<BannedPlayer>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/Banned?<page>&<ckey>")]
 pub async fn get_banned_players(
     mut db: Connection<Cmdb>,
@@ -699,7 +847,7 @@ pub async fn get_banned_players(
     }
 }
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize, FromRow, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct HistoricalBan {
     ckey: Option<String>,
@@ -714,6 +862,20 @@ pub struct HistoricalBan {
 /// Staff users see all bans; non-staff users see only bans after the cutoff date
 /// Supports pagination with ?page=N (0-indexed, 20 results per page)
 /// Supports filtering by ckey with ?ckey=<search>
+#[utoipa::path(
+    get,
+    path = "/api/User/BanHistory",
+    tag = "player",
+    security(("session_cookie" = [])),
+    params(
+        ("page" = Option<i64>, Query, description = "Page number (0-indexed, 20 results per page)"),
+        ("ckey" = Option<String>, Query, description = "Filter by ckey (partial match)")
+    ),
+    responses(
+        (status = 200, description = "List of historical bans", body = Vec<HistoricalBan>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/BanHistory?<page>&<ckey>")]
 pub async fn get_ban_history(
     mut db: Connection<Cmdb>,
@@ -796,7 +958,7 @@ pub async fn get_ban_history(
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct KnownAltsResponse {
     main_account: Option<String>,
@@ -805,6 +967,19 @@ pub struct KnownAltsResponse {
 
 /// Returns known alts for a given ckey
 /// Checks if the ckey is a main account (player_ckey) or an alt account (ckey)
+#[utoipa::path(
+    get,
+    path = "/api/User/KnownAlts",
+    tag = "player",
+    security(("session_cookie" = [])),
+    params(
+        ("ckey" = String, Query, description = "Player ckey to check for alts")
+    ),
+    responses(
+        (status = 200, description = "Known alts for the player", body = KnownAltsResponse),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/KnownAlts?<ckey>")]
 pub async fn get_known_alts(
     mut db: Connection<Cmdb>,
@@ -845,7 +1020,7 @@ pub async fn get_known_alts(
     })
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct AddKnownAltRequest {
     player_ckey: String,
@@ -853,6 +1028,18 @@ pub struct AddKnownAltRequest {
 }
 
 /// Adds a known alt association
+#[utoipa::path(
+    post,
+    path = "/api/User/KnownAlts",
+    tag = "player",
+    security(("session_cookie" = [])),
+    request_body = AddKnownAltRequest,
+    responses(
+        (status = 201, description = "Alt association added"),
+        (status = 401, description = "Not authorized"),
+        (status = 500, description = "Database error")
+    )
+)]
 #[post("/KnownAlts", data = "<request>")]
 pub async fn add_known_alt(
     mut db: Connection<Cmdb>,
@@ -871,7 +1058,7 @@ pub async fn add_known_alt(
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct RemoveKnownAltRequest {
     player_ckey: String,
@@ -879,6 +1066,18 @@ pub struct RemoveKnownAltRequest {
 }
 
 /// Removes a known alt association
+#[utoipa::path(
+    delete,
+    path = "/api/User/KnownAlts",
+    tag = "player",
+    security(("session_cookie" = [])),
+    request_body = RemoveKnownAltRequest,
+    responses(
+        (status = 200, description = "Alt association removed"),
+        (status = 401, description = "Not authorized"),
+        (status = 500, description = "Database error")
+    )
+)]
 #[delete("/KnownAlts", data = "<request>")]
 pub async fn remove_known_alt(
     mut db: Connection<Cmdb>,

@@ -12,6 +12,7 @@ use rocket::{
 };
 use rocket_db_pools::Connection;
 use sqlx::query_as;
+use utoipa::ToSchema;
 
 use crate::admin::AuthenticatedUser;
 use crate::{Cmdb, Config, ServerConfig, admin::Staff};
@@ -46,14 +47,14 @@ struct GameRequest {
     source: String,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, ToSchema)]
 pub struct GameResponse {
     statuscode: i32,
     response: String,
     data: GameStatus,
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Clone)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, ToSchema)]
 #[serde(crate = "rocket::serde")]
 pub struct GameStatus {
     mode: String,
@@ -76,7 +77,7 @@ pub struct GameStatus {
     cpu: f32,
 }
 
-#[derive(serde::Serialize, Clone)]
+#[derive(serde::Serialize, Clone, ToSchema)]
 pub struct ServerStatusResponse {
     name: String,
     url: String,
@@ -89,7 +90,7 @@ pub struct ServerStatusResponse {
     tags: Vec<String>,
 }
 
-#[derive(serde::Serialize, Clone)]
+#[derive(serde::Serialize, Clone, ToSchema)]
 pub struct ServersResponse {
     servers: Vec<ServerStatusResponse>,
 }
@@ -124,6 +125,15 @@ pub fn refresh_admins(config: &Config) -> Result<(), String> {
 }
 
 /// Fetches the current round information from all configured servers. **This is a public endpoint**.
+#[utoipa::path(
+    get,
+    path = "/api/Round",
+    tag = "round",
+    responses(
+        (status = 200, description = "Server status for all configured servers", body = ServersResponse),
+        (status = 404, description = "No servers configured")
+    )
+)]
 #[get("/")]
 pub async fn round(
     cache: &State<ByondTopic>,
@@ -277,11 +287,22 @@ fn query_server(server: ServerConfig) -> ServerStatusResponse {
     }
 }
 
-#[derive(serde::Serialize, FromRow)]
+#[derive(serde::Serialize, FromRow, ToSchema)]
 pub struct Round {
     id: i32,
 }
 
+/// Get 10 most recent rounds
+#[utoipa::path(
+    get,
+    path = "/api/Round/Recent",
+    tag = "round",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "List of recent rounds", body = Vec<Round>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/Recent")]
 pub async fn recent(
     mut db: Connection<Cmdb>,
@@ -299,12 +320,21 @@ pub async fn recent(
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, ToSchema)]
 pub struct ByondHashResponse {
     sha256: Option<String>,
 }
 
 /// Returns the expected SHA256 hash for a given BYOND version. **This is a public endpoint**.
+#[utoipa::path(
+    get,
+    path = "/api/ByondHash",
+    tag = "byond",
+    params(("byond_ver" = String, Query, description = "BYOND version number")),
+    responses(
+        (status = 200, description = "SHA256 hash for the BYOND version", body = ByondHashResponse)
+    )
+)]
 #[get("/?<byond_ver>")]
 pub async fn byond_hash(config: &State<Config>, byond_ver: &str) -> PublicCors<ByondHashResponse> {
     let sha256 = config

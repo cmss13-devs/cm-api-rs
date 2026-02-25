@@ -19,9 +19,46 @@ use std::sync::Arc;
 
 use crate::auth::OidcClient;
 use crate::authentik::AuthentikConfig;
+use crate::openapi::ApiDoc;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 
 #[macro_use]
 extern crate rocket;
+
+/// Check for --openapi flag (sync, no runtime needed)
+fn check_openapi_json_flag() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.contains(&"--openapi".to_string()) {
+        let doc = ApiDoc::openapi();
+        println!("{}", doc.to_pretty_json().unwrap());
+        return true;
+    }
+
+    false
+}
+
+fn should_serve_docs_only() -> bool {
+    std::env::args().any(|arg| arg == "--serve-docs")
+}
+
+fn build_docs_server() -> rocket::Rocket<rocket::Build> {
+    eprintln!("Starting OpenAPI documentation server...");
+    eprintln!("Swagger UI: http://localhost:8000/swagger-ui/");
+    eprintln!("OpenAPI JSON: http://localhost:8000/api-docs/openapi.json");
+
+    rocket::build()
+        .configure(rocket::Config {
+            port: 8000,
+            address: std::net::Ipv4Addr::new(127, 0, 0, 1).into(),
+            ..rocket::Config::default()
+        })
+        .mount(
+            "/",
+            SwaggerUi::new("/swagger-ui/<_..>").url("/api-docs/openapi.json", ApiDoc::openapi()),
+        )
+}
 
 mod achievements;
 mod admin;
@@ -32,6 +69,7 @@ mod connections;
 mod discord;
 mod logging;
 mod new_players;
+mod openapi;
 mod player;
 mod spa;
 mod steam;
@@ -155,8 +193,22 @@ pub struct Cmdb(MySqlPool);
 #[database("cmapi")]
 pub struct Cmapi(MySqlPool);
 
-#[launch]
-async fn rocket() -> _ {
+fn main() {
+    if check_openapi_json_flag() {
+        return;
+    }
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        if should_serve_docs_only() {
+            let _ = build_docs_server().launch().await;
+        } else {
+            let _ = build_rocket().await.launch().await;
+        }
+    });
+}
+
+async fn build_rocket() -> rocket::Rocket<rocket::Build> {
     let figment = Figment::from(rocket::Config::default())
         .merge(Serialized::defaults(Config::default()))
         .merge(Toml::file("Rocket.toml").nested())
@@ -326,9 +378,16 @@ async fn rocket() -> _ {
         )
         .mount(
             format!("{}/Discord", base_url),
-            routes![discord::get_user_by_discord, discord::check_verified, discord::get_my_profile],
+            routes![
+                discord::get_user_by_discord,
+                discord::check_verified,
+                discord::get_my_profile
+            ],
         )
-        .mount(format!("{}/Steam", base_url), routes![steam::authenticate, steam::get_my_persona])
+        .mount(
+            format!("{}/Steam", base_url),
+            routes![steam::authenticate, steam::get_my_persona],
+        )
         .mount(
             format!("{}/ByondHash", base_url),
             routes![byond::byond_hash],
@@ -349,4 +408,8 @@ async fn rocket() -> _ {
             },
         )
         .mount("/", routes![spa::index, spa::fallback])
+        .mount(
+            "/swagger-ui",
+            SwaggerUi::new("/swagger-ui/<_..>").url("/api-docs/openapi.json", ApiDoc::openapi()),
+        )
 }

@@ -2,6 +2,7 @@ use rocket::{State, http::Status, serde::json::Json};
 use rocket_db_pools::Connection;
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, query};
+use utoipa::ToSchema;
 
 use crate::{
     Cmdb, Config, ServerRoleConfig,
@@ -13,14 +14,14 @@ use crate::{
     player::{AuthorizationHeader, validate_auth_header},
 };
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(crate = "rocket::serde")]
 pub struct DiscordError {
     pub error: String,
     pub message: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct DiscordUserResponse {
     pub source: String,
@@ -30,7 +31,7 @@ pub struct DiscordUserResponse {
 }
 
 /// Response for the Verified endpoint, includes role changes based on verification status
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct VerifiedUserResponse {
     pub source: String,
@@ -175,6 +176,19 @@ pub fn resolve_whitelist_roles(
         .collect()
 }
 
+/// Get user info by Discord ID
+#[utoipa::path(
+    get,
+    path = "/api/Discord/User/{discord_id}",
+    tag = "discord",
+    security(("bearer_token" = [])),
+    params(("discord_id" = String, Path, description = "Discord user ID")),
+    responses(
+        (status = 200, description = "User found", body = DiscordUserResponse),
+        (status = 401, description = "Not authorized"),
+        (status = 404, description = "User not found", body = DiscordError)
+    )
+)]
 #[get("/User/<discord_id>")]
 pub async fn get_user_by_discord(
     auth_header: AuthorizationHeader,
@@ -233,6 +247,24 @@ pub async fn get_user_by_discord(
     }
 }
 
+/// Check verification status and get role changes for a Discord user
+#[utoipa::path(
+    get,
+    path = "/api/Discord/Verified/{discord_id}/{guild_id}",
+    tag = "discord",
+    security(("bearer_token" = [])),
+    params(
+        ("discord_id" = String, Path, description = "Discord user ID"),
+        ("guild_id" = String, Path, description = "Discord guild ID")
+    ),
+    responses(
+        (status = 200, description = "Verification status", body = VerifiedUserResponse),
+        (status = 400, description = "Invalid guild", body = DiscordError),
+        (status = 401, description = "Not authorized"),
+        (status = 403, description = "Not eligible", body = DiscordError),
+        (status = 500, description = "Server error", body = DiscordError)
+    )
+)]
 #[get("/Verified/<discord_id>/<guild_id>")]
 pub async fn check_verified(
     auth_header: AuthorizationHeader,
@@ -371,7 +403,7 @@ pub async fn check_verified(
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(crate = "rocket::serde", rename_all = "camelCase")]
 pub struct DiscordProfileResponse {
     pub username: String,
@@ -387,6 +419,17 @@ struct DiscordApiUser {
 }
 
 /// GET /Discord/MyProfile - get the current user's Discord profile
+#[utoipa::path(
+    get,
+    path = "/api/Discord/MyProfile",
+    tag = "discord",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "Discord profile", body = DiscordProfileResponse),
+        (status = 404, description = "Discord not linked", body = DiscordError),
+        (status = 500, description = "Server error", body = DiscordError)
+    )
+)]
 #[get("/MyProfile")]
 pub async fn get_my_profile(
     user: AuthenticatedUser<Player>,

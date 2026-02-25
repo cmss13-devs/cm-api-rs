@@ -4,15 +4,16 @@ use chrono::{DateTime, Utc};
 use rocket::serde::json::Json;
 use rocket_db_pools::Connection;
 use sqlx::{MySqlConnection, prelude::FromRow, query_as};
+use utoipa::ToSchema;
 
 use crate::{
     Cmdb,
     admin::{AuthenticatedUser, Staff},
 };
 
-#[derive(serde::Serialize, FromRow, Hash, Eq, PartialEq)]
+#[derive(serde::Serialize, FromRow, Hash, Eq, PartialEq, ToSchema)]
 #[serde(rename_all = "camelCase")]
-struct LoginTriplet {
+pub struct LoginTriplet {
     id: i64,
     ckey: String,
     ip1: i32,
@@ -20,10 +21,11 @@ struct LoginTriplet {
     ip3: i32,
     ip4: i32,
     last_known_cid: String,
+    #[schema(value_type = String)]
     login_date: DateTime<Utc>,
 }
 
-#[derive(serde::Serialize, Default)]
+#[derive(serde::Serialize, Default, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionHistory {
     triplets: Vec<LoginTriplet>,
@@ -66,6 +68,17 @@ impl ConnectionHistory {
     }
 }
 
+/// Get connection history by IP address
+#[utoipa::path(
+    get,
+    path = "/api/Connections/Ip",
+    tag = "connections",
+    params(("ip" = String, Query, description = "IP address to search (e.g., 192.168.1.1)")),
+    responses(
+        (status = 200, description = "Connection history for the IP", body = ConnectionHistory),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/Ip?<ip>")]
 pub async fn ip(
     mut db: Connection<Cmdb>,
@@ -91,6 +104,17 @@ pub async fn ip(
     Json(ConnectionHistory::annotate(query))
 }
 
+/// Get connection history by computer ID
+#[utoipa::path(
+    get,
+    path = "/api/Connections/Cid",
+    tag = "connections",
+    params(("cid" = String, Query, description = "Computer ID to search")),
+    responses(
+        (status = 200, description = "Connection history for the CID", body = ConnectionHistory),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/Cid?<cid>")]
 pub async fn cid(
     mut db: Connection<Cmdb>,
@@ -121,6 +145,17 @@ async fn get_triplets_by_ckey(db: &mut MySqlConnection, ckey: String) -> Option<
     query_result.ok()
 }
 
+/// Get connection history by ckey
+#[utoipa::path(
+    get,
+    path = "/api/Connections/Ckey",
+    tag = "connections",
+    params(("ckey" = String, Query, description = "Player ckey to search")),
+    responses(
+        (status = 200, description = "Connection history for the ckey", body = ConnectionHistory),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/Ckey?<ckey>")]
 pub async fn ckey(
     mut db: Connection<Cmdb>,
@@ -135,6 +170,17 @@ pub async fn ckey(
     ))
 }
 
+/// Get full connection history by all CIDs associated with a ckey
+#[utoipa::path(
+    get,
+    path = "/api/Connections/FullByAllCid",
+    tag = "connections",
+    params(("ckey" = String, Query, description = "Player ckey to search")),
+    responses(
+        (status = 200, description = "Full connection history for all CIDs", body = ConnectionHistory),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/FullByAllCid?<ckey>")]
 pub async fn connection_history_by_cid(
     mut db: Connection<Cmdb>,
@@ -168,6 +214,17 @@ pub async fn connection_history_by_cid(
     Json(ConnectionHistory::annotate(query))
 }
 
+/// Get full connection history by all IPs associated with a ckey
+#[utoipa::path(
+    get,
+    path = "/api/Connections/FullByAllIps",
+    tag = "connections",
+    params(("ckey" = String, Query, description = "Player ckey to search")),
+    responses(
+        (status = 200, description = "Full connection history for all IPs", body = ConnectionHistory),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/FullByAllIps?<ckey>")]
 pub async fn connection_history_by_ip(
     mut db: Connection<Cmdb>,

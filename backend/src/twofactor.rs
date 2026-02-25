@@ -6,6 +6,21 @@ use crate::{
     admin::{AuthenticatedUser, Staff},
 };
 
+/// Validate a two-factor authentication request
+#[utoipa::path(
+    get,
+    path = "/api/TwoFactor",
+    tag = "twofactor",
+    security(("session_cookie" = [])),
+    params(
+        ("cid" = String, Query, description = "Computer ID"),
+        ("ip" = String, Query, description = "IP address")
+    ),
+    responses(
+        (status = 200, description = "Validation result message", body = String),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/?<cid>&<ip>")]
 pub async fn twofactor_validate(
     mut db: Connection<Cmdb>,

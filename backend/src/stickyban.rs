@@ -5,6 +5,7 @@ use rocket::{State, http::Status, serde::json::Json};
 use rocket_db_pools::Connection;
 use serde::Serialize;
 use sqlx::{MySqlConnection, prelude::FromRow, query, query_as};
+use utoipa::ToSchema;
 
 use crate::{
     Cmdb, Config,
@@ -13,7 +14,7 @@ use crate::{
     player::{create_note, get_player_ckey, get_player_id},
 };
 
-#[derive(Serialize, FromRow)]
+#[derive(Serialize, FromRow, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Stickyban {
     id: i32,
@@ -30,6 +31,16 @@ pub struct Stickyban {
     admin_ckey: Option<String>,
 }
 
+/// Get all stickybans
+#[utoipa::path(
+    get,
+    path = "/api/Stickyban",
+    tag = "stickyban",
+    responses(
+        (status = 200, description = "List of all stickybans", body = Vec<Stickyban>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/")]
 pub async fn all_stickybans(
     mut db: Connection<Cmdb>,
@@ -53,6 +64,19 @@ pub async fn all_stickybans(
     Json(query)
 }
 
+/// Whitelist a player against all their matching stickybans
+#[utoipa::path(
+    post,
+    path = "/api/Stickyban/Whitelist",
+    tag = "stickyban",
+    params(("ckey" = String, Query, description = "Player ckey to whitelist")),
+    responses(
+        (status = 202, description = "Player whitelisted"),
+        (status = 400, description = "Player not found"),
+        (status = 401, description = "Not authorized"),
+        (status = 403, description = "Whitelist failed")
+    )
+)]
 #[post("/Whitelist?<ckey>")]
 pub async fn whitelist(
     mut db: Connection<Cmdb>,
@@ -110,7 +134,7 @@ trait StickybanMatch: Send + Sync {
     fn get_parent_id(&self) -> i64;
 }
 
-#[derive(FromRow, Serialize)]
+#[derive(FromRow, Serialize, ToSchema)]
 pub struct StickybanMatchedCid {
     id: i64,
     cid: String,
@@ -123,6 +147,17 @@ impl StickybanMatch for StickybanMatchedCid {
     }
 }
 
+/// Get CIDs matched by a specific stickyban
+#[utoipa::path(
+    get,
+    path = "/api/Stickyban/{id}/Match/Cid",
+    tag = "stickyban",
+    params(("id" = i64, Path, description = "Stickyban ID")),
+    responses(
+        (status = 200, description = "List of matched CIDs", body = Vec<StickybanMatchedCid>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/<id>/Match/Cid")]
 pub async fn get_matched_cids(
     mut db: Connection<Cmdb>,
@@ -139,6 +174,17 @@ pub async fn get_matched_cids(
     }
 }
 
+/// Get all stickybans matching a specific CID
+#[utoipa::path(
+    get,
+    path = "/api/Stickyban/Cid",
+    tag = "stickyban",
+    params(("cid" = String, Query, description = "Computer ID to search")),
+    responses(
+        (status = 200, description = "List of stickybans matching this CID", body = Vec<Stickyban>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/Cid?<cid>")]
 pub async fn get_all_cid(
     mut db: Connection<Cmdb>,
@@ -170,7 +216,7 @@ pub async fn get_all_cid(
     )
 }
 
-#[derive(FromRow, Serialize)]
+#[derive(FromRow, Serialize, ToSchema)]
 pub struct StickybanMatchedCkey {
     id: i64,
     ckey: Option<String>, // somehow?
@@ -184,6 +230,17 @@ impl StickybanMatch for StickybanMatchedCkey {
     }
 }
 
+/// Get ckeys matched by a specific stickyban
+#[utoipa::path(
+    get,
+    path = "/api/Stickyban/{id}/Match/Ckey",
+    tag = "stickyban",
+    params(("id" = i64, Path, description = "Stickyban ID")),
+    responses(
+        (status = 200, description = "List of matched ckeys", body = Vec<StickybanMatchedCkey>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/<id>/Match/Ckey")]
 pub async fn get_matched_ckey(
     mut db: Connection<Cmdb>,
@@ -202,6 +259,17 @@ pub async fn get_matched_ckey(
     }
 }
 
+/// Get all stickybans matching a specific ckey
+#[utoipa::path(
+    get,
+    path = "/api/Stickyban/Ckey",
+    tag = "stickyban",
+    params(("ckey" = String, Query, description = "Player ckey to search")),
+    responses(
+        (status = 200, description = "List of stickybans matching this ckey", body = Vec<Stickyban>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/Ckey?<ckey>")]
 pub async fn get_all_ckey(
     mut db: Connection<Cmdb>,
@@ -227,7 +295,7 @@ pub async fn get_all_ckey(
     )
 }
 
-#[derive(FromRow, Serialize)]
+#[derive(FromRow, Serialize, ToSchema)]
 pub struct StickybanMatchedIp {
     id: i64,
     ip: String,
@@ -240,6 +308,17 @@ impl StickybanMatch for StickybanMatchedIp {
     }
 }
 
+/// Get IPs matched by a specific stickyban
+#[utoipa::path(
+    get,
+    path = "/api/Stickyban/{id}/Match/Ip",
+    tag = "stickyban",
+    params(("id" = i64, Path, description = "Stickyban ID")),
+    responses(
+        (status = 200, description = "List of matched IPs", body = Vec<StickybanMatchedIp>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/<id>/Match/Ip")]
 pub async fn get_matched_ip(
     mut db: Connection<Cmdb>,
@@ -256,6 +335,17 @@ pub async fn get_matched_ip(
     }
 }
 
+/// Get all stickybans matching a specific IP
+#[utoipa::path(
+    get,
+    path = "/api/Stickyban/Ip",
+    tag = "stickyban",
+    params(("ip" = String, Query, description = "IP address to search")),
+    responses(
+        (status = 200, description = "List of stickybans matching this IP", body = Vec<Stickyban>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/Ip?<ip>")]
 pub async fn get_all_ip(
     mut db: Connection<Cmdb>,

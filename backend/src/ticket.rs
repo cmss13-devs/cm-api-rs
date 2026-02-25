@@ -5,11 +5,12 @@ use rocket_db_pools::Connection;
 use serde::Serialize;
 use sqlx::Row;
 use sqlx::{prelude::FromRow, query, query_as};
+use utoipa::ToSchema;
 
 use crate::admin::AuthenticatedUser;
 use crate::{Cmdb, admin::Staff};
 
-#[derive(FromRow, Serialize)]
+#[derive(FromRow, Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Ticket {
     id: i64,
@@ -19,10 +20,23 @@ pub struct Ticket {
     recipient: Option<String>,
     sender: Option<String>,
     round_id: Option<i32>,
+    #[schema(value_type = String)]
     time: chrono::DateTime<Utc>,
     urgent: i32,
 }
 
+/// Get all tickets from a specific round
+#[utoipa::path(
+    get,
+    path = "/api/Ticket/{round_id}",
+    tag = "ticket",
+    security(("session_cookie" = [])),
+    params(("round_id" = i64, Path, description = "Round ID")),
+    responses(
+        (status = 200, description = "List of tickets", body = Vec<Ticket>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/<round_id>")]
 pub async fn get_tickets_by_round_id(
     mut db: Connection<Cmdb>,
@@ -39,6 +53,23 @@ pub async fn get_tickets_by_round_id(
     }
 }
 
+/// Get tickets involving a specific player
+#[utoipa::path(
+    get,
+    path = "/api/Ticket/User/{ckey}",
+    tag = "ticket",
+    security(("session_cookie" = [])),
+    params(
+        ("ckey" = String, Path, description = "Player ckey"),
+        ("page" = Option<i64>, Query, description = "Page number (1-indexed, 15 results per page)"),
+        ("from" = Option<String>, Query, description = "Start date filter (YYYY-MM-DD)"),
+        ("to" = Option<String>, Query, description = "End date filter (YYYY-MM-DD)")
+    ),
+    responses(
+        (status = 200, description = "List of tickets", body = Vec<Ticket>),
+        (status = 401, description = "Not authorized")
+    )
+)]
 #[get("/User/<ckey>?<page>&<from>&<to>")]
 pub async fn get_tickets_by_user(
     mut db: Connection<Cmdb>,

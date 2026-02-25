@@ -20,6 +20,7 @@ use rocket::{
     serde::json::Json,
 };
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -139,7 +140,7 @@ struct PkceState {
 }
 
 /// User info response for /auth/userinfo
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UserInfo {
     pub username: String,
@@ -151,7 +152,7 @@ pub struct UserInfo {
 }
 
 /// Error response
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct AuthError {
     pub error: String,
     pub message: String,
@@ -621,6 +622,16 @@ pub async fn refresh(
 }
 
 /// GET /auth/userinfo - Returns current user info from session
+#[utoipa::path(
+    get,
+    path = "/api/auth/userinfo",
+    tag = "auth",
+    security(("session_cookie" = [])),
+    responses(
+        (status = 200, description = "User info retrieved successfully", body = UserInfo),
+        (status = 401, description = "Not authenticated", body = AuthError)
+    )
+)]
 #[get("/userinfo")]
 pub fn userinfo(
     oidc: &State<Arc<OidcClient>>,
