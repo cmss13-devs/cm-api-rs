@@ -6,7 +6,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Cmapi, Config,
-    authentik::{AuthentikError, create_user_with_steam_id, get_user_by_attribute},
+    admin::{AuthenticatedUser, Player},
+    authentik::{
+        AuthentikError, create_user_with_steam_id, get_user_by_attribute, get_user_by_uuid,
+        get_user_oauth_sources, parse_steam_id,
+    },
     token::create_token,
 };
 
@@ -278,4 +282,162 @@ pub async fn authenticate(
             }
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct SteamPersonaResponse {
+    pub persona_name: String,
+    pub steam_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetPlayerSummariesResponse {
+    response: GetPlayerSummariesInner,
+}
+
+#[derive(Debug, Deserialize)]
+struct GetPlayerSummariesInner {
+    players: Vec<SteamPlayer>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SteamPlayer {
+    #[serde(rename = "steamid")]
+    steam_id: String,
+    #[serde(rename = "personaname")]
+    persona_name: String,
+}
+
+/// GET /Steam/MyPersona - get the current user's Steam persona name
+#[get("/MyPersona")]
+pub async fn get_my_persona(
+    user: AuthenticatedUser<Player>,
+    config: &State<Config>,
+) -> Result<Json<SteamPersonaResponse>, (Status, Json<AuthentikError>)> {
+    let steam_config = config.steam.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Steam is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let authentik_user = get_user_by_uuid(&http_client, authentik_config, &user.sub)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let user_sources = get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "fetch_sources_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let steam_source = user_sources
+        .iter()
+        .find(|s| s.source.slug == "steam")
+        .ok_or_else(|| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "steam_not_linked".to_string(),
+                    message: "No Steam account linked".to_string(),
+                }),
+            )
+        })?;
+
+    let steam_id = parse_steam_id(&steam_source.identifier).ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "invalid_steam_id".to_string(),
+                message: "Could not parse Steam ID".to_string(),
+            }),
+        )
+    })?;
+
+    let url = format!(
+        "https://partner.steam-api.com/ISteamUser/GetPlayerSummaries/v2/?key={}&steamids={}",
+        steam_config.web_api_key, steam_id
+    );
+
+    let response = http_client.get(&url).send().await.map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "steam_api_error".to_string(),
+                message: format!("Failed to contact Steam API: {}", e),
+            }),
+        )
+    })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err((
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "steam_api_error".to_string(),
+                message: format!("Steam API returned error {}: {}", status, body),
+            }),
+        ));
+    }
+
+    let summaries: GetPlayerSummariesResponse = response.json().await.map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "steam_api_error".to_string(),
+                message: format!("Failed to parse Steam API response: {}", e),
+            }),
+        )
+    })?;
+
+    let player = summaries
+        .response
+        .players
+        .into_iter()
+        .next()
+        .ok_or_else(|| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "player_not_found".to_string(),
+                    message: "Steam player not found".to_string(),
+                }),
+            )
+        })?;
+
+    Ok(Json(SteamPersonaResponse {
+        persona_name: player.persona_name,
+        steam_id: player.steam_id,
+    }))
 }

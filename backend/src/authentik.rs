@@ -759,7 +759,7 @@ async fn update_user_fields(
 
 /// Parse a Steam ID from an OpenID URL identifier
 /// Example: "https://steamcommunity.com/openid/id/76561198012345678" -> "76561198012345678"
-fn parse_steam_id(identifier: &str) -> Option<String> {
+pub fn parse_steam_id(identifier: &str) -> Option<String> {
     if identifier.starts_with("https://steamcommunity.com/openid/id/") {
         identifier
             .strip_prefix("https://steamcommunity.com/openid/id/")

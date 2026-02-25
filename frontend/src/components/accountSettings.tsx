@@ -665,6 +665,7 @@ const LinkedSourceRow: React.FC<{
 }> = ({ source, onUnlink, authentikBaseUrl }) => {
   const [unlinking, setUnlinking] = useState(false);
   const [githubLogin, setGithubLogin] = useState<string | null>(null);
+  const [steamPersona, setSteamPersona] = useState<string | null>(null);
 
   useEffect(() => {
     if (source.slug === "github" && source.parsedId) {
@@ -673,6 +674,16 @@ const LinkedSourceRow: React.FC<{
         .then((data) => {
           if (data.login) {
             setGithubLogin(data.login);
+          }
+        })
+        .catch(() => {});
+    }
+    if (source.slug === "steam" && source.parsedId) {
+      callApi("/Steam/MyPersona")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.personaName) {
+            setSteamPersona(data.personaName);
           }
         })
         .catch(() => {});
@@ -699,6 +710,12 @@ const LinkedSourceRow: React.FC<{
   };
 
   const getDisplayId = (): string => {
+    if (source.slug === "github" && githubLogin && source.parsedId) {
+      return `${githubLogin} (${source.parsedId})`;
+    }
+    if (source.slug === "steam" && steamPersona && source.parsedId) {
+      return `${steamPersona} (${source.parsedId})`;
+    }
     if (source.parsedId) return source.parsedId;
 
     if (source.identifier.startsWith("user:")) {

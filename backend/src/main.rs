@@ -328,7 +328,7 @@ async fn rocket() -> _ {
             format!("{}/Discord", base_url),
             routes![discord::get_user_by_discord, discord::check_verified],
         )
-        .mount(format!("{}/Steam", base_url), routes![steam::authenticate])
+        .mount(format!("{}/Steam", base_url), routes![steam::authenticate, steam::get_my_persona])
         .mount(
             format!("{}/ByondHash", base_url),
             routes![byond::byond_hash],
