@@ -62,14 +62,14 @@ export const BanHistory: React.FC = () => {
         This is a historical record of prior infractions. Bans listed here may no longer be active.
       </div>
 
-      <div className="flex flex-row gap-3 items-center">
+      <div className="flex flex-row flex-wrap gap-3 items-center">
         <input
           type="text"
           placeholder="Search by CKEY..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          className="border border-[#3f3f3f] rounded p-2 bg-transparent"
+          className="border border-[#3f3f3f] rounded p-2 bg-transparent flex-1 min-w-[150px]"
         />
         <button
           type="button"
@@ -90,7 +90,7 @@ export const BanHistory: React.FC = () => {
         )}
       </div>
 
-      <div className="flex flex-row gap-3 items-center">
+      <div className="flex flex-row flex-wrap gap-3 items-center">
         <button
           type="button"
           onClick={() => setPage((p) => Math.max(0, p - 1))}
@@ -122,22 +122,24 @@ export const BanHistory: React.FC = () => {
       )}
 
       {!loading && bans && bans.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              <th className="text-left p-2">CKEY</th>
-              <th className="text-left p-2">Date</th>
-              <th className="text-left p-2">Duration</th>
-              <th className="text-left p-2">Round</th>
-              <th className="text-left p-2">Reason</th>
-            </tr>
-          </thead>
-          <tbody>
-            {bans.map((ban, idx) => (
-              <BanHistoryRow key={`${ban.ckey}-${ban.date}-${idx}`} ban={ban} />
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="min-w-full">
+            <thead>
+              <tr>
+                <th className="text-left p-2 whitespace-nowrap">CKEY</th>
+                <th className="text-left p-2 whitespace-nowrap">Date</th>
+                <th className="text-left p-2 whitespace-nowrap">Duration</th>
+                <th className="text-left p-2 whitespace-nowrap">Round</th>
+                <th className="text-left p-2 whitespace-nowrap">Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bans.map((ban, idx) => (
+                <BanHistoryRow key={`${ban.ckey}-${ban.date}-${idx}`} ban={ban} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

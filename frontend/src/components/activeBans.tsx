@@ -61,14 +61,14 @@ export const ActiveBans: React.FC = () => {
     <div className="flex flex-col gap-3">
       <h1 className="text-2xl font-bold">View Active Bans</h1>
 
-      <div className="flex flex-row gap-3 items-center">
+      <div className="flex flex-row flex-wrap gap-3 items-center">
         <input
           type="text"
           placeholder="Search by CKEY..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          className="border border-[#3f3f3f] rounded p-2 bg-transparent"
+          className="border border-[#3f3f3f] rounded p-2 bg-transparent flex-1 min-w-[150px]"
         />
         <button
           type="button"
@@ -118,22 +118,24 @@ export const ActiveBans: React.FC = () => {
       )}
 
       {!loading && bans && bans.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              <th className="text-left p-2">CKEY</th>
-              <th className="text-left p-2">Ban Type</th>
-              <th className="text-left p-2">Reason</th>
-              <th className="text-left p-2">Date</th>
-              <th className="text-left p-2">Expires</th>
-            </tr>
-          </thead>
-          <tbody>
-            {bans.map((ban, idx) => (
-              <BanRow key={`${ban.ckey}-${idx}`} ban={ban} />
-            ))}
-          </tbody>
-        </table>
+        <div className="overflow-x-auto">
+          <table className="min-w-full">
+            <thead>
+              <tr>
+                <th className="text-left p-2 whitespace-nowrap">CKEY</th>
+                <th className="text-left p-2 whitespace-nowrap">Ban Type</th>
+                <th className="text-left p-2 whitespace-nowrap">Reason</th>
+                <th className="text-left p-2 whitespace-nowrap">Date</th>
+                <th className="text-left p-2 whitespace-nowrap">Expires</th>
+              </tr>
+            </thead>
+            <tbody>
+              {bans.map((ban, idx) => (
+                <BanRow key={`${ban.ckey}-${idx}`} ban={ban} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
