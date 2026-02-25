@@ -26,10 +26,12 @@ const router = createBrowserRouter([
       {
         path: "",
         element: <HomePage />,
+        handle: { title: "Home" },
       },
       {
         path: "/ticket/:round?/:ticketNum?",
         element: <Tickets />,
+        handle: { title: "Tickets" },
         loader: ({ params }) => {
           return {
             round: params.round || "",
@@ -40,10 +42,12 @@ const router = createBrowserRouter([
       {
         path: "/sticky",
         element: <Stickybans />,
+        handle: { title: "Stickybans" },
       },
       {
         path: "/user/:ckey?",
         element: <LookupMenu />,
+        handle: { title: "User Lookup" },
         loader: ({ params }) => {
           return params.ckey || "";
         },
@@ -51,42 +55,52 @@ const router = createBrowserRouter([
       {
         path: "/whitelists",
         element: <WhitelistMenu />,
+        handle: { title: "Whitelists" },
       },
       {
         path: "/new_players",
         element: <NewPlayers />,
+        handle: { title: "New Players" },
       },
       {
         path: "/user_manager",
         element: <AuthentikPanel />,
+        handle: { title: "User Manager" },
       },
       {
         path: "/2fa",
         element: <TwoFactor />,
+        handle: { title: "Two-Factor Auth" },
       },
       {
         path: "/bans",
         element: <ActiveBans />,
+        handle: { title: "Active Bans" },
       },
       {
         path: "/ban-history",
         element: <BanHistory />,
+        handle: { title: "Ban History" },
       },
       {
         path: "/authentik/:uuid?",
         element: <AuthentikUserPage />,
+        handle: { title: "Authentik User" },
       },
       {
         path: "/discord-lookup/:discordId",
         element: <DiscordLookupPage />,
+        handle: { title: "Discord Lookup" },
       },
       {
         path: "/account",
         element: <AccountSettings />,
+        handle: { title: "Account Settings" },
       },
       {
         path: "/my-player-info",
         element: <MyPlayerInfo />,
+        handle: { title: "My Player Info" },
       },
     ],
   },

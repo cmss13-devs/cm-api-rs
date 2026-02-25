@@ -1,12 +1,14 @@
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
-import { Link, Outlet, useSearchParams } from "react-router-dom";
-import { LinkColor } from "./components/link";
-import { NameExpand } from "./components/nameExpand";
+import { Outlet, useSearchParams } from "react-router-dom";
+import { Navigation } from "./components/navigation";
 import { apiPath } from "./helpers/api";
+import { useDocumentTitle } from "./hooks/useDocumentTitle";
 import { GlobalContext, type User } from "./types/global";
 
 export default function App(): React.ReactElement {
+  useDocumentTitle();
+
   const [toastMessage, showToastMessage] = useState<string | null>();
   const [user, setUser] = useState<User | undefined>();
   const [authLoading, setAuthLoading] = useState(true);
@@ -132,80 +134,7 @@ export default function App(): React.ReactElement {
     <GlobalContext.Provider
       value={{ updateAndShowToast: displayToast, user: user }}
     >
-      <div className="w-full foreground p-3 flex flex-row gap-2">
-        <LinkColor>
-          <Link to="/" className="underline">
-            [cmdb]
-          </Link>
-        </LinkColor>
-        |
-        <LinkColor>
-          <Link to="/bans">Bans</Link>
-        </LinkColor>
-        |
-        <LinkColor>
-          <Link to="/ban-history">Ban History</Link>
-        </LinkColor>
-        {user?.isStaff && (
-          <>
-            |
-            <LinkColor>
-              <Link to="/sticky">Sticky Menu</Link>
-            </LinkColor>
-            |
-            <LinkColor>
-              <Link to="/ticket">Tickets</Link>
-            </LinkColor>
-            |
-            <LinkColor>
-              <Link to="/user">Users</Link>
-            </LinkColor>
-            |
-            <LinkColor>
-              <Link to="/authentik">Authentik</Link>
-            </LinkColor>
-            |
-            <LinkColor>
-              <Link to="/whitelists">Whitelists</Link>
-            </LinkColor>
-            |
-            <LinkColor>
-              <Link to="/new_players">New Players</Link>
-            </LinkColor>
-          </>
-        )}
-        {user?.manageable?.length && (
-          <>
-            |
-            <LinkColor>
-              <Link to="/user_manager">User Manager</Link>
-            </LinkColor>
-          </>
-        )}
-        {user && (
-          <>
-            <span className="ml-auto text-gray-400">
-              {user.username} (
-              {user.isStaff ? (
-                <NameExpand name={user.ckey}></NameExpand>
-              ) : (
-                user.ckey
-              )}
-              )
-            </span>
-            <LinkColor>
-              <Link to="/account">Account</Link>
-            </LinkColor>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="text-red-400 hover:text-red-300 hover:underline"
-            >
-              Logout
-            </button>
-          </>
-        )}
-      </div>
+      <Navigation user={user} onLogout={handleLogout} />
       <div className="w-full md:container md:mx-auto flex flex-col foreground rounded mt-5 p-5">
         <Outlet />
       </div>
