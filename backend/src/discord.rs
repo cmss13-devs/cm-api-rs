@@ -1,11 +1,15 @@
 use rocket::{State, http::Status, serde::json::Json};
 use rocket_db_pools::Connection;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::{Row, query};
 
 use crate::{
     Cmdb, Config, ServerRoleConfig,
-    authentik::{check_verification_eligibility, get_user_by_attribute, get_user_oauth_sources},
+    admin::{AuthenticatedUser, Player},
+    authentik::{
+        check_verification_eligibility, get_user_by_attribute, get_user_by_uuid,
+        get_user_oauth_sources,
+    },
     player::{AuthorizationHeader, validate_auth_header},
 };
 
@@ -365,4 +369,132 @@ pub async fn check_verified(
             }))
         }
     }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(crate = "rocket::serde", rename_all = "camelCase")]
+pub struct DiscordProfileResponse {
+    pub username: String,
+    pub discord_id: String,
+    pub global_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscordApiUser {
+    id: String,
+    username: String,
+    global_name: Option<String>,
+}
+
+/// GET /Discord/MyProfile - get the current user's Discord profile
+#[get("/MyProfile")]
+pub async fn get_my_profile(
+    user: AuthenticatedUser<Player>,
+    config: &State<Config>,
+) -> Result<Json<DiscordProfileResponse>, (Status, Json<DiscordError>)> {
+    let discord_config = config.discord_bot.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(DiscordError {
+                error: "not_configured".to_string(),
+                message: "Discord is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(DiscordError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let authentik_user = get_user_by_uuid(&http_client, authentik_config, &user.sub)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(DiscordError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let user_sources = get_user_oauth_sources(&http_client, authentik_config, authentik_user.pk)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(DiscordError {
+                    error: "fetch_sources_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let discord_source = user_sources
+        .iter()
+        .find(|s| s.source.slug == "discord")
+        .ok_or_else(|| {
+            (
+                Status::NotFound,
+                Json(DiscordError {
+                    error: "discord_not_linked".to_string(),
+                    message: "No Discord account linked".to_string(),
+                }),
+            )
+        })?;
+
+    let discord_id = &discord_source.identifier;
+
+    let url = format!("https://discord.com/api/v10/users/{}", discord_id);
+
+    let response = http_client
+        .get(&url)
+        .header("Authorization", format!("Bot {}", discord_config.token))
+        .send()
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(DiscordError {
+                    error: "discord_api_error".to_string(),
+                    message: format!("Failed to contact Discord API: {}", e),
+                }),
+            )
+        })?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err((
+            Status::InternalServerError,
+            Json(DiscordError {
+                error: "discord_api_error".to_string(),
+                message: format!("Discord API returned error {}: {}", status, body),
+            }),
+        ));
+    }
+
+    let discord_user: DiscordApiUser = response.json().await.map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(DiscordError {
+                error: "discord_api_error".to_string(),
+                message: format!("Failed to parse Discord API response: {}", e),
+            }),
+        )
+    })?;
+
+    Ok(Json(DiscordProfileResponse {
+        username: discord_user.username,
+        discord_id: discord_user.id,
+        global_name: discord_user.global_name,
+    }))
 }

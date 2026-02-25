@@ -326,7 +326,7 @@ async fn rocket() -> _ {
         )
         .mount(
             format!("{}/Discord", base_url),
-            routes![discord::get_user_by_discord, discord::check_verified],
+            routes![discord::get_user_by_discord, discord::check_verified, discord::get_my_profile],
         )
         .mount(format!("{}/Steam", base_url), routes![steam::authenticate, steam::get_my_persona])
         .mount(

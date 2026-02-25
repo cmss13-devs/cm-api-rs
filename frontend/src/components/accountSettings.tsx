@@ -658,66 +658,68 @@ const MfaTab: React.FC<{
   );
 };
 
+type SourceConfig = {
+  fetchDisplayName?: (parsedId: string) => Promise<string | null>;
+  getProfileUrl: (parsedId: string, displayName: string | null) => string | null;
+};
+
+const sourceConfigs: Record<string, SourceConfig> = {
+  steam: {
+    fetchDisplayName: () =>
+      callApi("/Steam/MyPersona")
+        .then((res) => res.json())
+        .then((data) => data.personaName || null)
+        .catch(() => null),
+    getProfileUrl: (parsedId) => `https://steamcommunity.com/profiles/${parsedId}`,
+  },
+  discord: {
+    fetchDisplayName: () =>
+      callApi("/Discord/MyProfile")
+        .then((res) => res.json())
+        .then((data) => data.globalName || data.username || null)
+        .catch(() => null),
+    getProfileUrl: (parsedId) => `https://discord.com/users/${parsedId}`,
+  },
+  github: {
+    fetchDisplayName: (parsedId) =>
+      fetch(`https://api.github.com/user/${parsedId}`)
+        .then((res) => res.json())
+        .then((data) => data.login || null)
+        .catch(() => null),
+    getProfileUrl: (_parsedId, displayName) =>
+      displayName ? `https://github.com/${displayName}` : null,
+  },
+  byond: {
+    getProfileUrl: (parsedId) => `https://www.byond.com/members/${parsedId}`,
+  },
+};
+
 const LinkedSourceRow: React.FC<{
   source: LinkedOAuthSource;
   onUnlink: () => void;
   authentikBaseUrl: string;
 }> = ({ source, onUnlink, authentikBaseUrl }) => {
   const [unlinking, setUnlinking] = useState(false);
-  const [githubLogin, setGithubLogin] = useState<string | null>(null);
-  const [steamPersona, setSteamPersona] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState<string | null>(null);
 
   useEffect(() => {
-    if (source.slug === "github" && source.parsedId) {
-      fetch(`https://api.github.com/user/${source.parsedId}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.login) {
-            setGithubLogin(data.login);
-          }
-        })
-        .catch(() => {});
-    }
-    if (source.slug === "steam" && source.parsedId) {
-      callApi("/Steam/MyPersona")
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.personaName) {
-            setSteamPersona(data.personaName);
-          }
-        })
-        .catch(() => {});
+    const config = sourceConfigs[source.slug];
+    if (config?.fetchDisplayName && source.parsedId) {
+      config.fetchDisplayName(source.parsedId).then(setDisplayName);
     }
   }, [source.slug, source.parsedId]);
 
-  const getExternalLink = (
-    slug: string,
-    parsedId: string | null
-  ): string | null => {
-    if (!parsedId) return null;
-    switch (slug) {
-      case "steam":
-        return `https://steamcommunity.com/profiles/${parsedId}`;
-      case "byond":
-        return `https://www.byond.com/members/${parsedId}`;
-      case "github":
-        return githubLogin ? `https://github.com/${githubLogin}` : null;
-      case "discord":
-        return `https://discord.com/users/${parsedId}`;
-      default:
-        return null;
-    }
+  const getExternalLink = (): string | null => {
+    if (!source.parsedId) return null;
+    const config = sourceConfigs[source.slug];
+    return config?.getProfileUrl(source.parsedId, displayName) ?? null;
   };
 
   const getDisplayId = (): string => {
-    if (source.slug === "github" && githubLogin && source.parsedId) {
-      return `${githubLogin} (${source.parsedId})`;
-    }
-    if (source.slug === "steam" && steamPersona && source.parsedId) {
-      return `${steamPersona} (${source.parsedId})`;
+    if (displayName && source.parsedId) {
+      return `${displayName} (${source.parsedId})`;
     }
     if (source.parsedId) return source.parsedId;
-
     if (source.identifier.startsWith("user:")) {
       return source.identifier.slice(5);
     }
@@ -730,7 +732,7 @@ const LinkedSourceRow: React.FC<{
     setUnlinking(false);
   };
 
-  const externalLink = getExternalLink(source.slug, source.parsedId);
+  const externalLink = getExternalLink();
 
   const iconUrl = source.icon
     ? `${authentikBaseUrl}${source.icon}`
