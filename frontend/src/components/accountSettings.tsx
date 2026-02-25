@@ -664,6 +664,20 @@ const LinkedSourceRow: React.FC<{
   authentikBaseUrl: string;
 }> = ({ source, onUnlink, authentikBaseUrl }) => {
   const [unlinking, setUnlinking] = useState(false);
+  const [githubLogin, setGithubLogin] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (source.slug === "github" && source.parsedId) {
+      fetch(`https://api.github.com/user/${source.parsedId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.login) {
+            setGithubLogin(data.login);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [source.slug, source.parsedId]);
 
   const getExternalLink = (
     slug: string,
@@ -673,6 +687,10 @@ const LinkedSourceRow: React.FC<{
     switch (slug) {
       case "steam":
         return `https://steamcommunity.com/profiles/${parsedId}`;
+      case "byond":
+        return `https://www.byond.com/members/${parsedId}`;
+      case "github":
+        return githubLogin ? `https://github.com/${githubLogin}` : null;
       case "discord":
         return null;
       default:
