@@ -63,40 +63,36 @@ export default function App(): React.ReactElement {
           }
           return response.json();
         })
-        .then((json) => {
-          if (json) {
-            setUser(json);
+        .then((userInfo) => {
+          if (!userInfo) return null;
+
+          return fetch(`${apiPath}/Authentik/AllowedGroups`, {
+            credentials: "include",
+          })
+            .then((response) => {
+              if (!response.ok) {
+                return { manageable: [] };
+              }
+              return response.json();
+            })
+            .then((groupsJson: { manageable: string[] }) => {
+              return {
+                ...userInfo,
+                manageable: groupsJson.manageable,
+              };
+            })
+            .catch(() => {
+              return userInfo;
+            });
+        })
+        .then((combinedUser) => {
+          if (combinedUser) {
+            setUser(combinedUser);
           }
         })
         .catch((error) => {
           console.error("Auth error:", error);
           window.location.href = "/api/auth/login";
-          setAuthLoading(false);
-          return;
-        });
-
-      // Fetch allowed groups from backend
-      fetch(`${apiPath}/Authentik/AllowedGroups`, {
-        credentials: "include",
-      })
-        .then((response) => {
-          if (!response.ok) {
-            throw new Error("Failed to fetch allowed groups");
-          }
-          return response.json();
-        })
-        .then((json: { manageable: string[] }) => {
-          setUser((exitingUser) => {
-            if (exitingUser) {
-              return {
-                ...exitingUser,
-                manageable: json.manageable,
-              };
-            }
-          });
-        })
-        .catch((error) => {
-          console.error("Auth error:", error);
         })
         .finally(() => {
           setAuthLoading(false);
