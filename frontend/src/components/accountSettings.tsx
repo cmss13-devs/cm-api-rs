@@ -234,16 +234,16 @@ export const AccountSettings: React.FC = () => {
       <h1 className="text-xl font-bold">Account Settings</h1>
 
       {/* Tab Bar */}
-      <div className="flex flex-row border-b border-[#3f3f3f] overflow-x-auto">
+      <div className="flex flex-col sm:flex-row border-b border-[#3f3f3f]">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+            className={`px-4 py-2 text-sm font-medium transition-colors text-left sm:border-b-2 ${
               activeTab === tab.id
-                ? "border-blue-500 text-blue-400"
-                : "border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500"
+                ? "bg-[#2a2a2a] sm:bg-transparent sm:border-blue-500 text-blue-400"
+                : "sm:border-transparent text-gray-400 hover:text-gray-200 hover:bg-[#2a2a2a] sm:hover:bg-transparent sm:hover:border-gray-500"
             }`}
           >
             {tab.label}
