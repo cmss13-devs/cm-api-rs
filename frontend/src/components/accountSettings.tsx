@@ -234,13 +234,13 @@ export const AccountSettings: React.FC = () => {
       <h1 className="text-xl font-bold">Account Settings</h1>
 
       {/* Tab Bar */}
-      <div className="flex flex-row border-b border-[#3f3f3f]">
+      <div className="flex flex-row border-b border-[#3f3f3f] overflow-x-auto">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
             onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               activeTab === tab.id
                 ? "border-blue-500 text-blue-400"
                 : "border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-500"
@@ -739,28 +739,32 @@ const LinkedSourceRow: React.FC<{
     : `${authentikBaseUrl}/static/authentik/sources/${source.slug}.svg`;
 
   return (
-    <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
-      <img src={iconUrl} alt={source.name} className="w-6 h-6" />
-      <span className="font-medium w-24">{source.name}</span>
-      <span className="text-gray-300">{getDisplayId()}</span>
-      {externalLink && (
-        <a
-          href={externalLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-400 hover:text-blue-300 hover:underline text-sm"
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-2 border-b border-[#3f3f3f]">
+      <div className="flex flex-row items-center gap-2 sm:gap-3">
+        <img src={iconUrl} alt={source.name} className="w-6 h-6" />
+        <span className="font-medium sm:w-24">{source.name}</span>
+      </div>
+      <div className="flex flex-row items-center gap-2 flex-1 min-w-0 pl-8 sm:pl-0">
+        <span className="text-gray-300 truncate">{getDisplayId()}</span>
+        {externalLink && (
+          <a
+            href={externalLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:text-blue-300 hover:underline text-sm shrink-0"
+          >
+            View Profile
+          </a>
+        )}
+        <button
+          type="button"
+          onClick={handleUnlinkClick}
+          disabled={unlinking}
+          className="ml-auto text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500 shrink-0"
         >
-          View Profile
-        </a>
-      )}
-      <button
-        type="button"
-        onClick={handleUnlinkClick}
-        disabled={unlinking}
-        className="ml-auto text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500"
-      >
-        {unlinking ? "Unlinking..." : "Unlink"}
-      </button>
+          {unlinking ? "Unlinking..." : "Unlink"}
+        </button>
+      </div>
     </div>
   );
 };
@@ -778,17 +782,21 @@ const AvailableSourceRow: React.FC<{
     : `${authentikBaseUrl}/static/authentik/sources/${source.slug}.svg`;
 
   return (
-    <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
-      <img src={iconUrl} alt={source.name} className="w-6 h-6" />
-      <span className="font-medium w-24">{source.name}</span>
-      <span className="text-gray-500">Not linked</span>
-      <button
-        type="button"
-        onClick={handleLink}
-        className="ml-auto text-green-400 hover:text-green-300 hover:underline text-sm"
-      >
-        Link
-      </button>
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-2 border-b border-[#3f3f3f]">
+      <div className="flex flex-row items-center gap-2 sm:gap-3">
+        <img src={iconUrl} alt={source.name} className="w-6 h-6" />
+        <span className="font-medium sm:w-24">{source.name}</span>
+      </div>
+      <div className="flex flex-row items-center gap-2 flex-1 pl-8 sm:pl-0">
+        <span className="text-gray-500">Not linked</span>
+        <button
+          type="button"
+          onClick={handleLink}
+          className="ml-auto text-green-400 hover:text-green-300 hover:underline text-sm"
+        >
+          Link
+        </button>
+      </div>
     </div>
   );
 };
@@ -815,8 +823,8 @@ const SessionRow: React.FC<{
   };
 
   return (
-    <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
-      <div className="flex flex-col flex-1">
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-2 border-b border-[#3f3f3f]">
+      <div className="flex flex-col flex-1 min-w-0">
         <div className="flex flex-row items-center gap-2">
           <span className="font-medium">{session.browser}</span>
           {session.current && (
@@ -829,7 +837,10 @@ const SessionRow: React.FC<{
           {session.os} - {session.device}
         </span>
         <span className="text-sm text-gray-500">
-          Last used: {formatDate(session.lastUsed)} from {session.lastIp}
+          {formatDate(session.lastUsed)}
+        </span>
+        <span className="text-sm text-gray-500 truncate">
+          {session.lastIp}
         </span>
       </div>
       {!session.current && (
@@ -837,7 +848,7 @@ const SessionRow: React.FC<{
           type="button"
           onClick={handleDeleteClick}
           disabled={deleting}
-          className="text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500"
+          className="self-start sm:self-center text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500 shrink-0"
         >
           {deleting ? "Deleting..." : "Delete"}
         </button>
@@ -869,8 +880,8 @@ const ConsentRow: React.FC<{
   };
 
   return (
-    <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
-      <div className="flex flex-col flex-1">
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-2 border-b border-[#3f3f3f]">
+      <div className="flex flex-col flex-1 min-w-0">
         <span className="font-medium">{consent.applicationName}</span>
         {consent.expires && (
           <span className="text-sm text-gray-500">
@@ -878,24 +889,26 @@ const ConsentRow: React.FC<{
           </span>
         )}
       </div>
-      {consent.applicationUrl && (
-        <a
-          href={consent.applicationUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-400 hover:text-blue-300 hover:underline text-sm"
+      <div className="flex flex-row items-center gap-3 self-start sm:self-center">
+        {consent.applicationUrl && (
+          <a
+            href={consent.applicationUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-400 hover:text-blue-300 hover:underline text-sm"
+          >
+            Open
+          </a>
+        )}
+        <button
+          type="button"
+          onClick={handleRevokeClick}
+          disabled={revoking}
+          className="text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500"
         >
-          Open
-        </a>
-      )}
-      <button
-        type="button"
-        onClick={handleRevokeClick}
-        disabled={revoking}
-        className="text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500"
-      >
-        {revoking ? "Revoking..." : "Revoke"}
-      </button>
+          {revoking ? "Revoking..." : "Revoke"}
+        </button>
+      </div>
     </div>
   );
 };
@@ -940,8 +953,8 @@ const MfaDeviceRow: React.FC<{
   };
 
   return (
-    <div className="flex flex-row items-center gap-3 py-2 border-b border-[#3f3f3f]">
-      <div className="flex flex-col flex-1">
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 py-2 border-b border-[#3f3f3f]">
+      <div className="flex flex-col flex-1 min-w-0">
         <span className="font-medium">{device.name}</span>
         <span className="text-sm text-gray-400">
           {getDeviceTypeLabel(device.deviceType)}
@@ -961,7 +974,7 @@ const MfaDeviceRow: React.FC<{
         type="button"
         onClick={handleDeleteClick}
         disabled={deleting}
-        className="text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500"
+        className="self-start sm:self-center text-red-400 hover:text-red-300 hover:underline text-sm disabled:text-gray-500 shrink-0"
       >
         {deleting ? "Deleting..." : "Delete"}
       </button>
