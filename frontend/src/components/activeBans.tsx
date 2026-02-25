@@ -58,7 +58,7 @@ export const ActiveBans: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 min-w-0">
       <h1 className="text-2xl font-bold">View Active Bans</h1>
 
       <div className="flex flex-row flex-wrap gap-3 items-center">

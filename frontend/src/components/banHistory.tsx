@@ -55,7 +55,7 @@ export const BanHistory: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 min-w-0">
       <h1 className="text-2xl font-bold">Ban History</h1>
 
       <div className="text-gray-400 text-sm">

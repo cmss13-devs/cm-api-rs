@@ -20,7 +20,7 @@ export const StickybanModal: React.FC<StickybanModalProps> = (
 	const { stickybans } = props;
 
 	return (
-		<div className="pt-10">
+		<div>
 			<div className="flex flex-row justify-center text-xl">Stickyban Menu</div>
 			<div className="overflow-auto max-h-[800px] border-[#3f3f3f] border p-3">
 				<table className="w-full">
