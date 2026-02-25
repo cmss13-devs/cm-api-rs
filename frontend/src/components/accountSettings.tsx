@@ -692,7 +692,7 @@ const LinkedSourceRow: React.FC<{
       case "github":
         return githubLogin ? `https://github.com/${githubLogin}` : null;
       case "discord":
-        return null;
+        return `https://discord.com/users/${parsedId}`;
       default:
         return null;
     }
