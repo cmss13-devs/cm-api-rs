@@ -3355,6 +3355,7 @@ pub async fn get_my_profile(
             let parsed_id = match source.source.slug.as_str() {
                 "steam" => parse_steam_id(&source.identifier),
                 "discord" => Some(source.identifier.clone()),
+                "github" => Some(source.identifier.clone()),
                 "byond" => Some(
                     source
                         .identifier
