@@ -56,11 +56,13 @@ export default function HomePage(): React.ReactElement {
             <div className="text-sm text-gray-500 text-center">Staff Tools</div>
 
             <div className="flex flex-col md:flex-row gap-3">
-              <LookupOption type="lookup">Lookup User</LookupOption>
+              <LookupOption type="lookup">Lookup Player</LookupOption>
+              <LookupOption type="authentikUuid">Lookup User</LookupOption>
+            </div>
+            <div className="flex flex-col md:flex-row gap-3">
               <LookupOption type="ip">Lookup IP</LookupOption>
               <LookupOption type="cid">Lookup CID</LookupOption>
               <LookupOption type="discordId">Lookup Discord</LookupOption>
-              <LookupOption type="authentikUuid">Lookup Authentik</LookupOption>
             </div>
 
             <Link
