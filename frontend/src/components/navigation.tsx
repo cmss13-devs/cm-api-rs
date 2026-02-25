@@ -12,6 +12,8 @@ function NavDropdown({ label, children }: NavDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const closeDropdown = () => setIsOpen(false);
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -42,7 +44,11 @@ function NavDropdown({ label, children }: NavDropdownProps) {
       </button>
       {isOpen && (
         <div className="absolute top-full left-0 mt-1 py-1 min-w-[150px] foreground border border-gray-600 rounded shadow-lg z-50">
-          {children}
+          {React.Children.map(children, (child) =>
+            React.isValidElement<NavDropdownItemProps>(child)
+              ? React.cloneElement(child, { onClick: closeDropdown })
+              : child
+          )}
         </div>
       )}
     </div>
@@ -56,10 +62,14 @@ interface NavDropdownItemProps {
 }
 
 function NavDropdownItem({ to, children, onClick }: NavDropdownItemProps) {
+  const handleClick = () => {
+    if (onClick) onClick();
+  };
+
   return (
     <Link
       to={to}
-      onClick={onClick}
+      onClick={handleClick}
       className="block px-3 py-1.5 text-gray-300 hover:text-white hover:bg-gray-700/50"
     >
       {children}

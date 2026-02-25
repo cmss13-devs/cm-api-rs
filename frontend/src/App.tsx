@@ -71,14 +71,14 @@ export default function App(): React.ReactElement {
           })
             .then((response) => {
               if (!response.ok) {
-                return { manageable: [] };
+                return [];
               }
               return response.json();
             })
-            .then((groupsJson: { manageable: string[] }) => {
+            .then((manageable: string[]) => {
               return {
                 ...userInfo,
-                manageable: groupsJson.manageable,
+                manageable,
               };
             })
             .catch(() => {
