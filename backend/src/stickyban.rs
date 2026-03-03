@@ -84,7 +84,12 @@ pub async fn whitelist(
     admin: AuthenticatedUser<Staff>,
     config: &State<Config>,
 ) -> Status {
-    let admin_id = match get_player_id(&mut db, &admin.ckey).await {
+    let admin_ckey = match &admin.ckey {
+        Some(ckey) => ckey,
+        None => return Status::Unauthorized,
+    };
+
+    let admin_id = match get_player_id(&mut db, admin_ckey).await {
         Some(admin_id) => admin_id,
         None => return Status::Unauthorized,
     };
@@ -120,7 +125,7 @@ pub async fn whitelist(
             "Player Whitelisted".to_string(),
             format!(
                 "{} whitelisted {} against all matching stickybans.",
-                &admin.ckey, &ckey
+                admin_ckey, &ckey
             ),
             false,
         )

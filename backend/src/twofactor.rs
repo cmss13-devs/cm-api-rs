@@ -28,9 +28,14 @@ pub async fn twofactor_validate(
     cid: &str,
     ip: &str,
 ) -> String {
+    let admin_ckey = match &admin.ckey {
+        Some(ckey) => ckey,
+        None => return "Error: No ckey associated with your account.".to_string(),
+    };
+
     match query("UPDATE twofactor SET approved = 1 WHERE cid = ? AND ckey = ? AND ip = ?")
         .bind(cid)
-        .bind(&admin.ckey)
+        .bind(admin_ckey)
         .bind(ip)
         .execute(&mut **db)
         .await
@@ -41,7 +46,7 @@ pub async fn twofactor_validate(
             } else {
                 format!(
                     "An error occured: could not find match for ckey: {}, cid: {}, ip: {}.",
-                    &admin.ckey, &cid, &ip
+                    admin_ckey, &cid, &ip
                 )
             }
         }

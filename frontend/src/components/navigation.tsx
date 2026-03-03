@@ -140,9 +140,10 @@ export function Navigation({ user, onLogout }: NavigationProps) {
         {user && (
           <div className="ml-auto flex items-center gap-3">
             <span className="text-gray-400">
-              {user.username} (
-              {user.isStaff ? <NameExpand name={user.ckey} /> : user.ckey}
-              )
+              {user.username}
+              {user.ckey && (
+                <> ({user.isStaff ? <NameExpand name={user.ckey} /> : user.ckey})</>
+              )}
             </span>
             <Link to="/account" className="text-gray-300 hover:text-white hover:underline">
               Account
@@ -187,7 +188,7 @@ export function Navigation({ user, onLogout }: NavigationProps) {
         <div className="md:hidden mt-3 pt-3 border-t border-gray-600 flex flex-col gap-2">
           {user && (
             <div className="text-gray-400 text-sm pb-2 border-b border-gray-700">
-              {user.username} ({user.ckey})
+              {user.username}{user.ckey && ` (${user.ckey})`}
             </div>
           )}
 

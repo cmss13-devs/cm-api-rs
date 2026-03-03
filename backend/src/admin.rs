@@ -102,7 +102,7 @@ impl PermissionLevel for Management {
 #[allow(dead_code)]
 pub struct AuthenticatedUser<P: PermissionLevel> {
     pub username: String,
-    pub ckey: String,
+    pub ckey: Option<String>,
     pub email: String,
     pub groups: Vec<String>,
     pub sub: String,
@@ -110,7 +110,7 @@ pub struct AuthenticatedUser<P: PermissionLevel> {
 }
 
 impl<P: PermissionLevel> AuthenticatedUser<P> {
-    fn new(username: String, ckey: String, email: String, groups: Vec<String>, sub: String) -> Self {
+    fn new(username: String, ckey: Option<String>, email: String, groups: Vec<String>, sub: String) -> Self {
         Self {
             username,
             ckey,
@@ -130,7 +130,7 @@ impl<'r, P: PermissionLevel + 'static> FromRequest<'r> for AuthenticatedUser<P> 
         if cfg!(debug_assertions) {
             return request::Outcome::Success(AuthenticatedUser::new(
                 P::debug_username().to_string(),
-                P::debug_username().to_lowercase(),
+                Some(P::debug_username().to_lowercase()),
                 format!("{}@debug.local", P::debug_username().to_lowercase()),
                 P::debug_groups(),
                 "debug-sub".to_string(),

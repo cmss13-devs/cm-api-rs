@@ -2,7 +2,7 @@ import { createContext } from "react";
 
 export type User = {
 	username: string;
-	ckey: string;
+	ckey: string | null;
 	email: string;
 	groups: string[];
 	manageable: string[];

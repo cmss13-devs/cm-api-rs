@@ -111,7 +111,7 @@ pub type CmdbIdTokenFields = IdTokenFields<
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AdditionalClaims {
-    ckey: String,
+    ckey: Option<String>,
 }
 
 impl openidconnect::AdditionalClaims for AdditionalClaims {}
@@ -123,7 +123,7 @@ pub struct SessionClaims {
     pub username: String,
     pub email: String,
     pub groups: Vec<String>,
-    pub ckey: String,
+    pub ckey: Option<String>,
     pub exp: usize,
     pub iat: usize,
     /// Encrypted refresh token (base64 encoded, XOR with session secret)
@@ -146,7 +146,7 @@ pub struct UserInfo {
     pub username: String,
     pub email: String,
     pub groups: Vec<String>,
-    pub ckey: String,
+    pub ckey: Option<String>,
     pub is_staff: bool,
     pub is_management: bool,
 }
@@ -640,7 +640,7 @@ pub fn userinfo(
     if cfg!(debug_assertions) {
         return Ok(Json(UserInfo {
             username: "AdminBot".to_string(),
-            ckey: "adminbot".to_string(),
+            ckey: Some("adminbot".to_string()),
             email: "admin@debug.local".to_string(),
             groups: vec!["admin".to_string()],
             is_staff: true,
