@@ -180,10 +180,11 @@ const AuthentikUserDetails = ({
     }
 
     if (user.uuid) {
-      callApi(`/User?ckey=${encodeURIComponent(user.uuid.replace("-", ""))}`).then(
+      const uuidNoDashes = user.uuid.replace(/-/g, "");
+      callApi(`/User?ckey=${encodeURIComponent(uuidNoDashes)}`).then(
         (response) => {
           if (response.status === 200) {
-            setPlayerByUuid(user.uuid?.replace("-", "") ?? null);
+            setPlayerByUuid(uuidNoDashes ?? null);
           } else {
             setPlayerByUuid(null);
           }
