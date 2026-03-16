@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use rocket::{State, http::Status, serde::json::Json};
 use rocket_db_pools::Connection;
-use sqlx::{query_as, FromRow, Row};
 use serde::{Deserialize, Serialize};
 use serde_json::Map;
 use serenity::all::{GuildId, Http, RoleId, UserId};
+use sqlx::{FromRow, Row, query_as};
 
 use crate::{
     Cmdb, Config, DiscordBotConfig, ServerRoleConfig,
@@ -660,7 +660,10 @@ async fn query_single_user(
         .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
 
     match search_response.results.len() {
-        0 => Err(format!("No user found with {} '{}'", field_name, field_value)),
+        0 => Err(format!(
+            "No user found with {} '{}'",
+            field_name, field_value
+        )),
         1 => Ok(search_response.results.into_iter().next().unwrap()),
         _ => Err(format!(
             "Multiple users found with {} '{}', expected exactly one",
@@ -1030,7 +1033,10 @@ async fn unlink_oauth_source(
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("Failed to unlink source (status {}): {}", status, body));
+        return Err(format!(
+            "Failed to unlink source (status {}): {}",
+            status, body
+        ));
     }
 
     Ok(())
@@ -2359,17 +2365,21 @@ pub async fn get_discourse_user_id(
 
     let http_client = reqwest::Client::new();
 
-    let authentik_user = get_user_by_ckey(&http_client, authentik_config, &ckey)
-        .await
-        .map_err(|e| {
-            (
-                Status::BadRequest,
-                Json(AuthentikError {
-                    error: "user_not_found".to_string(),
-                    message: e,
-                }),
-            )
-        })?;
+    // If not found by ckey, try by UUID (ckey may be a UUID for non-BYOND users)
+    let authentik_user = match get_user_by_ckey(&http_client, authentik_config, &ckey).await {
+        Ok(user) => user,
+        Err(_) => get_user_by_uuid(&http_client, authentik_config, &ckey)
+            .await
+            .map_err(|e| {
+                (
+                    Status::BadRequest,
+                    Json(AuthentikError {
+                        error: "user_not_found".to_string(),
+                        message: e,
+                    }),
+                )
+            })?,
+    };
 
     let external_id = authentik_user.uid.to_string();
 
@@ -3344,10 +3354,8 @@ pub async fn get_my_profile(
     })?;
 
     // Build set of linked source slugs
-    let linked_slugs: std::collections::HashSet<String> = user_sources
-        .iter()
-        .map(|s| s.source.slug.clone())
-        .collect();
+    let linked_slugs: std::collections::HashSet<String> =
+        user_sources.iter().map(|s| s.source.slug.clone()).collect();
 
     let linked_sources: Vec<LinkedOAuthSource> = user_sources
         .into_iter()
@@ -3732,4 +3740,3 @@ pub async fn get_my_player_info(
         job_bans: public_job_bans,
     }))
 }
-
