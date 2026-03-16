@@ -306,6 +306,11 @@ type DiscourseUser = {
   discourseUsername: string;
 };
 
+type AuthentikUser = {
+  uuid: string | null;
+  username: string;
+};
+
 const UserDetailsModal = (props: { player: Player }) => {
   const { player } = props;
 
@@ -329,11 +334,15 @@ const UserDetailsModal = (props: { player: Player }) => {
   const [discourseUser, setDiscourseUser] = useState<
     DiscourseUser | null | undefined
   >(undefined);
+  const [authentikUser, setAuthentikUser] = useState<
+    AuthentikUser | null | undefined
+  >(undefined);
 
   useEffect(() => {
     setViewTickets(false);
     setVpnWhitelist(undefined);
     setDiscourseUser(undefined);
+    setAuthentikUser(undefined);
   }, [player, setViewTickets]);
 
   useEffect(() => {
@@ -359,6 +368,26 @@ const UserDetailsModal = (props: { player: Player }) => {
       });
     }
   }, [ckey, discourseUser]);
+
+  useEffect(() => {
+    if (authentikUser === undefined) {
+      // Try by ckey first, then fall back to UUID lookup
+      callApi(`/Authentik/UserByCkey/${ckey}`).then((response) => {
+        if (response.status === 200) {
+          response.json().then((json) => setAuthentikUser(json));
+        } else {
+          // Fall back to UUID lookup (ckey may be a UUID for non-BYOND users)
+          callApi(`/Authentik/UserByUuid/${ckey}`).then((response) => {
+            if (response.status === 200) {
+              response.json().then((json) => setAuthentikUser(json));
+            } else {
+              setAuthentikUser(null);
+            }
+          });
+        }
+      });
+    }
+  }, [ckey, authentikUser]);
 
   const potentialUser = useLoaderData() as string;
   const nav = useNavigate();
@@ -479,6 +508,16 @@ const UserDetailsModal = (props: { player: Player }) => {
                 }
               >
                 View Forum Account
+              </LinkColor>
+            </>
+          )}
+          {authentikUser?.uuid && (
+            <>
+              {"|"}
+              <LinkColor
+                onClick={() => nav(`/authentik/${authentikUser.uuid}`)}
+              >
+                View User Account
               </LinkColor>
             </>
           )}

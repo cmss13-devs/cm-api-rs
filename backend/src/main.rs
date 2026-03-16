@@ -363,6 +363,7 @@ async fn build_rocket() -> rocket::Rocket<rocket::Build> {
                 authentik::webhook_user_unlinked,
                 authentik::webhook_user_linked,
                 authentik::user_by_uuid_endpoint,
+                authentik::user_by_ckey_endpoint,
                 authentik::get_user_by_discord_id,
                 authentik::search_users,
                 authentik::get_my_profile,

@@ -3187,6 +3187,52 @@ pub async fn user_by_uuid_endpoint(
     }))
 }
 
+/// GET /Authentik/UserByCkey/<ckey> - get full user details by ckey attribute (Staff only)
+#[get("/UserByCkey/<ckey>")]
+pub async fn user_by_ckey_endpoint(
+    _user: AuthenticatedUser<Staff>,
+    config: &State<Config>,
+    ckey: String,
+) -> Result<Json<AuthentikUserFullResponse>, (Status, Json<AuthentikError>)> {
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let user = get_user_by_ckey(&http_client, authentik_config, &ckey)
+        .await
+        .map_err(|e| {
+            (
+                Status::NotFound,
+                Json(AuthentikError {
+                    error: "user_not_found".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    let groups = user.group_names();
+
+    Ok(Json(AuthentikUserFullResponse {
+        pk: user.pk,
+        uuid: user.uuid,
+        uid: user.uid,
+        username: user.username,
+        name: user.name,
+        is_active: user.is_active,
+        last_login: user.last_login,
+        attributes: user.attributes,
+        groups,
+    }))
+}
+
 /// GET /Authentik/SearchUsers?query=<query> - search users by username or name (Staff only)
 #[get("/SearchUsers?<query>")]
 pub async fn search_users(
