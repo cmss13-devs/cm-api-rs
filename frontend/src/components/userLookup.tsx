@@ -496,31 +496,6 @@ const UserDetailsModal = (props: { player: Player }) => {
           <LinkColor onClick={() => setViewPlaytime(true)}>
             View Playtime
           </LinkColor>
-          {discourseUser && (
-            <>
-              {"|"}
-              <LinkColor
-                onClick={() =>
-                  window.open(
-                    `https://forum.cm-ss13.com/admin/users/${discourseUser.discourseUserId}/${discourseUser.discourseUsername}`,
-                    "_blank"
-                  )
-                }
-              >
-                View Forum Account
-              </LinkColor>
-            </>
-          )}
-          {authentikUser?.uuid && (
-            <>
-              {"|"}
-              <LinkColor
-                onClick={() => nav(`/authentik/${authentikUser.uuid}`)}
-              >
-                View User Account
-              </LinkColor>
-            </>
-          )}
           {playtime && (
             <Dialog
               open={playtime}
@@ -539,6 +514,30 @@ const UserDetailsModal = (props: { player: Player }) => {
             setVpnWhitelist={setVpnWhitelist}
           />
         </div>
+        {(discourseUser || authentikUser?.uuid) && (
+          <div className="flex flex-row justify-center gap-2">
+            {discourseUser && (
+              <LinkColor
+                onClick={() =>
+                  window.open(
+                    `https://forum.cm-ss13.com/admin/users/${discourseUser.discourseUserId}/${discourseUser.discourseUsername}`,
+                    "_blank"
+                  )
+                }
+              >
+                View Forum Account
+              </LinkColor>
+            )}
+            {discourseUser && authentikUser?.uuid && "|"}
+            {authentikUser?.uuid && (
+              <LinkColor
+                onClick={() => nav(`/authentik/${authentikUser.uuid}`)}
+              >
+                View User Account
+              </LinkColor>
+            )}
+          </div>
+        )}
       </div>
     </>
   );
