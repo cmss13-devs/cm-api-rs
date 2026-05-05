@@ -62,6 +62,7 @@ fn build_docs_server() -> rocket::Rocket<rocket::Build> {
 
 mod achievements;
 mod admin;
+mod appeal;
 mod auth;
 mod authentik;
 mod byond;
@@ -168,6 +169,8 @@ pub struct DiscordBotConfig {
     /// on unlink events, the inverse is applied (roles_to_add are removed, roles_to_remove are added)
     #[serde(default)]
     pub link_role_changes: std::collections::HashMap<String, ServerRoleConfig>,
+    /// primary guild ID for checking Discord bans in the appeal system
+    pub primary_guild_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -385,6 +388,10 @@ async fn build_rocket() -> rocket::Rocket<rocket::Build> {
                 discord::check_verified,
                 discord::get_my_profile
             ],
+        )
+        .mount(
+            format!("{}/Appeal", base_url),
+            routes![appeal::get_my_bans, appeal::submit_appeal],
         )
         .mount(
             format!("{}/Steam", base_url),

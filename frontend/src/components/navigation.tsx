@@ -101,6 +101,7 @@ export function Navigation({ user, onLogout }: NavigationProps) {
         <NavDropdown label="Bans">
           <NavDropdownItem to="/bans">Active Bans</NavDropdownItem>
           <NavDropdownItem to="/ban-history">Ban History</NavDropdownItem>
+          <NavDropdownItem to="/appeal">Ban Appeal</NavDropdownItem>
           {user?.isStaff && (
             <NavDropdownItem to="/sticky">Stickybans</NavDropdownItem>
           )}
@@ -198,6 +199,9 @@ export function Navigation({ user, onLogout }: NavigationProps) {
           </Link>
           <Link to="/ban-history" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
             Ban History
+          </Link>
+          <Link to="/appeal" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
+            Ban Appeal
           </Link>
           {user?.isStaff && (
             <Link to="/sticky" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">

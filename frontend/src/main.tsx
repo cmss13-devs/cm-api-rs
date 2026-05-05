@@ -15,6 +15,7 @@ import { NewPlayers } from "./components/newPlayers";
 import { Stickybans } from "./components/stickybans";
 import { Tickets } from "./components/tickets";
 import { TwoFactor } from "./components/twoFactor";
+import { BanAppeal } from "./components/banAppeal";
 import { LookupMenu } from "./components/userLookup";
 import { WhitelistMenu } from "./components/whitelistPanel";
 
@@ -101,6 +102,11 @@ const router = createBrowserRouter([
         path: "/my-player-info",
         element: <MyPlayerInfo />,
         handle: { title: "My Player Info" },
+      },
+      {
+        path: "/appeal",
+        element: <BanAppeal />,
+        handle: { title: "Ban Appeal" },
       },
     ],
   },

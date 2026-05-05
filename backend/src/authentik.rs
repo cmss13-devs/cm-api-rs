@@ -28,6 +28,9 @@ pub struct DiscourseConfig {
     pub provider_name: String,
     /// optional webhook secret for authenticating incoming Authentik webhooks
     pub webhook_secret: Option<String>,
+    /// mapping of ban type strings to Discourse category IDs for ban appeals
+    #[serde(default)]
+    pub appeal_categories: Option<std::collections::HashMap<String, i64>>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
