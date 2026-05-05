@@ -898,10 +898,11 @@ async fn create_discourse_topic(
 ) -> Result<DiscourseTopicCreated, String> {
     let url = format!("{}/posts.json", config.base_url.trim_end_matches('/'));
 
+    // Create as system user to bypass category permissions, then change ownership
     let response = client
         .post(&url)
         .header("Api-Key", &config.api_key)
-        .header("Api-Username", as_username)
+        .header("Api-Username", &config.api_username)
         .json(&serde_json::json!({
             "title": title,
             "raw": body,
@@ -921,6 +922,23 @@ async fn create_discourse_topic(
         .json()
         .await
         .map_err(|e| format!("Failed to parse Discourse response: {}", e))?;
+
+    // Transfer ownership of the first post to the actual user
+    let change_owner_url = format!(
+        "{}/t/{}/change-owner",
+        config.base_url.trim_end_matches('/'),
+        created.topic_id
+    );
+    let _ = client
+        .post(&change_owner_url)
+        .header("Api-Key", &config.api_key)
+        .header("Api-Username", &config.api_username)
+        .form(&[
+            ("username", as_username.to_string()),
+            ("post_ids[]", created.id.to_string()),
+        ])
+        .send()
+        .await;
 
     Ok(created)
 }
