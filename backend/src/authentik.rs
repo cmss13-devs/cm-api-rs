@@ -11,7 +11,7 @@ use crate::{
     Cmdb, Config, DiscordBotConfig, ServerRoleConfig,
     admin::{AuthenticatedUser, Management, Player, Staff},
     byond::refresh_admins,
-    discord::{get_whitelist_status_by_ckey, resolve_whitelist_roles},
+    discord::{get_ckey_by_discord_id_from_db, get_whitelist_status_by_ckey, resolve_whitelist_roles},
     logging::log_external,
     player::{AuthorizationHeader, query_total_playtime_minutes},
 };
@@ -3784,5 +3784,152 @@ pub async fn get_my_player_info(
         display_name: authentik_user.name,
         notes: public_notes,
         job_bans: public_job_bans,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct SetChatBannedRequest {
+    pub discord_id: String,
+    pub banned: bool,
+}
+
+/// POST /Authentik/SetChatBanned - set the chat_banned attribute on an Authentik user (looked up
+/// by discord_id attribute, falling back to DB discord_links -> ckey -> Authentik) and
+/// remove/add the chat_user Discourse group accordingly
+#[post("/SetChatBanned", format = "json", data = "<request>")]
+pub async fn set_chat_banned(
+    auth_header: AuthorizationHeader,
+    mut db: Connection<Cmdb>,
+    config: &State<Config>,
+    request: Json<SetChatBannedRequest>,
+) -> Result<Json<AuthentikSuccess>, (Status, Json<AuthentikError>)> {
+    if !validate_auth_header(&auth_header.0, config) {
+        return Err((
+            Status::Unauthorized,
+            Json(AuthentikError {
+                error: "unauthorized".to_string(),
+                message: "Not authorized to access this resource.".to_string(),
+            }),
+        ));
+    }
+
+    let authentik_config = config.authentik.as_ref().ok_or_else(|| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "not_configured".to_string(),
+                message: "Authentik is not configured".to_string(),
+            }),
+        )
+    })?;
+
+    let http_client = reqwest::Client::new();
+
+    let authentik_user = match get_user_by_attribute(
+        &http_client,
+        authentik_config,
+        "discord_id",
+        &request.discord_id,
+    )
+    .await
+    {
+        Ok(user) => user,
+        Err(_) => {
+            let ckey = get_ckey_by_discord_id_from_db(&mut db, &request.discord_id)
+                .await
+                .map_err(|e| {
+                    (
+                        Status::BadRequest,
+                        Json(AuthentikError {
+                            error: "user_not_found".to_string(),
+                            message: e,
+                        }),
+                    )
+                })?;
+            get_user_by_ckey(&http_client, authentik_config, &ckey)
+                .await
+                .map_err(|e| {
+                    (
+                        Status::BadRequest,
+                        Json(AuthentikError {
+                            error: "user_not_found".to_string(),
+                            message: e,
+                        }),
+                    )
+                })?
+        }
+    };
+
+    let mut attributes = authentik_user.attributes.clone();
+    if let Some(obj) = attributes.as_object_mut() {
+        obj.insert(
+            "chat_banned".to_string(),
+            serde_json::Value::Bool(request.banned),
+        );
+    }
+
+    update_user_attributes(&http_client, authentik_config, authentik_user.pk, attributes)
+        .await
+        .map_err(|e| {
+            (
+                Status::InternalServerError,
+                Json(AuthentikError {
+                    error: "update_failed".to_string(),
+                    message: e,
+                }),
+            )
+        })?;
+
+    if let Some(discourse_config) = &authentik_config.discourse {
+        let discourse_user_result = get_discourse_user_by_external_id(
+            &http_client,
+            discourse_config,
+            &authentik_user.uid.to_string(),
+        )
+        .await;
+
+        if let Ok(discourse_user) = discourse_user_result {
+            let discourse_group_result =
+                get_discourse_group_by_name(&http_client, discourse_config, "chat_user").await;
+
+            if let Ok(discourse_group) = discourse_group_result {
+                if request.banned {
+                    let _ = remove_user_from_discourse_group(
+                        &http_client,
+                        discourse_config,
+                        discourse_group.id,
+                        &discourse_user.username,
+                    )
+                    .await;
+                } else {
+                    let _ = add_user_to_discourse_group(
+                        &http_client,
+                        discourse_config,
+                        discourse_group.id,
+                        &discourse_user.username,
+                    )
+                    .await;
+                }
+            }
+        }
+    }
+
+    let _ = log_external(
+        config,
+        "Chat Ban: User Updated".to_string(),
+        format!(
+            "discord_id '{}' chat_banned set to {}",
+            request.discord_id, request.banned
+        ),
+        true,
+    )
+    .await;
+
+    Ok(Json(AuthentikSuccess {
+        message: format!(
+            "Successfully set chat_banned={} for discord_id '{}'",
+            request.banned, request.discord_id
+        ),
     }))
 }

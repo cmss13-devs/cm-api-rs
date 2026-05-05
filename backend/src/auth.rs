@@ -2,8 +2,8 @@ use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
-    EmptyExtraTokenFields, IdTokenFields, IssuerUrl, Nonce, OAuth2TokenResponse, PkceCodeChallenge,
-    PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, StandardErrorResponse,
+    EmptyExtraTokenFields, IdTokenFields, IssuerUrl, Nonce, OAuth2TokenResponse,
+    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, Scope, StandardErrorResponse,
     StandardTokenResponse, TokenResponse,
     core::{
         CoreAuthDisplay, CoreAuthPrompt, CoreErrorResponseType, CoreGenderClaim, CoreJsonWebKey,

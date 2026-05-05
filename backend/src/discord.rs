@@ -44,7 +44,7 @@ pub struct VerifiedUserResponse {
     pub roles_to_remove: Vec<String>,
 }
 
-async fn get_ckey_by_discord_id_from_db(
+pub async fn get_ckey_by_discord_id_from_db(
     db: &mut Connection<Cmdb>,
     discord_id: &str,
 ) -> Result<String, String> {

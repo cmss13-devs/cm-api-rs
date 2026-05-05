@@ -370,6 +370,7 @@ async fn build_rocket() -> rocket::Rocket<rocket::Build> {
                 authentik::update_my_profile,
                 authentik::unlink_my_source,
                 authentik::get_my_player_info,
+                authentik::set_chat_banned,
                 user_settings::get_my_settings,
                 user_settings::delete_my_session,
                 user_settings::revoke_my_consent,
