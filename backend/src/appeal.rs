@@ -521,7 +521,6 @@ pub async fn submit_appeal(
     let topic = create_discourse_topic(
         &http_client,
         discourse_config,
-        &discourse_username,
         &title,
         &topic_body,
         *category_id,
@@ -926,7 +925,6 @@ struct DiscourseTopicCreated {
 async fn create_discourse_topic(
     client: &reqwest::Client,
     config: &DiscourseConfig,
-    as_username: &str,
     title: &str,
     body: &str,
     category_id: i64,
@@ -958,20 +956,16 @@ async fn create_discourse_topic(
         .await
         .map_err(|e| format!("Failed to parse Discourse response: {}", e))?;
 
-    // Transfer ownership of the first post to the actual user
-    let change_owner_url = format!(
-        "{}/t/{}/change-owner",
+    let lock_url = format!(
+        "{}/posts/{}/locked",
         config.base_url.trim_end_matches('/'),
-        created.topic_id
+        created.id
     );
     let _ = client
-        .post(&change_owner_url)
+        .put(&lock_url)
         .header("Api-Key", &config.api_key)
         .header("Api-Username", &config.api_username)
-        .form(&[
-            ("username", as_username.to_string()),
-            ("post_ids[]", created.id.to_string()),
-        ])
+        .form(&[("locked", "true")])
         .send()
         .await;
 
