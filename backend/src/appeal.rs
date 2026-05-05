@@ -521,6 +521,7 @@ pub async fn submit_appeal(
     let topic = create_discourse_topic(
         &http_client,
         discourse_config,
+        &discourse_username,
         &title,
         &topic_body,
         *category_id,
@@ -925,17 +926,17 @@ struct DiscourseTopicCreated {
 async fn create_discourse_topic(
     client: &reqwest::Client,
     config: &DiscourseConfig,
+    as_username: &str,
     title: &str,
     body: &str,
     category_id: i64,
 ) -> Result<DiscourseTopicCreated, String> {
     let url = format!("{}/posts.json", config.base_url.trim_end_matches('/'));
 
-    // Create as system user to bypass category permissions, then change ownership
     let response = client
         .post(&url)
         .header("Api-Key", &config.api_key)
-        .header("Api-Username", &config.api_username)
+        .header("Api-Username", as_username)
         .json(&serde_json::json!({
             "title": title,
             "raw": body,
