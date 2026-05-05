@@ -47,13 +47,13 @@ export default function HomePage(): React.ReactElement {
           to={"/bans"}
           className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
         >
-          View Global Active Bans
+          View Public Active Bans
         </Link>
         <Link
           to={"/ban-history"}
           className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
         >
-          View Global Ban History
+          View Public Ban History
         </Link>
 
         {user?.isStaff && (
