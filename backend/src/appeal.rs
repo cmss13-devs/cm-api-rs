@@ -482,7 +482,7 @@ pub async fn submit_appeal(
         _ => &request.ban_type,
     };
 
-    let title = format!("Ban Appeal - {} - {}", ckey, ban_type_display);
+    let title = format!("{} - {} Appeal", ckey, ban_type_display);
     let topic = create_discourse_topic(
         &http_client,
         discourse_config,
