@@ -352,7 +352,8 @@ pub async fn get_my_bans(
     for ban in &mut bans {
         let appeal: Option<BanAppealRow> = query_as(
             "SELECT id, discourse_topic_url FROM ban_appeals \
-             WHERE ckey = ? AND ban_type = ? AND ban_reference_id = ? AND status = 'open'",
+             WHERE ckey = ? AND ban_type = ? AND ban_reference_id = ? AND status = 'open' \
+             AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)",
         )
         .bind(&ckey)
         .bind(&ban.ban_type)
@@ -435,7 +436,8 @@ pub async fn submit_appeal(
 
     let existing: Option<BanAppealRow> = query_as(
         "SELECT id, discourse_topic_url FROM ban_appeals \
-         WHERE ckey = ? AND ban_type = ? AND ban_reference_id = ? AND status = 'open'",
+         WHERE ckey = ? AND ban_type = ? AND ban_reference_id = ? AND status = 'open' \
+         AND created_at > DATE_SUB(NOW(), INTERVAL 30 DAY)",
     )
     .bind(&ckey)
     .bind(&request.ban_type)

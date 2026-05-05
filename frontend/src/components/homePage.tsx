@@ -31,7 +31,13 @@ export default function HomePage(): React.ReactElement {
               to={"/my-player-info"}
               className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
             >
-              My Player Info
+              View my Player Info
+            </Link>
+                        <Link
+              to={"/appeal"}
+              className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
+            >
+              Create an Appeal
             </Link>
             <hr className="border-[#3f3f3f] my-2" />
           </>
@@ -41,13 +47,13 @@ export default function HomePage(): React.ReactElement {
           to={"/bans"}
           className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
         >
-          View Active Bans
+          View Global Active Bans
         </Link>
         <Link
           to={"/ban-history"}
           className="border border-[#555555] rounded p-3 cursor-pointer grow clicky"
         >
-          Ban History
+          View Global Ban History
         </Link>
 
         {user?.isStaff && (
