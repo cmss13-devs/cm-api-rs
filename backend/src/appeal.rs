@@ -286,38 +286,18 @@ pub async fn get_my_bans(
         });
     }
 
-    if let Some(ref discord_config) = config.discord_bot
-        && let Some(ref guild_id_str) = discord_config.primary_guild_id
-    {
-        let discord_id: Option<String> = if let Some(ref player) = player {
-            query("SELECT discord_id FROM discord_links WHERE player_id = ?")
-                .bind(player.id)
-                .fetch_optional(&mut **db)
-                .await
-                .ok()
-                .flatten()
-                .map(|row| row.get("discord_id"))
-        } else {
-            None
-        };
-
-        if let Some(discord_id) = discord_id
-            && let Ok(reason) =
-                check_discord_ban(&discord_config.token, guild_id_str, &discord_id).await
-            && let Some(reason) = reason
-        {
-            bans.push(ActiveBan {
-                ban_type: "discord".to_string(),
-                reference_id: "discord".to_string(),
-                reason,
-                date: None,
-                expiration: None,
-                role: None,
-                stickyban_identifier: None,
-                has_active_appeal: false,
-                appeal_url: None,
-            });
-        }
+    if let Some(reason) = check_discord_ban_by_ckey(&ckey, config, &mut **db).await {
+        bans.push(ActiveBan {
+            ban_type: "discord".to_string(),
+            reference_id: "discord".to_string(),
+            reason,
+            date: None,
+            expiration: None,
+            role: None,
+            stickyban_identifier: None,
+            has_active_appeal: false,
+            appeal_url: None,
+        });
     }
 
     let active_keys: Vec<String> = bans
@@ -538,7 +518,7 @@ pub async fn submit_appeal(
     })?;
 
     let whisper_body =
-        build_whisper_content(&ckey, &request.ban_type, &request.ban_reference_id, &mut db).await;
+        build_whisper_content(&ckey, &request.ban_type, &request.ban_reference_id, config, &mut db).await;
 
     let _ = create_discourse_whisper(
         &http_client,
@@ -688,52 +668,18 @@ async fn validate_ban_active(
             }
         }
         "discord" => {
-            if let Some(ref discord_config) = config.discord_bot
-                && let Some(ref guild_id_str) = discord_config.primary_guild_id
+            if check_discord_ban_by_ckey(ckey, config, &mut ***db)
+                .await
+                .is_none()
             {
-                let player_id: Option<i64> = query("SELECT id FROM players WHERE ckey = ?")
-                    .bind(ckey)
-                    .fetch_optional(&mut ***db)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|row| row.get("id"));
-
-                if let Some(player_id) = player_id {
-                    let discord_id: Option<String> =
-                        query("SELECT discord_id FROM discord_links WHERE player_id = ?")
-                            .bind(player_id)
-                            .fetch_optional(&mut ***db)
-                            .await
-                            .ok()
-                            .flatten()
-                            .map(|row| row.get("discord_id"));
-
-                    if let Some(discord_id) = discord_id {
-                        let ban =
-                            check_discord_ban(&discord_config.token, guild_id_str, &discord_id)
-                                .await
-                                .unwrap_or(None);
-                        if ban.is_none() {
-                            return Err((
-                                Status::BadRequest,
-                                Json(AuthentikError {
-                                    error: "ban_not_active".to_string(),
-                                    message: "You are not currently banned from the Discord server"
-                                        .to_string(),
-                                }),
-                            ));
-                        }
-                    } else {
-                        return Err((
-                            Status::BadRequest,
-                            Json(AuthentikError {
-                                error: "no_discord".to_string(),
-                                message: "No Discord account linked".to_string(),
-                            }),
-                        ));
-                    }
-                }
+                return Err((
+                    Status::BadRequest,
+                    Json(AuthentikError {
+                        error: "ban_not_active".to_string(),
+                        message: "You are not currently banned from the Discord server"
+                            .to_string(),
+                    }),
+                ));
             }
         }
         _ => {
@@ -753,6 +699,7 @@ async fn build_whisper_content(
     ckey: &str,
     ban_type: &str,
     reference_id: &str,
+    config: &State<Config>,
     db: &mut Connection<Cmdb>,
 ) -> String {
     let mut content = String::new();
@@ -847,7 +794,10 @@ async fn build_whisper_content(
         }
         "discord" => {
             content.push_str("### Discord Ban\n\n");
-            content.push_str("Player is banned from the Discord server.\n\n");
+            let reason = check_discord_ban_by_ckey(ckey, config, &mut ***db)
+                .await
+                .unwrap_or_else(|| "No reason provided".to_string());
+            content.push_str(&format!("**Reason:** {}\n\n", reason));
         }
         _ => {}
     }
@@ -888,6 +838,33 @@ async fn build_whisper_content(
     }
 
     content
+}
+
+async fn check_discord_ban_by_ckey(
+    ckey: &str,
+    config: &Config,
+    db: &mut sqlx::MySqlConnection,
+) -> Option<String> {
+    let discord_config = config.discord_bot.as_ref()?;
+    let guild_id_str = discord_config.primary_guild_id.as_ref()?;
+
+    let player_id: i64 = query("SELECT id FROM players WHERE ckey = ?")
+        .bind(ckey)
+        .fetch_optional(&mut *db)
+        .await
+        .ok()?
+        .map(|row| row.get("id"))?;
+
+    let discord_id: String = query("SELECT discord_id FROM discord_links WHERE player_id = ?")
+        .bind(player_id)
+        .fetch_optional(&mut *db)
+        .await
+        .ok()?
+        .map(|row| row.get("discord_id"))?;
+
+    check_discord_ban(&discord_config.token, guild_id_str, &discord_id)
+        .await
+        .ok()?
 }
 
 async fn check_discord_ban(
