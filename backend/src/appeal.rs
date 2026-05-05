@@ -320,6 +320,35 @@ pub async fn get_my_bans(
         }
     }
 
+    let active_keys: Vec<String> = bans
+        .iter()
+        .map(|b| format!("{}:{}", b.ban_type, b.reference_id))
+        .collect();
+
+    #[derive(Debug, FromRow)]
+    struct FullAppealRow {
+        id: i64,
+        ban_type: String,
+        ban_reference_id: String,
+    }
+    let open_appeals_full: Vec<FullAppealRow> = query_as(
+        "SELECT id, ban_type, ban_reference_id FROM ban_appeals WHERE ckey = ? AND status = 'open'",
+    )
+    .bind(&ckey)
+    .fetch_all(&mut **api_db)
+    .await
+    .unwrap_or_default();
+
+    for appeal in &open_appeals_full {
+        let key = format!("{}:{}", appeal.ban_type, appeal.ban_reference_id);
+        if !active_keys.contains(&key) {
+            let _ = query("UPDATE ban_appeals SET status = 'expired' WHERE id = ?")
+                .bind(appeal.id)
+                .execute(&mut **api_db)
+                .await;
+        }
+    }
+
     for ban in &mut bans {
         let appeal: Option<BanAppealRow> = query_as(
             "SELECT id, discourse_topic_url FROM ban_appeals \
@@ -482,13 +511,17 @@ pub async fn submit_appeal(
         _ => &request.ban_type,
     };
 
-    let title = format!("{} - {} Appeal", ckey, ban_type_display);
+    let title = format!("{} - {} Appeal", discourse_username, ban_type_display);
+    let topic_body = format!(
+        "# {} - {} Appeal\n\n## BYOND ckey\n{}\n\n## Appeal\n{}",
+        discourse_username, ban_type_display, ckey, request.appeal_reason
+    );
     let topic = create_discourse_topic(
         &http_client,
         discourse_config,
         &discourse_username,
         &title,
-        &request.appeal_reason,
+        &topic_body,
         *category_id,
     )
     .await
@@ -958,7 +991,8 @@ async fn create_discourse_whisper(
         .json(&serde_json::json!({
             "topic_id": topic_id,
             "raw": body,
-            "post_type": 4,
+            "whisper": true,
+            "archetype": "regular",
         }))
         .send()
         .await
