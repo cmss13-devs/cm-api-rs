@@ -208,8 +208,8 @@ export function BanAppeal() {
                 className="w-full h-40 bg-[#2a2a2a] border border-gray-600 rounded p-3 text-gray-200 text-sm resize-none focus:outline-none focus:border-gray-400"
                 disabled={submitting}
               />
-              <p className="text-xs text-gray-600 mt-1">
-                This will be posted publicly on the forum.
+              <p className="text-xs text-gray-500 mt-1">
+                This will be posted on the forum. Admins can already see all relevant context and the ban being appealed.
               </p>
             </div>
 
