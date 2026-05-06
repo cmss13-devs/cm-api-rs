@@ -1,10 +1,14 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLoaderData, useNavigate } from "react-router-dom";
+import ForceGraph from "react-force-graph-2d";
+import type { ForceGraphMethods } from "react-force-graph-2d";
 import { callApi } from "../helpers/api";
 import type { CkeyLink, MultiKeyTrace as MultiKeyTraceType } from "../types/loginTriplet";
 import { DetailedCid } from "./detailedCid";
 import { DetailedIp } from "./detailedIp";
 import { NameExpand } from "./nameExpand";
+
+type ViewMode = "list" | "graph";
 
 function LinkEvidence({ link }: { link: CkeyLink }) {
 	return (
@@ -37,6 +41,116 @@ function LinkEvidence({ link }: { link: CkeyLink }) {
 	);
 }
 
+type GraphNode = { id: string; isRoot: boolean; x?: number; y?: number };
+type GraphLink = { source: string; target: string; score: number; label: string };
+
+function TraceGraph({
+	traceData,
+	onNodeClick,
+}: {
+	traceData: MultiKeyTraceType;
+	onNodeClick: (ckey: string) => void;
+}) {
+	const containerRef = useRef<HTMLDivElement>(null);
+	const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink>>();
+	const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
+	useEffect(() => {
+		const el = containerRef.current;
+		if (!el) return;
+		const obs = new ResizeObserver((entries) => {
+			const { width, height } = entries[0].contentRect;
+			setDimensions({ width, height });
+		});
+		obs.observe(el);
+		return () => obs.disconnect();
+	}, []);
+
+	useEffect(() => {
+		if (fgRef.current) {
+			fgRef.current.zoomToFit(400, 60);
+		}
+	}, [traceData]);
+
+	const graphData = useMemo(() => {
+		const nodes: GraphNode[] = [
+			{ id: traceData.rootCkey, isRoot: true },
+			...traceData.connectedCkeys.map((c) => ({ id: c, isRoot: false })),
+		];
+
+		const links: GraphLink[] = traceData.links.map((link) => {
+			const score = link.sharedCids.length + link.sharedIps.length + link.sharedHwids.length;
+			const parts: string[] = [];
+			if (link.sharedCids.length) parts.push(`${link.sharedCids.length} CID`);
+			if (link.sharedIps.length) parts.push(`${link.sharedIps.length} IP`);
+			if (link.sharedHwids.length) parts.push(`${link.sharedHwids.length} HWID`);
+			return {
+				source: link.ckeyA,
+				target: link.ckeyB,
+				score,
+				label: parts.join(", "),
+			};
+		});
+
+		return { nodes, links };
+	}, [traceData]);
+
+	const nodeCanvasObject = useCallback(
+		(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
+			const label = node.id;
+			const fontSize = 12 / globalScale;
+			ctx.font = `${fontSize}px JetBrains Mono, monospace`;
+
+			ctx.fillStyle = node.isRoot ? "#f59e0b" : "#9ca3af";
+			ctx.beginPath();
+			ctx.arc(node.x!, node.y!, node.isRoot ? 5 : 3, 0, 2 * Math.PI);
+			ctx.fill();
+
+			ctx.fillStyle = node.isRoot ? "#f59e0b" : "#d1d5db";
+			ctx.textAlign = "center";
+			ctx.textBaseline = "top";
+			ctx.fillText(label, node.x!, node.y! + (node.isRoot ? 7 : 5));
+		},
+		[],
+	);
+
+	const linkColor = useCallback((link: GraphLink) => {
+		if (link.score >= 5) return "#ef4444";
+		if (link.score >= 3) return "#f59e0b";
+		return "#4b5563";
+	}, []);
+
+	const linkWidth = useCallback((link: GraphLink) => {
+		return Math.min(link.score * 0.8, 5);
+	}, []);
+
+	return (
+		<div ref={containerRef} className="border border-[#3f3f3f] w-full" style={{ height: "600px" }}>
+			<ForceGraph
+				ref={fgRef}
+				graphData={graphData}
+				width={dimensions.width}
+				height={dimensions.height}
+				backgroundColor="#1a1a1a"
+				nodeCanvasObject={nodeCanvasObject}
+				nodePointerAreaPaint={(node: GraphNode, color: string, ctx: CanvasRenderingContext2D) => {
+					ctx.fillStyle = color;
+					ctx.beginPath();
+					ctx.arc(node.x!, node.y!, 8, 0, 2 * Math.PI);
+					ctx.fill();
+				}}
+				linkColor={linkColor}
+				linkWidth={linkWidth}
+				linkLabel={(link: GraphLink) => link.label}
+				onNodeClick={(node: GraphNode) => onNodeClick(node.id)}
+				cooldownTicks={100}
+				enableZoomInteraction={true}
+				enablePanInteraction={true}
+			/>
+		</div>
+	);
+}
+
 export const MultikeyTrace: React.FC = () => {
 	const loaderCkey = useLoaderData() as string;
 	const navigate = useNavigate();
@@ -44,6 +158,7 @@ export const MultikeyTrace: React.FC = () => {
 	const [maxDepth, setMaxDepth] = useState(3);
 	const [loading, setLoading] = useState(false);
 	const [traceData, setTraceData] = useState<MultiKeyTraceType | null>(null);
+	const [viewMode, setViewMode] = useState<ViewMode>("graph");
 
 	const runTrace = async (targetCkey: string) => {
 		if (!targetCkey.trim()) return;
@@ -152,6 +267,21 @@ export const MultikeyTrace: React.FC = () => {
 						<span>
 							Depth: <span className="text-white">{traceData.depthReached}</span>
 						</span>
+						<span className="text-gray-600">|</span>
+						<button
+							type="button"
+							onClick={() => setViewMode("graph")}
+							className={`hover:text-white ${viewMode === "graph" ? "text-white underline" : ""}`}
+						>
+							Graph
+						</button>
+						<button
+							type="button"
+							onClick={() => setViewMode("list")}
+							className={`hover:text-white ${viewMode === "list" ? "text-white underline" : ""}`}
+						>
+							List
+						</button>
 					</div>
 
 					{traceData.truncated && (
@@ -164,7 +294,14 @@ export const MultikeyTrace: React.FC = () => {
 						<div className="text-gray-500">No connected accounts found.</div>
 					)}
 
-					{sortedCkeys.length > 0 && (
+					{sortedCkeys.length > 0 && viewMode === "graph" && (
+						<TraceGraph
+							traceData={traceData}
+							onNodeClick={(clickedCkey) => navigate(`/multikey/${clickedCkey}`)}
+						/>
+					)}
+
+					{sortedCkeys.length > 0 && viewMode === "list" && (
 						<div className="flex flex-col border border-[#3f3f3f] p-3 gap-2 max-h-[700px] overflow-auto">
 							{sortedCkeys.map((connectedCkey) => {
 								const links = getLinksForCkey(connectedCkey);
