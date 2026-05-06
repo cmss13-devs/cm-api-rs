@@ -1,4 +1,6 @@
+import type React from "react";
 import { useCallback, useContext, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { callApi } from "../helpers/api";
 import { GlobalContext } from "../types/global";
 
@@ -35,7 +37,7 @@ const BAN_TYPE_COLORS: Record<string, string> = {
   discord: "bg-blue-900/50 text-blue-300 border-blue-700",
 };
 
-export function BanAppeal() {
+export const BanAppeal: React.FC = () => {
   const global = useContext(GlobalContext);
   const [loading, setLoading] = useState(true);
   const [bansData, setBansData] = useState<MyBansResponse | null>(null);
@@ -90,9 +92,8 @@ export function BanAppeal() {
       global?.updateAndShowToast("Appeal submitted successfully");
       setAppealingBan(null);
       setAppealText("");
-      // Refresh the bans list
+
       await fetchBans();
-      // Open the topic in a new tab
       window.open(result.topicUrl, "_blank");
     } catch {
       global?.updateAndShowToast("Failed to submit appeal");
@@ -102,15 +103,28 @@ export function BanAppeal() {
   };
 
   if (loading) {
-    return (
-      <div className="p-5 text-gray-400">Loading ban information...</div>
-    );
+    return <div className="p-5 text-gray-400">Loading ban information...</div>;
   }
 
   if (!bansData || bansData.bans.length === 0) {
     return (
       <div className="p-5">
         <h2 className="text-xl text-gray-200 mb-3">Ban Appeal</h2>
+        {bansData && (
+          <p className="text-gray-500 text-sm">
+            Appealing as: <span className="text-gray-300">{bansData.ckey}</span>
+          </p>
+        )}
+        <p className="text-gray-600 text-xs mb-4">
+          Not seeing all your bans? Make sure your accounts are linked in{" "}
+          <Link
+            to="/account"
+            className="text-blue-400 hover:text-blue-300 hover:underline"
+          >
+            Account Settings
+          </Link>
+          .
+        </p>
         <p className="text-gray-400">You have no active bans to appeal.</p>
       </div>
     );
@@ -119,8 +133,18 @@ export function BanAppeal() {
   return (
     <div className="p-5 max-w-4xl mx-auto">
       <h2 className="text-xl text-gray-200 mb-1">Ban Appeal</h2>
-      <p className="text-gray-500 text-sm mb-4">
+      <p className="text-gray-500 text-sm mb-1">
         Appealing as: <span className="text-gray-300">{bansData.ckey}</span>
+      </p>
+      <p className="text-gray-600 text-xs">
+        Not seeing all your bans? Make sure your accounts are linked in{" "}
+        <Link
+          to="/account"
+          className="text-blue-400 hover:text-blue-300 hover:underline"
+        >
+          Account Settings
+        </Link>
+        .
       </p>
 
       <div className="flex flex-col gap-3">
@@ -209,7 +233,8 @@ export function BanAppeal() {
                 disabled={submitting}
               />
               <p className="text-xs text-gray-500 mt-1">
-                This will be posted on the forum. Admins can already see all relevant context and the ban being appealed.
+                This will be posted on the forum. Admins can already see all
+                relevant context and the ban being appealed.
               </p>
             </div>
 
@@ -236,4 +261,4 @@ export function BanAppeal() {
       )}
     </div>
   );
-}
+};
