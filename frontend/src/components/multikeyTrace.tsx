@@ -83,6 +83,19 @@ export const MultikeyTrace: React.FC = () => {
 		);
 	};
 
+	const linkScore = (targetCkey: string): number => {
+		const links = getLinksForCkey(targetCkey);
+		let score = 0;
+		for (const link of links) {
+			score += link.sharedCids.length + link.sharedIps.length + link.sharedHwids.length;
+		}
+		return score;
+	};
+
+	const sortedCkeys = traceData
+		? [...traceData.connectedCkeys].sort((a, b) => linkScore(b) - linkScore(a))
+		: [];
+
 	return (
 		<div className="flex flex-col gap-3 p-3">
 			<form onSubmit={handleSubmit} className="flex flex-row gap-2 items-end">
@@ -147,13 +160,13 @@ export const MultikeyTrace: React.FC = () => {
 						</div>
 					)}
 
-					{traceData.connectedCkeys.length === 0 && (
+					{sortedCkeys.length === 0 && (
 						<div className="text-gray-500">No connected accounts found.</div>
 					)}
 
-					{traceData.connectedCkeys.length > 0 && (
+					{sortedCkeys.length > 0 && (
 						<div className="flex flex-col border border-[#3f3f3f] p-3 gap-2 max-h-[700px] overflow-auto">
-							{traceData.connectedCkeys.map((connectedCkey) => {
+							{sortedCkeys.map((connectedCkey) => {
 								const links = getLinksForCkey(connectedCkey);
 								return (
 									<div
