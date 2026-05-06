@@ -461,6 +461,9 @@ const UserDetailsModal = (props: { player: Player }) => {
             path={"/Connections/FullByAllIps?ckey="}
             value={ckey}
           />
+          <LinkColor onClick={() => nav(`/multikey/${ckey}`)}>
+            Run Multikey Trace
+          </LinkColor>
         </div>
       </div>
       <div className="flex flex-col">

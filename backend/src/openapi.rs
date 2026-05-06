@@ -69,6 +69,10 @@ impl Modify for SecurityAddon {
         connections::ckey,
         connections::connection_history_by_cid,
         connections::connection_history_by_ip,
+        connections::hwid,
+        connections::hwid_by_ckey,
+        connections::full_by_all_hwid,
+        connections::trace,
         // Stickyban endpoints
         stickyban::all_stickybans,
         stickyban::whitelist,
@@ -118,6 +122,10 @@ impl Modify for SecurityAddon {
             // Connections schemas
             connections::LoginTriplet,
             connections::ConnectionHistory,
+            connections::LoginHwid,
+            connections::HwidHistory,
+            connections::MultiKeyTrace,
+            connections::CkeyLink,
             // Stickyban schemas
             stickyban::Stickyban,
             stickyban::StickybanMatchedCid,

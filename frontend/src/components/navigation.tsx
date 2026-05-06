@@ -115,6 +115,7 @@ export function Navigation({ user, onLogout }: NavigationProps) {
             <NavDropdown label="Lookup">
               <NavDropdownItem to="/user">Player Lookup</NavDropdownItem>
               <NavDropdownItem to="/authentik">User Lookup</NavDropdownItem>
+              <NavDropdownItem to="/multikey">Multikey Trace</NavDropdownItem>
             </NavDropdown>
 
             <span className="text-gray-500">|</span>
@@ -217,6 +218,9 @@ export function Navigation({ user, onLogout }: NavigationProps) {
               </Link>
               <Link to="/authentik" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
                 User Lookup
+              </Link>
+              <Link to="/multikey" onClick={closeMobileMenu} className="text-gray-300 hover:text-white pl-2">
+                Multikey Trace
               </Link>
 
               <div className="text-gray-500 text-xs uppercase mt-3">Administrative</div>

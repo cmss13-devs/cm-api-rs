@@ -315,7 +315,11 @@ async fn build_rocket() -> rocket::Rocket<rocket::Build> {
                 connections::cid,
                 connections::ckey,
                 connections::connection_history_by_cid,
-                connections::connection_history_by_ip
+                connections::connection_history_by_ip,
+                connections::hwid,
+                connections::hwid_by_ckey,
+                connections::full_by_all_hwid,
+                connections::trace
             ],
         )
         .mount(

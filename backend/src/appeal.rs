@@ -8,7 +8,8 @@ use crate::{
     Cmapi, Cmdb, Config,
     admin::{AuthenticatedUser, Player},
     authentik::{
-        AuthentikConfig, AuthentikError, DiscourseConfig, get_user_by_uuid, get_user_oauth_sources,
+        AuthentikConfig, AuthentikError, DiscourseConfig, get_discord_id_from_sources,
+        get_user_by_uuid, get_user_oauth_sources,
     },
 };
 
@@ -129,17 +130,8 @@ async fn resolve_user(
             )
         })?;
 
-    let discord_id = user_sources
-        .iter()
-        .find(|s| s.source.slug == "discord")
-        .map(|s| s.identifier.clone())
-        .or_else(|| {
-            authentik_user
-                .attributes
-                .get("discord_id")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        });
+    let discord_id =
+        get_discord_id_from_sources(&user_sources, &authentik_user.attributes);
 
     let byond_source = user_sources.iter().find(|s| s.source.slug == "byond");
     let ckey = if let Some(byond) = byond_source {

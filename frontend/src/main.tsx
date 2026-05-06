@@ -17,6 +17,7 @@ import { Tickets } from "./components/tickets";
 import { TwoFactor } from "./components/twoFactor";
 import { BanAppeal } from "./components/banAppeal";
 import { LookupMenu } from "./components/userLookup";
+import { MultikeyTrace } from "./components/multikeyTrace";
 import { WhitelistMenu } from "./components/whitelistPanel";
 
 const router = createBrowserRouter([
@@ -107,6 +108,14 @@ const router = createBrowserRouter([
         path: "/appeal",
         element: <BanAppeal />,
         handle: { title: "Ban Appeal" },
+      },
+      {
+        path: "/multikey/:ckey?",
+        element: <MultikeyTrace />,
+        handle: { title: "Multikey Trace" },
+        loader: ({ params }) => {
+          return params.ckey || "";
+        },
       },
     ],
   },

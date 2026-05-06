@@ -11,7 +11,9 @@ use crate::{
     Cmdb, Config, DiscordBotConfig, ServerRoleConfig,
     admin::{AuthenticatedUser, Management, Player, Staff},
     byond::refresh_admins,
-    discord::{get_ckey_by_discord_id_from_db, get_whitelist_status_by_ckey, resolve_whitelist_roles},
+    discord::{
+        get_ckey_by_discord_id_from_db, get_whitelist_status_by_ckey, resolve_whitelist_roles,
+    },
     logging::log_external,
     player::{AuthorizationHeader, query_total_playtime_minutes},
 };
@@ -981,6 +983,25 @@ pub async fn get_user_oauth_sources(
         .map_err(|e| format!("Failed to parse Authentik response: {}", e))?;
 
     Ok(connections_response.results)
+}
+
+/// Get a user's Discord ID by checking their OAuth source connections first,
+/// falling back to the discord_id attribute
+pub fn get_discord_id_from_sources(
+    sources: &[UserOAuthSourceConnection],
+    attributes: &serde_json::Value,
+) -> Option<String> {
+    sources
+        .iter()
+        .find(|s| s.source.slug == "discord")
+        .map(|s| s.identifier.clone())
+        .or_else(|| {
+            attributes
+                .get("discord_id")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+        })
 }
 
 /// Get all available OAuth sources from Authentik
@@ -3007,7 +3028,6 @@ pub async fn webhook_user_linked(
         )
     })?;
 
-    // Check user eligibility for verification
     let eligibility = check_verification_eligibility(
         &mut db,
         &payload.linked_sources,
@@ -3018,7 +3038,6 @@ pub async fn webhook_user_linked(
     )
     .await;
 
-    // If no servers are eligible, return early with reason
     if eligibility.server_eligibility.values().all(|&v| !v) {
         return Ok(Json(WebhookResponse {
             success: true,
@@ -3872,17 +3891,22 @@ pub async fn set_chat_banned(
         );
     }
 
-    update_user_attributes(&http_client, authentik_config, authentik_user.pk, attributes)
-        .await
-        .map_err(|e| {
-            (
-                Status::InternalServerError,
-                Json(AuthentikError {
-                    error: "update_failed".to_string(),
-                    message: e,
-                }),
-            )
-        })?;
+    update_user_attributes(
+        &http_client,
+        authentik_config,
+        authentik_user.pk,
+        attributes,
+    )
+    .await
+    .map_err(|e| {
+        (
+            Status::InternalServerError,
+            Json(AuthentikError {
+                error: "update_failed".to_string(),
+                message: e,
+            }),
+        )
+    })?;
 
     if let Some(discourse_config) = &authentik_config.discourse {
         let discourse_user_result = get_discourse_user_by_external_id(
