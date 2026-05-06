@@ -44,12 +44,100 @@ function LinkEvidence({ link }: { link: CkeyLink }) {
 type GraphNode = { id: string; isRoot: boolean; x?: number; y?: number };
 type GraphLink = { source: string; target: string; score: number; label: string };
 
+type Selection =
+	| { type: "node"; ckey: string }
+	| { type: "edge"; ckeyA: string; ckeyB: string }
+	| null;
+
+function DetailPanel({
+	selection,
+	traceData,
+	onNavigate,
+}: {
+	selection: Selection;
+	traceData: MultiKeyTraceType;
+	onNavigate: (ckey: string) => void;
+}) {
+	if (!selection) {
+		return (
+			<div className="text-gray-500 text-sm p-3">
+				Click a node or edge to view details.
+			</div>
+		);
+	}
+
+	if (selection.type === "edge") {
+		const link = traceData.links.find(
+			(l) =>
+				(l.ckeyA === selection.ckeyA && l.ckeyB === selection.ckeyB) ||
+				(l.ckeyA === selection.ckeyB && l.ckeyB === selection.ckeyA),
+		);
+		if (!link) return null;
+
+		const score = link.sharedCids.length + link.sharedIps.length + link.sharedHwids.length;
+		return (
+			<div className="flex flex-col gap-3 p-3">
+				<div className="text-sm text-gray-400">Connection between:</div>
+				<div className="flex flex-row items-center gap-2">
+					<NameExpand name={link.ckeyA} />
+					<span className="text-gray-500">&harr;</span>
+					<NameExpand name={link.ckeyB} />
+				</div>
+				<div className="text-sm text-gray-400">
+					{score} shared identifier{score !== 1 ? "s" : ""}
+				</div>
+				<LinkEvidence link={link} />
+			</div>
+		);
+	}
+
+	const relatedLinks = traceData.links.filter(
+		(l) => l.ckeyA === selection.ckey || l.ckeyB === selection.ckey,
+	);
+
+	const isRoot = selection.ckey === traceData.rootCkey;
+
+	return (
+		<div className="flex flex-col gap-3 p-3">
+			<div className="flex flex-row items-center gap-2">
+				<NameExpand name={selection.ckey} />
+				{isRoot && <span className="text-yellow-500 text-xs">(root)</span>}
+			</div>
+			{relatedLinks.length > 0 && (
+				<>
+					<div className="text-sm text-gray-400">
+						{relatedLinks.length} connection{relatedLinks.length !== 1 ? "s" : ""}
+					</div>
+					<div className="flex flex-col gap-3 overflow-auto">
+						{relatedLinks.map((link) => {
+							const otherCkey = link.ckeyA === selection.ckey ? link.ckeyB : link.ckeyA;
+							return (
+								<div key={`${link.ckeyA}-${link.ckeyB}`} className="flex flex-col gap-1 border-b border-[#3f3f3f] pb-2 last:border-b-0">
+									<div
+										className="cursor-pointer text-blue-600 hover:underline text-sm"
+										onClick={() => onNavigate(otherCkey)}
+									>
+										{otherCkey}
+									</div>
+									<LinkEvidence link={link} />
+								</div>
+							);
+						})}
+					</div>
+				</>
+			)}
+		</div>
+	);
+}
+
 function TraceGraph({
 	traceData,
-	onNodeClick,
+	selection,
+	onSelect,
 }: {
 	traceData: MultiKeyTraceType;
-	onNodeClick: (ckey: string) => void;
+	selection: Selection;
+	onSelect: (s: Selection) => void;
 }) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const fgRef = useRef<ForceGraphMethods<GraphNode, GraphLink>>();
@@ -96,15 +184,29 @@ function TraceGraph({
 		return { nodes, links };
 	}, [traceData]);
 
+	const selectedNodeId = selection?.type === "node" ? selection.ckey : null;
+	const selectedEdge = selection?.type === "edge" ? selection : null;
+
 	const nodeCanvasObject = useCallback(
 		(node: GraphNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
 			const label = node.id;
 			const fontSize = 12 / globalScale;
 			ctx.font = `${fontSize}px JetBrains Mono, monospace`;
 
+			const isSelected = node.id === selectedNodeId;
+			const radius = node.isRoot ? 5 : 3;
+
+			if (isSelected) {
+				ctx.strokeStyle = "#3b82f6";
+				ctx.lineWidth = 2 / globalScale;
+				ctx.beginPath();
+				ctx.arc(node.x!, node.y!, radius + 3, 0, 2 * Math.PI);
+				ctx.stroke();
+			}
+
 			ctx.fillStyle = node.isRoot ? "#f59e0b" : "#9ca3af";
 			ctx.beginPath();
-			ctx.arc(node.x!, node.y!, node.isRoot ? 5 : 3, 0, 2 * Math.PI);
+			ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI);
 			ctx.fill();
 
 			ctx.fillStyle = node.isRoot ? "#f59e0b" : "#d1d5db";
@@ -112,21 +214,45 @@ function TraceGraph({
 			ctx.textBaseline = "top";
 			ctx.fillText(label, node.x!, node.y! + (node.isRoot ? 7 : 5));
 		},
-		[],
+		[selectedNodeId],
 	);
 
-	const linkColor = useCallback((link: GraphLink) => {
-		if (link.score >= 5) return "#ef4444";
-		if (link.score >= 3) return "#f59e0b";
-		return "#4b5563";
-	}, []);
+	const linkColor = useCallback(
+		(link: GraphLink) => {
+			const src = typeof link.source === "object" ? (link.source as GraphNode).id : link.source;
+			const tgt = typeof link.target === "object" ? (link.target as GraphNode).id : link.target;
+			if (
+				selectedEdge &&
+				((src === selectedEdge.ckeyA && tgt === selectedEdge.ckeyB) ||
+					(src === selectedEdge.ckeyB && tgt === selectedEdge.ckeyA))
+			) {
+				return "#3b82f6";
+			}
+			if (link.score >= 5) return "#ef4444";
+			if (link.score >= 3) return "#f59e0b";
+			return "#4b5563";
+		},
+		[selectedEdge],
+	);
 
-	const linkWidth = useCallback((link: GraphLink) => {
-		return Math.min(link.score * 0.8, 5);
-	}, []);
+	const linkWidth = useCallback(
+		(link: GraphLink) => {
+			const src = typeof link.source === "object" ? (link.source as GraphNode).id : link.source;
+			const tgt = typeof link.target === "object" ? (link.target as GraphNode).id : link.target;
+			if (
+				selectedEdge &&
+				((src === selectedEdge.ckeyA && tgt === selectedEdge.ckeyB) ||
+					(src === selectedEdge.ckeyB && tgt === selectedEdge.ckeyA))
+			) {
+				return Math.min(link.score * 0.8, 5) + 1.5;
+			}
+			return Math.min(link.score * 0.8, 5);
+		},
+		[selectedEdge],
+	);
 
 	return (
-		<div ref={containerRef} className="border border-[#3f3f3f] w-full" style={{ height: "600px" }}>
+		<div ref={containerRef} className="border border-[#3f3f3f] w-full h-full min-h-0">
 			<ForceGraph
 				ref={fgRef}
 				graphData={graphData}
@@ -142,8 +268,15 @@ function TraceGraph({
 				}}
 				linkColor={linkColor}
 				linkWidth={linkWidth}
-				linkLabel={(link: GraphLink) => link.label}
-				onNodeClick={(node: GraphNode) => onNodeClick(node.id)}
+				onNodeClick={(node: GraphNode) => {
+					onSelect({ type: "node", ckey: node.id });
+				}}
+				onLinkClick={(link: GraphLink) => {
+					const src = typeof link.source === "object" ? (link.source as GraphNode).id : link.source;
+					const tgt = typeof link.target === "object" ? (link.target as GraphNode).id : link.target;
+					onSelect({ type: "edge", ckeyA: src, ckeyB: tgt });
+				}}
+				onBackgroundClick={() => onSelect(null)}
 				cooldownTicks={100}
 				onEngineStop={() => {
 					if (fgRef.current) {
@@ -165,11 +298,13 @@ export const MultikeyTrace: React.FC = () => {
 	const [loading, setLoading] = useState(false);
 	const [traceData, setTraceData] = useState<MultiKeyTraceType | null>(null);
 	const [viewMode, setViewMode] = useState<ViewMode>("graph");
+	const [selection, setSelection] = useState<Selection>(null);
 
 	const runTrace = async (targetCkey: string) => {
 		if (!targetCkey.trim()) return;
 		setLoading(true);
 		setTraceData(null);
+		setSelection(null);
 		try {
 			const res = await callApi(
 				`/Connections/Trace?ckey=${encodeURIComponent(targetCkey.trim())}&max_depth=${maxDepth}`,
@@ -218,7 +353,7 @@ export const MultikeyTrace: React.FC = () => {
 		: [];
 
 	return (
-		<div className="flex flex-col gap-3 p-3">
+		<div className="flex flex-col gap-3 p-3 h-full">
 			<form onSubmit={handleSubmit} className="flex flex-row gap-2 items-end">
 				<div className="flex flex-col">
 					<label htmlFor="trace-ckey" className="text-gray-400 text-sm">
@@ -261,7 +396,7 @@ export const MultikeyTrace: React.FC = () => {
 			{loading && <div className="text-gray-400">Tracing connections...</div>}
 
 			{traceData && (
-				<div className="flex flex-col gap-3">
+				<div className="flex flex-col gap-3 min-h-0 flex-1">
 					<div className="flex flex-row gap-3 items-center text-sm text-gray-400">
 						<span>
 							Root: <span className="text-white">{traceData.rootCkey}</span>
@@ -301,10 +436,22 @@ export const MultikeyTrace: React.FC = () => {
 					)}
 
 					{sortedCkeys.length > 0 && viewMode === "graph" && (
-						<TraceGraph
-							traceData={traceData}
-							onNodeClick={(clickedCkey) => navigate(`/multikey/${clickedCkey}`)}
-						/>
+						<div className="flex flex-row min-h-0" style={{ height: "600px" }}>
+							<div className="flex-1 min-w-0">
+								<TraceGraph
+									traceData={traceData}
+									selection={selection}
+									onSelect={setSelection}
+								/>
+							</div>
+							<div className="w-80 border border-[#3f3f3f] border-l-0 overflow-auto">
+								<DetailPanel
+									selection={selection}
+									traceData={traceData}
+									onNavigate={(clickedCkey) => navigate(`/multikey/${clickedCkey}`)}
+								/>
+							</div>
+						</div>
 					)}
 
 					{sortedCkeys.length > 0 && viewMode === "list" && (
