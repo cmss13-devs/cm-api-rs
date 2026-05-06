@@ -491,33 +491,66 @@ pub async fn trace(
         let mut ckey_identifiers: HashMap<String, IdentifierSet> = HashMap::new();
 
         for frontier_ckey in &frontier {
-            let mut ident = IdentifierSet {
-                ips: HashSet::new(),
-                cids: HashSet::new(),
-                hwids: HashSet::new(),
-            };
-
-            if let Some(triplets) = get_triplets_by_ckey(&mut db, frontier_ckey.clone()).await {
-                for t in &triplets {
-                    let ip = format!("{}.{}.{}.{}", t.ip1, t.ip2, t.ip3, t.ip4);
-                    ident.ips.insert(ip.clone());
-                    all_ips.insert(ip);
-                    ident.cids.insert(t.last_known_cid.clone());
-                    all_cids.insert(t.last_known_cid.clone());
-                }
-            }
-
-            if let Some(hwids) = get_hwids_by_ckey(&mut db, frontier_ckey).await {
-                for h in &hwids {
-                    ident.hwids.insert(h.hwid.clone());
-                    all_hwids.insert(h.hwid.clone());
-                }
-            }
-
-            ckey_identifiers.insert(frontier_ckey.clone(), ident);
+            ckey_identifiers.insert(
+                frontier_ckey.clone(),
+                IdentifierSet {
+                    ips: HashSet::new(),
+                    cids: HashSet::new(),
+                    hwids: HashSet::new(),
+                },
+            );
         }
 
-        let mut next_frontier: Vec<String> = Vec::new();
+        let frontier_csv = frontier.join(",");
+
+        #[derive(FromRow)]
+        struct TripletRow {
+            ckey: String,
+            ip1: i32,
+            ip2: i32,
+            ip3: i32,
+            ip4: i32,
+            last_known_cid: String,
+        }
+        if let Ok(rows) = query_as::<_, TripletRow>(
+            "SELECT DISTINCT ckey, ip1, ip2, ip3, ip4, last_known_cid FROM login_triplets WHERE FIND_IN_SET(ckey, ?)",
+        )
+        .bind(&frontier_csv)
+        .fetch_all(&mut **db)
+        .await
+        {
+            for row in rows {
+                let ip = format!("{}.{}.{}.{}", row.ip1, row.ip2, row.ip3, row.ip4);
+                if let Some(ident) = ckey_identifiers.get_mut(&row.ckey) {
+                    ident.ips.insert(ip.clone());
+                    ident.cids.insert(row.last_known_cid.clone());
+                }
+                all_ips.insert(ip);
+                all_cids.insert(row.last_known_cid);
+            }
+        }
+
+        #[derive(FromRow)]
+        struct HwidRow {
+            ckey: String,
+            hwid: String,
+        }
+        if let Ok(rows) = query_as::<_, HwidRow>(
+            "SELECT DISTINCT ckey, hwid FROM login_hwid WHERE FIND_IN_SET(ckey, ?)",
+        )
+        .bind(&frontier_csv)
+        .fetch_all(&mut **db)
+        .await
+        {
+            for row in rows {
+                if let Some(ident) = ckey_identifiers.get_mut(&row.ckey) {
+                    ident.hwids.insert(row.hwid.clone());
+                }
+                all_hwids.insert(row.hwid);
+            }
+        }
+
+        let mut next_frontier: HashSet<String> = HashSet::new();
 
         // Batch CID lookup
         if !all_cids.is_empty() {
@@ -551,8 +584,8 @@ pub async fn trace(
                             if !link.shared_cids.contains(&row.last_known_cid) {
                                 link.shared_cids.push(row.last_known_cid.clone());
                             }
-                            if !visited.contains(&row.ckey) && !next_frontier.contains(&row.ckey) {
-                                next_frontier.push(row.ckey.clone());
+                            if !visited.contains(&row.ckey) {
+                                next_frontier.insert(row.ckey.clone());
                             }
                         }
                     }
@@ -605,10 +638,8 @@ pub async fn trace(
                                 if !link.shared_ips.contains(&ip) {
                                     link.shared_ips.push(ip.clone());
                                 }
-                                if !visited.contains(&row.ckey)
-                                    && !next_frontier.contains(&row.ckey)
-                                {
-                                    next_frontier.push(row.ckey.clone());
+                                if !visited.contains(&row.ckey) {
+                                    next_frontier.insert(row.ckey.clone());
                                 }
                             }
                         }
@@ -653,8 +684,8 @@ pub async fn trace(
                             if !link.shared_hwids.contains(&row.hwid) {
                                 link.shared_hwids.push(row.hwid.clone());
                             }
-                            if !visited.contains(&row.ckey) && !next_frontier.contains(&row.ckey) {
-                                next_frontier.push(row.ckey.clone());
+                            if !visited.contains(&row.ckey) {
+                                next_frontier.insert(row.ckey.clone());
                             }
                         }
                     }
@@ -671,7 +702,7 @@ pub async fn trace(
             break;
         }
 
-        frontier = next_frontier;
+        frontier = next_frontier.into_iter().collect();
     }
 
     let connected_ckeys: Vec<String> = visited
