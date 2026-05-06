@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::RwLock;
 
 use chrono::{DateTime, Utc};
+use rocket::State;
 use rocket::serde::json::Json;
 use rocket_db_pools::Connection;
 use sqlx::{MySqlConnection, prelude::FromRow, query_as};
@@ -10,6 +12,18 @@ use crate::{
     Cmdb,
     admin::{AuthenticatedUser, Staff},
 };
+
+const TRACE_CACHE_TTL_SECS: i64 = 1800;
+
+struct TraceCacheEntry {
+    result: MultiKeyTrace,
+    cached_at: DateTime<Utc>,
+}
+
+#[derive(Default)]
+pub struct TraceCache {
+    entries: RwLock<HashMap<(String, u32), TraceCacheEntry>>,
+}
 
 #[derive(serde::Serialize, FromRow, Hash, Eq, PartialEq, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -51,7 +65,7 @@ impl HwidHistory {
     }
 }
 
-#[derive(serde::Serialize, ToSchema)]
+#[derive(serde::Serialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CkeyLink {
     ckey_a: String,
@@ -61,7 +75,7 @@ pub struct CkeyLink {
     shared_hwids: Vec<String>,
 }
 
-#[derive(serde::Serialize, ToSchema)]
+#[derive(serde::Serialize, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MultiKeyTrace {
     root_ckey: String,
@@ -462,11 +476,21 @@ fn link_key(a: &str, b: &str) -> (String, String) {
 pub async fn trace(
     mut db: Connection<Cmdb>,
     _admin: AuthenticatedUser<Staff>,
+    cache: &State<TraceCache>,
     ckey: String,
     max_depth: Option<u32>,
 ) -> Json<MultiKeyTrace> {
     let max_depth = max_depth.unwrap_or(3).clamp(1, 5);
     let max_ckeys: usize = 200;
+
+    let cache_key = (ckey.clone(), max_depth);
+    if let Ok(entries) = cache.entries.read() {
+        if let Some(entry) = entries.get(&cache_key) {
+            if (Utc::now() - entry.cached_at).num_seconds() < TRACE_CACHE_TTL_SECS {
+                return Json(entry.result.clone());
+            }
+        }
+    }
 
     let mut visited: HashSet<String> = HashSet::new();
     let mut frontier: Vec<String> = vec![ckey.clone()];
@@ -506,7 +530,10 @@ pub async fn trace(
 
         if let Ok(rows) = gather_query.fetch_all(&mut **db).await {
             for row in rows {
-                cid_to_ckeys.entry(row.last_known_cid.clone()).or_default().push(row.ckey.clone());
+                cid_to_ckeys
+                    .entry(row.last_known_cid.clone())
+                    .or_default()
+                    .push(row.ckey.clone());
                 let ip = format!("{}.{}.{}.{}", row.ip1, row.ip2, row.ip3, row.ip4);
                 ip_to_ckeys.entry(ip).or_default().push(row.ckey.clone());
             }
@@ -529,7 +556,10 @@ pub async fn trace(
         let mut hwid_to_ckeys: HashMap<String, Vec<String>> = HashMap::new();
         if let Ok(rows) = hwid_gather_query.fetch_all(&mut **db).await {
             for row in rows {
-                hwid_to_ckeys.entry(row.hwid.clone()).or_default().push(row.ckey.clone());
+                hwid_to_ckeys
+                    .entry(row.hwid.clone())
+                    .or_default()
+                    .push(row.ckey.clone());
             }
         }
 
@@ -538,7 +568,10 @@ pub async fn trace(
             let cids: Vec<&String> = cid_to_ckeys.keys().collect();
             let cid_ph = cids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
             #[derive(FromRow)]
-            struct CkeyCid { ckey: String, last_known_cid: String }
+            struct CkeyCid {
+                ckey: String,
+                last_known_cid: String,
+            }
             let sql = format!(
                 "SELECT DISTINCT ckey, last_known_cid FROM login_triplets WHERE last_known_cid IN ({})",
                 cid_ph
@@ -556,8 +589,11 @@ pub async fn trace(
                         for fc in frontier_ckeys {
                             let key = link_key(fc, &row.ckey);
                             let link = links.entry(key.clone()).or_insert_with(|| CkeyLink {
-                                ckey_a: key.0.clone(), ckey_b: key.1.clone(),
-                                shared_ips: Vec::new(), shared_cids: Vec::new(), shared_hwids: Vec::new(),
+                                ckey_a: key.0.clone(),
+                                ckey_b: key.1.clone(),
+                                shared_ips: Vec::new(),
+                                shared_cids: Vec::new(),
+                                shared_hwids: Vec::new(),
                             });
                             if !link.shared_cids.contains(&row.last_known_cid) {
                                 link.shared_cids.push(row.last_known_cid.clone());
@@ -583,7 +619,13 @@ pub async fn trace(
             }
             if !ip_clauses.is_empty() {
                 #[derive(FromRow)]
-                struct CkeyIp { ckey: String, ip1: i32, ip2: i32, ip3: i32, ip4: i32 }
+                struct CkeyIp {
+                    ckey: String,
+                    ip1: i32,
+                    ip2: i32,
+                    ip3: i32,
+                    ip4: i32,
+                }
                 let sql = format!(
                     "SELECT DISTINCT ckey, ip1, ip2, ip3, ip4 FROM login_triplets WHERE {}",
                     ip_clauses.join(" OR ")
@@ -598,8 +640,11 @@ pub async fn trace(
                             for fc in frontier_ckeys {
                                 let key = link_key(fc, &row.ckey);
                                 let link = links.entry(key.clone()).or_insert_with(|| CkeyLink {
-                                    ckey_a: key.0.clone(), ckey_b: key.1.clone(),
-                                    shared_ips: Vec::new(), shared_cids: Vec::new(), shared_hwids: Vec::new(),
+                                    ckey_a: key.0.clone(),
+                                    ckey_b: key.1.clone(),
+                                    shared_ips: Vec::new(),
+                                    shared_cids: Vec::new(),
+                                    shared_hwids: Vec::new(),
                                 });
                                 if !link.shared_ips.contains(&ip) {
                                     link.shared_ips.push(ip.clone());
@@ -616,7 +661,10 @@ pub async fn trace(
             let hwids: Vec<&String> = hwid_to_ckeys.keys().collect();
             let hwid_ph = hwids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
             #[derive(FromRow)]
-            struct CkeyHwid { ckey: String, hwid: String }
+            struct CkeyHwid {
+                ckey: String,
+                hwid: String,
+            }
             let sql = format!(
                 "SELECT DISTINCT ckey, hwid FROM login_hwid WHERE hwid IN ({})",
                 hwid_ph
@@ -634,8 +682,11 @@ pub async fn trace(
                         for fc in frontier_ckeys {
                             let key = link_key(fc, &row.ckey);
                             let link = links.entry(key.clone()).or_insert_with(|| CkeyLink {
-                                ckey_a: key.0.clone(), ckey_b: key.1.clone(),
-                                shared_ips: Vec::new(), shared_cids: Vec::new(), shared_hwids: Vec::new(),
+                                ckey_a: key.0.clone(),
+                                ckey_b: key.1.clone(),
+                                shared_ips: Vec::new(),
+                                shared_cids: Vec::new(),
+                                shared_hwids: Vec::new(),
                             });
                             if !link.shared_hwids.contains(&row.hwid) {
                                 link.shared_hwids.push(row.hwid.clone());
@@ -659,16 +710,26 @@ pub async fn trace(
         frontier = next_frontier.into_iter().collect();
     }
 
-    let connected_ckeys: Vec<String> = visited
-        .into_iter()
-        .filter(|k| k != &ckey)
-        .collect();
+    let connected_ckeys: Vec<String> = visited.into_iter().filter(|k| k != &ckey).collect();
 
-    Json(MultiKeyTrace {
+    let result = MultiKeyTrace {
         root_ckey: ckey,
         connected_ckeys,
         links: links.into_values().collect(),
         depth_reached: depth,
         truncated,
-    })
+    };
+
+    if let Ok(mut entries) = cache.entries.write() {
+        entries.retain(|_, v| (Utc::now() - v.cached_at).num_seconds() < TRACE_CACHE_TTL_SECS);
+        entries.insert(
+            cache_key,
+            TraceCacheEntry {
+                result: result.clone(),
+                cached_at: Utc::now(),
+            },
+        );
+    }
+
+    Json(result)
 }

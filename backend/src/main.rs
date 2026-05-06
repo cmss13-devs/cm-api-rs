@@ -262,6 +262,7 @@ async fn build_rocket() -> rocket::Rocket<rocket::Build> {
 
     let mut rocket_builder = rocket::custom(figment)
         .manage(byond::ByondTopic::default())
+        .manage(connections::TraceCache::default())
         .attach(Cmdb::init())
         .attach(Cmapi::init())
         .attach(AdHoc::config::<Config>())
