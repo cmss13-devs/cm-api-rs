@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLoaderData, useNavigate } from "react-router-dom";
+import { useLoaderData, useNavigate, useSearchParams } from "react-router-dom";
 import ForceGraph from "react-force-graph-2d";
 import type { ForceGraphMethods } from "react-force-graph-2d";
 import { callApi } from "../helpers/api";
@@ -307,21 +307,24 @@ function TraceGraph({
 export const MultikeyTrace: React.FC = () => {
 	const loaderCkey = useLoaderData() as string;
 	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
+	const depthParam = searchParams.get("depth");
+	const initialDepth = depthParam ? Math.min(Math.max(Number(depthParam), 1), 5) || 3 : 3;
 	const [ckey, setCkey] = useState(loaderCkey || "");
-	const [maxDepth, setMaxDepth] = useState(3);
+	const [maxDepth, setMaxDepth] = useState(initialDepth);
 	const [loading, setLoading] = useState(false);
 	const [traceData, setTraceData] = useState<MultiKeyTraceType | null>(null);
 	const [viewMode, setViewMode] = useState<ViewMode>("graph");
 	const [selection, setSelection] = useState<Selection>(null);
 
-	const runTrace = async (targetCkey: string) => {
+	const runTrace = async (targetCkey: string, depth: number) => {
 		if (!targetCkey.trim()) return;
 		setLoading(true);
 		setTraceData(null);
 		setSelection(null);
 		try {
 			const res = await callApi(
-				`/Connections/Trace?ckey=${encodeURIComponent(targetCkey.trim())}&max_depth=${maxDepth}`,
+				`/Connections/Trace?ckey=${encodeURIComponent(targetCkey.trim())}&max_depth=${depth}`,
 			);
 			if (res.ok) {
 				setTraceData(await res.json());
@@ -334,7 +337,7 @@ export const MultikeyTrace: React.FC = () => {
 	useEffect(() => {
 		if (loaderCkey) {
 			setCkey(loaderCkey);
-			runTrace(loaderCkey);
+			runTrace(loaderCkey, initialDepth);
 		}
 	}, [loaderCkey]);
 
@@ -342,8 +345,8 @@ export const MultikeyTrace: React.FC = () => {
 		e.preventDefault();
 		const trimmed = ckey.trim();
 		if (!trimmed) return;
-		navigate(`/multikey/${trimmed}`, { replace: true });
-		runTrace(trimmed);
+		navigate(`/multikey/${trimmed}?depth=${maxDepth}`, { replace: true });
+		runTrace(trimmed, maxDepth);
 	};
 
 	const getLinksForCkey = (targetCkey: string): CkeyLink[] => {
@@ -463,7 +466,7 @@ export const MultikeyTrace: React.FC = () => {
 									selection={selection}
 									traceData={traceData}
 									onSelect={setSelection}
-									onNavigate={(clickedCkey) => navigate(`/multikey/${clickedCkey}`)}
+									onNavigate={(clickedCkey) => navigate(`/multikey/${clickedCkey}?depth=${maxDepth}`)}
 								/>
 							</div>
 						</div>
