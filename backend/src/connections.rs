@@ -479,121 +479,171 @@ pub async fn trace(
     while !frontier.is_empty() && depth < max_depth {
         depth += 1;
 
-        let placeholders = frontier.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let frontier_ph = frontier.iter().map(|_| "?").collect::<Vec<_>>().join(",");
         let mut next_frontier: HashSet<String> = HashSet::new();
 
-        // CID connections via self-join
+        // Phase 1: gather distinct identifiers for frontier ckeys
         #[derive(FromRow)]
-        struct CidLink {
-            frontier_ckey: String,
-            connected_ckey: String,
-            shared_cid: String,
+        struct CkeyIdent {
+            ckey: String,
+            last_known_cid: String,
+            ip1: i32,
+            ip2: i32,
+            ip3: i32,
+            ip4: i32,
         }
-        let cid_sql = format!(
-            "SELECT DISTINCT t1.ckey AS frontier_ckey, t2.ckey AS connected_ckey, t1.last_known_cid AS shared_cid \
-             FROM login_triplets t1 \
-             JOIN login_triplets t2 ON t1.last_known_cid = t2.last_known_cid \
-             WHERE t1.ckey IN ({}) AND t1.ckey != t2.ckey",
-            placeholders
+        let gather_sql = format!(
+            "SELECT DISTINCT ckey, last_known_cid, ip1, ip2, ip3, ip4 FROM login_triplets WHERE ckey IN ({})",
+            frontier_ph
         );
-        let mut cid_query = sqlx::query_as::<_, CidLink>(&cid_sql);
+        let mut gather_query = sqlx::query_as::<_, CkeyIdent>(&gather_sql);
         for f in &frontier {
-            cid_query = cid_query.bind(f);
+            gather_query = gather_query.bind(f);
         }
-        if let Ok(rows) = cid_query.fetch_all(&mut **db).await {
+
+        let mut cid_to_ckeys: HashMap<String, Vec<String>> = HashMap::new();
+        let mut ip_to_ckeys: HashMap<String, Vec<String>> = HashMap::new();
+
+        if let Ok(rows) = gather_query.fetch_all(&mut **db).await {
             for row in rows {
-                if visited.contains(&row.connected_ckey) {
-                    continue;
-                }
-                let key = link_key(&row.frontier_ckey, &row.connected_ckey);
-                let link = links.entry(key.clone()).or_insert_with(|| CkeyLink {
-                    ckey_a: key.0.clone(),
-                    ckey_b: key.1.clone(),
-                    shared_ips: Vec::new(),
-                    shared_cids: Vec::new(),
-                    shared_hwids: Vec::new(),
-                });
-                if !link.shared_cids.contains(&row.shared_cid) {
-                    link.shared_cids.push(row.shared_cid);
-                }
-                next_frontier.insert(row.connected_ckey);
+                cid_to_ckeys.entry(row.last_known_cid.clone()).or_default().push(row.ckey.clone());
+                let ip = format!("{}.{}.{}.{}", row.ip1, row.ip2, row.ip3, row.ip4);
+                ip_to_ckeys.entry(ip).or_default().push(row.ckey.clone());
             }
         }
 
-        // IP connections via self-join
         #[derive(FromRow)]
-        struct IpLink {
-            frontier_ckey: String,
-            connected_ckey: String,
-            shared_ip: String,
+        struct CkeyHwidRow {
+            ckey: String,
+            hwid: String,
         }
-        let ip_sql = format!(
-            "SELECT DISTINCT t1.ckey AS frontier_ckey, t2.ckey AS connected_ckey, \
-             CONCAT(t1.ip1, '.', t1.ip2, '.', t1.ip3, '.', t1.ip4) AS shared_ip \
-             FROM login_triplets t1 \
-             JOIN login_triplets t2 ON t1.ip1 = t2.ip1 AND t1.ip2 = t2.ip2 AND t1.ip3 = t2.ip3 AND t1.ip4 = t2.ip4 \
-             WHERE t1.ckey IN ({}) AND t1.ckey != t2.ckey",
-            placeholders
+        let hwid_gather_sql = format!(
+            "SELECT DISTINCT ckey, hwid FROM login_hwid WHERE ckey IN ({})",
+            frontier_ph
         );
-        let mut ip_query = sqlx::query_as::<_, IpLink>(&ip_sql);
+        let mut hwid_gather_query = sqlx::query_as::<_, CkeyHwidRow>(&hwid_gather_sql);
         for f in &frontier {
-            ip_query = ip_query.bind(f);
+            hwid_gather_query = hwid_gather_query.bind(f);
         }
-        if let Ok(rows) = ip_query.fetch_all(&mut **db).await {
+
+        let mut hwid_to_ckeys: HashMap<String, Vec<String>> = HashMap::new();
+        if let Ok(rows) = hwid_gather_query.fetch_all(&mut **db).await {
             for row in rows {
-                if visited.contains(&row.connected_ckey) {
-                    continue;
-                }
-                let key = link_key(&row.frontier_ckey, &row.connected_ckey);
-                let link = links.entry(key.clone()).or_insert_with(|| CkeyLink {
-                    ckey_a: key.0.clone(),
-                    ckey_b: key.1.clone(),
-                    shared_ips: Vec::new(),
-                    shared_cids: Vec::new(),
-                    shared_hwids: Vec::new(),
-                });
-                if !link.shared_ips.contains(&row.shared_ip) {
-                    link.shared_ips.push(row.shared_ip);
-                }
-                next_frontier.insert(row.connected_ckey);
+                hwid_to_ckeys.entry(row.hwid.clone()).or_default().push(row.ckey.clone());
             }
         }
 
-        // HWID connections via self-join
-        #[derive(FromRow)]
-        struct HwidLink {
-            frontier_ckey: String,
-            connected_ckey: String,
-            shared_hwid: String,
-        }
-        let hwid_sql = format!(
-            "SELECT DISTINCT h1.ckey AS frontier_ckey, h2.ckey AS connected_ckey, h1.hwid AS shared_hwid \
-             FROM login_hwid h1 \
-             JOIN login_hwid h2 ON h1.hwid = h2.hwid \
-             WHERE h1.ckey IN ({}) AND h1.ckey != h2.ckey",
-            placeholders
-        );
-        let mut hwid_query = sqlx::query_as::<_, HwidLink>(&hwid_sql);
-        for f in &frontier {
-            hwid_query = hwid_query.bind(f);
-        }
-        if let Ok(rows) = hwid_query.fetch_all(&mut **db).await {
-            for row in rows {
-                if visited.contains(&row.connected_ckey) {
-                    continue;
+        // Phase 2: look up other ckeys sharing those identifiers
+        if !cid_to_ckeys.is_empty() {
+            let cids: Vec<&String> = cid_to_ckeys.keys().collect();
+            let cid_ph = cids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            #[derive(FromRow)]
+            struct CkeyCid { ckey: String, last_known_cid: String }
+            let sql = format!(
+                "SELECT DISTINCT ckey, last_known_cid FROM login_triplets WHERE last_known_cid IN ({})",
+                cid_ph
+            );
+            let mut q = sqlx::query_as::<_, CkeyCid>(&sql);
+            for cid in &cids {
+                q = q.bind(*cid);
+            }
+            if let Ok(rows) = q.fetch_all(&mut **db).await {
+                for row in rows {
+                    if visited.contains(&row.ckey) || frontier.contains(&row.ckey) {
+                        continue;
+                    }
+                    if let Some(frontier_ckeys) = cid_to_ckeys.get(&row.last_known_cid) {
+                        for fc in frontier_ckeys {
+                            let key = link_key(fc, &row.ckey);
+                            let link = links.entry(key.clone()).or_insert_with(|| CkeyLink {
+                                ckey_a: key.0.clone(), ckey_b: key.1.clone(),
+                                shared_ips: Vec::new(), shared_cids: Vec::new(), shared_hwids: Vec::new(),
+                            });
+                            if !link.shared_cids.contains(&row.last_known_cid) {
+                                link.shared_cids.push(row.last_known_cid.clone());
+                            }
+                        }
+                        next_frontier.insert(row.ckey.clone());
+                    }
                 }
-                let key = link_key(&row.frontier_ckey, &row.connected_ckey);
-                let link = links.entry(key.clone()).or_insert_with(|| CkeyLink {
-                    ckey_a: key.0.clone(),
-                    ckey_b: key.1.clone(),
-                    shared_ips: Vec::new(),
-                    shared_cids: Vec::new(),
-                    shared_hwids: Vec::new(),
-                });
-                if !link.shared_hwids.contains(&row.shared_hwid) {
-                    link.shared_hwids.push(row.shared_hwid);
+            }
+        }
+
+        if !ip_to_ckeys.is_empty() {
+            let ips: Vec<&String> = ip_to_ckeys.keys().collect();
+            let mut ip_clauses: Vec<String> = Vec::new();
+            for ip in &ips {
+                let parts: Vec<&str> = ip.split('.').collect();
+                if parts.len() == 4 {
+                    ip_clauses.push(format!(
+                        "(ip1={} AND ip2={} AND ip3={} AND ip4={})",
+                        parts[0], parts[1], parts[2], parts[3]
+                    ));
                 }
-                next_frontier.insert(row.connected_ckey);
+            }
+            if !ip_clauses.is_empty() {
+                #[derive(FromRow)]
+                struct CkeyIp { ckey: String, ip1: i32, ip2: i32, ip3: i32, ip4: i32 }
+                let sql = format!(
+                    "SELECT DISTINCT ckey, ip1, ip2, ip3, ip4 FROM login_triplets WHERE {}",
+                    ip_clauses.join(" OR ")
+                );
+                if let Ok(rows) = sqlx::query_as::<_, CkeyIp>(&sql).fetch_all(&mut **db).await {
+                    for row in rows {
+                        if visited.contains(&row.ckey) || frontier.contains(&row.ckey) {
+                            continue;
+                        }
+                        let ip = format!("{}.{}.{}.{}", row.ip1, row.ip2, row.ip3, row.ip4);
+                        if let Some(frontier_ckeys) = ip_to_ckeys.get(&ip) {
+                            for fc in frontier_ckeys {
+                                let key = link_key(fc, &row.ckey);
+                                let link = links.entry(key.clone()).or_insert_with(|| CkeyLink {
+                                    ckey_a: key.0.clone(), ckey_b: key.1.clone(),
+                                    shared_ips: Vec::new(), shared_cids: Vec::new(), shared_hwids: Vec::new(),
+                                });
+                                if !link.shared_ips.contains(&ip) {
+                                    link.shared_ips.push(ip.clone());
+                                }
+                            }
+                            next_frontier.insert(row.ckey.clone());
+                        }
+                    }
+                }
+            }
+        }
+
+        if !hwid_to_ckeys.is_empty() {
+            let hwids: Vec<&String> = hwid_to_ckeys.keys().collect();
+            let hwid_ph = hwids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            #[derive(FromRow)]
+            struct CkeyHwid { ckey: String, hwid: String }
+            let sql = format!(
+                "SELECT DISTINCT ckey, hwid FROM login_hwid WHERE hwid IN ({})",
+                hwid_ph
+            );
+            let mut q = sqlx::query_as::<_, CkeyHwid>(&sql);
+            for hwid in &hwids {
+                q = q.bind(*hwid);
+            }
+            if let Ok(rows) = q.fetch_all(&mut **db).await {
+                for row in rows {
+                    if visited.contains(&row.ckey) || frontier.contains(&row.ckey) {
+                        continue;
+                    }
+                    if let Some(frontier_ckeys) = hwid_to_ckeys.get(&row.hwid) {
+                        for fc in frontier_ckeys {
+                            let key = link_key(fc, &row.ckey);
+                            let link = links.entry(key.clone()).or_insert_with(|| CkeyLink {
+                                ckey_a: key.0.clone(), ckey_b: key.1.clone(),
+                                shared_ips: Vec::new(), shared_cids: Vec::new(), shared_hwids: Vec::new(),
+                            });
+                            if !link.shared_hwids.contains(&row.hwid) {
+                                link.shared_hwids.push(row.hwid.clone());
+                            }
+                        }
+                        next_frontier.insert(row.ckey.clone());
+                    }
+                }
             }
         }
 
