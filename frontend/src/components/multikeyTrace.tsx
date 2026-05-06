@@ -52,10 +52,12 @@ type Selection =
 function DetailPanel({
 	selection,
 	traceData,
+	onSelect,
 	onNavigate,
 }: {
 	selection: Selection;
 	traceData: MultiKeyTraceType;
+	onSelect: (s: Selection) => void;
 	onNavigate: (ckey: string) => void;
 }) {
 	if (!selection) {
@@ -99,9 +101,19 @@ function DetailPanel({
 
 	return (
 		<div className="flex flex-col gap-3 p-3">
-			<div className="flex flex-row items-center gap-2">
-				<NameExpand name={selection.ckey} />
-				{isRoot && <span className="text-yellow-500 text-xs">(root)</span>}
+			<div className="flex flex-col gap-1">
+				<div className="flex flex-row items-center gap-2">
+					<NameExpand name={selection.ckey} />
+					{isRoot && <span className="text-yellow-500 text-xs">(root)</span>}
+				</div>
+				<div className="flex flex-row gap-2 text-xs">
+					<span
+						className="cursor-pointer text-blue-600 hover:underline"
+						onClick={() => onNavigate(selection.ckey)}
+					>
+						Trace this user
+					</span>
+				</div>
 			</div>
 			{relatedLinks.length > 0 && (
 				<>
@@ -115,7 +127,7 @@ function DetailPanel({
 								<div key={`${link.ckeyA}-${link.ckeyB}`} className="flex flex-col gap-1 border-b border-[#3f3f3f] pb-2 last:border-b-0">
 									<div
 										className="cursor-pointer text-blue-600 hover:underline text-sm"
-										onClick={() => onNavigate(otherCkey)}
+										onClick={() => onSelect({ type: "node", ckey: otherCkey })}
 									>
 										{otherCkey}
 									</div>
@@ -277,6 +289,8 @@ function TraceGraph({
 					onSelect({ type: "edge", ckeyA: src, ckeyB: tgt });
 				}}
 				onBackgroundClick={() => onSelect(null)}
+				linkHoverPrecision={8}
+				enableNodeDrag={false}
 				cooldownTicks={100}
 				onEngineStop={() => {
 					if (fgRef.current) {
@@ -448,6 +462,7 @@ export const MultikeyTrace: React.FC = () => {
 								<DetailPanel
 									selection={selection}
 									traceData={traceData}
+									onSelect={setSelection}
 									onNavigate={(clickedCkey) => navigate(`/multikey/${clickedCkey}`)}
 								/>
 							</div>
