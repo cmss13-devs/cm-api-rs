@@ -68,7 +68,8 @@ function TraceGraph({
 
 	useEffect(() => {
 		if (fgRef.current) {
-			fgRef.current.zoomToFit(400, 60);
+			fgRef.current.centerAt(0, 0, 0);
+			fgRef.current.zoom(1, 0);
 		}
 	}, [traceData]);
 
@@ -144,6 +145,11 @@ function TraceGraph({
 				linkLabel={(link: GraphLink) => link.label}
 				onNodeClick={(node: GraphNode) => onNodeClick(node.id)}
 				cooldownTicks={100}
+				onEngineStop={() => {
+					if (fgRef.current) {
+						fgRef.current.zoomToFit(400, 60);
+					}
+				}}
 				enableZoomInteraction={true}
 				enablePanInteraction={true}
 			/>
