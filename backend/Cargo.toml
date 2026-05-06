@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 chrono = { version = "0.4.38", features = ["serde"] }
-http2byond = "0.1.0"
+http2byond = "0.2.0"
 reqwest = { version = "0.12.8", features = ["json"] }
 rocket_db_pools = { version = "0.2.0", features = ["sqlx_mysql"] }
 rust_decimal = "1.39.0"
