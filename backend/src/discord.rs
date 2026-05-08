@@ -272,7 +272,7 @@ pub async fn check_verified(
     config: &State<Config>,
     discord_id: String,
     guild_id: String,
-) -> Result<Json<VerifiedUserResponse>, (Status, Json<DiscordError>)> {
+) -> Result<Json<cl>, (Status, Json<DiscordError>)> {
     if !validate_auth_header(Some(auth_header.0.as_str()), config) {
         return Err((
             Status::Unauthorized,

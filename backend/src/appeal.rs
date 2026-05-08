@@ -3,6 +3,7 @@ use rocket_db_pools::Connection;
 use serde::{Deserialize, Serialize};
 use serenity::all::{GuildId, Http, UserId};
 use sqlx::{FromRow, Row, query, query_as};
+use std::time::Duration;
 
 use crate::{
     Cmapi, Cmdb, Config,
@@ -882,16 +883,20 @@ async fn check_discord_ban(
         .parse::<u64>()
         .map_err(|e| format!("Invalid discord ID: {}", e))?;
 
-    match http
-        .get_ban(GuildId::new(guild_id), UserId::new(user_id))
-        .await
-    {
-        Ok(Some(ban)) => Ok(Some(
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        http.get_ban(GuildId::new(guild_id), UserId::new(user_id)),
+    )
+    .await;
+
+    match result {
+        Err(_) => Ok(None),
+        Ok(Ok(Some(ban))) => Ok(Some(
             ban.reason
                 .unwrap_or_else(|| "No reason provided".to_string()),
         )),
-        Ok(None) => Ok(None),
-        Err(e) => Err(format!("Discord API error: {}", e)),
+        Ok(Ok(None)) => Ok(None),
+        Ok(Err(_)) => Ok(None),
     }
 }
 
