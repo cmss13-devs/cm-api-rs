@@ -3693,6 +3693,9 @@ pub async fn get_my_player_info(
             .strip_prefix("user:")
             .unwrap_or(&byond.identifier)
             .to_lowercase()
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '@')
+            .collect()
     } else {
         authentik_user
             .uuid

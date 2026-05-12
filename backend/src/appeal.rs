@@ -141,6 +141,9 @@ async fn resolve_user(
             .strip_prefix("user:")
             .unwrap_or(&byond.identifier)
             .to_lowercase()
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '@')
+            .collect()
     } else {
         authentik_user
             .uuid
