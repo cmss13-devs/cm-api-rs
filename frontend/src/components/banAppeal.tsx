@@ -222,7 +222,7 @@ export const BanAppeal: React.FC = () => {
                 htmlFor="appeal-text"
                 className="block text-sm text-gray-300 mb-1"
               >
-                My Appeal
+                Why should you be unbanned?
               </label>
               <textarea
                 id="appeal-text"
