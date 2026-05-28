@@ -496,6 +496,7 @@ pub async fn submit_appeal(
     )
     .await
     .map_err(|e| {
+        eprintln!("Failed to get/create Discourse user for {}: {}", &authentik_user.username, e);
         (
             Status::InternalServerError,
             Json(AuthentikError {
@@ -951,7 +952,7 @@ async fn create_discourse_topic(
         config.base_url.trim_end_matches('/'),
         created.topic_id
     );
-    let _ = client
+    match client
         .post(&change_owner_url)
         .header("Api-Key", &config.api_key)
         .header("Api-Username", &config.api_username)
@@ -960,7 +961,18 @@ async fn create_discourse_topic(
             ("post_ids[]", created.id.to_string()),
         ])
         .send()
-        .await;
+        .await
+    {
+        Ok(resp) if !resp.status().is_success() => {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            eprintln!("Failed to transfer topic {} ownership to {}: {} {}", created.topic_id, as_username, status, body);
+        }
+        Err(e) => {
+            eprintln!("Failed to transfer topic {} ownership to {}: {}", created.topic_id, as_username, e);
+        }
+        _ => {}
+    }
 
     // Lock the post
     let lock_url = format!(
@@ -968,13 +980,16 @@ async fn create_discourse_topic(
         config.base_url.trim_end_matches('/'),
         created.id
     );
-    let _ = client
+    if let Err(e) = client
         .put(&lock_url)
         .header("Api-Key", &config.api_key)
         .header("Api-Username", &config.api_username)
         .form(&[("locked", "true")])
         .send()
-        .await;
+        .await
+    {
+        eprintln!("Failed to lock post {}: {}", created.id, e);
+    }
 
     Ok(created)
 }
@@ -1087,13 +1102,28 @@ async fn get_or_create_discourse_user(
         .await
         .map_err(|e| format!("Failed to create Discourse user: {}", e))?;
 
-    if !create_response.status().is_success() {
-        let status = create_response.status();
-        let body = create_response.text().await.unwrap_or_default();
+    let create_status = create_response.status();
+    let create_body = create_response
+        .text()
+        .await
+        .unwrap_or_default();
+
+    if !create_status.is_success() {
         return Err(format!(
             "Failed to create Discourse user ({}): {}",
-            status, body
+            create_status, create_body
         ));
+    }
+
+    let create_json: serde_json::Value = serde_json::from_str(&create_body)
+        .map_err(|e| format!("Failed to parse Discourse create response: {}", e))?;
+
+    if create_json.get("success").and_then(|v| v.as_bool()) != Some(true) {
+        let message = create_json
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown error");
+        return Err(format!("Discourse rejected user creation: {}", message));
     }
 
     Ok(username.to_string())
