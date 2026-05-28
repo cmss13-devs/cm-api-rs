@@ -1086,6 +1086,7 @@ async fn get_or_create_discourse_user(
         "password": password,
         "active": true,
         "approved": true,
+        "ip_address": "0.0.0.0",
     });
 
     payload.as_object_mut().unwrap().insert(
