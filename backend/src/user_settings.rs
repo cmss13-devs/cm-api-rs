@@ -326,7 +326,8 @@ async fn delete_mfa_device(
     device_type: &str,
     device_pk: &str,
 ) -> Result<(), String> {
-    let endpoint = match device_type {
+    let device_type_lower = device_type.to_lowercase();
+    let endpoint = match device_type_lower.as_str() {
         "authentik_stages_authenticator_totp.totpdevice" => "authenticators/totp",
         "authentik_stages_authenticator_webauthn.webauthndevice" => "authenticators/webauthn",
         "authentik_stages_authenticator_static.staticdevice" => "authenticators/static",
