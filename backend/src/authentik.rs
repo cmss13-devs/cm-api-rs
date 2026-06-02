@@ -734,7 +734,15 @@ async fn update_user_fields(
 
     let mut body = serde_json::Map::new();
     if let Some(n) = name {
-        body.insert("name".to_string(), serde_json::json!(n));
+        body.insert(
+            "name".to_string(),
+            serde_json::json!(
+                n.to_string()
+                    .replace("https://", "")
+                    .replace("http://", "")
+                    .truncate(20)
+            ),
+        );
     }
     if let Some(e) = email {
         body.insert("email".to_string(), serde_json::json!(e));
