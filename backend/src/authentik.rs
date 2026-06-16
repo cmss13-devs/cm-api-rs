@@ -678,7 +678,7 @@ async fn query_single_user(
 }
 
 /// find an Authentik user by their ckey attribute
-async fn get_user_by_ckey(
+pub async fn get_user_by_ckey(
     client: &reqwest::Client,
     config: &AuthentikConfig,
     ckey: &str,

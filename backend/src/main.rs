@@ -77,6 +77,7 @@ mod steam;
 mod stickyban;
 mod ticket;
 mod token;
+mod twitch;
 mod twofactor;
 mod user_settings;
 mod utils;
@@ -412,6 +413,10 @@ async fn build_rocket() -> rocket::Rocket<rocket::Build> {
                 achievements::get_achievements,
                 achievements::set_achievement
             ],
+        )
+        .mount(
+            format!("{}/Twitch", base_url),
+            routes![twitch::get_twitch_id_by_ckey],
         )
         .mount(
             "/",
